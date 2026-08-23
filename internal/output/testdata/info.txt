@@ -1,0 +1,9 @@
+Pikachu #025
+Type: Electric
+Species: Mouse Pokémon
+Height: 0.4 m
+Weight: 6.0 kg
+Ability: Static
+Hidden: Lightning Rod
+Base Exp: 112
+Summary: Pikachu that can generate powerful electricity have cheek sacs that are extra soft and super stretchy.

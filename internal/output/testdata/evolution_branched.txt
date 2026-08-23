@@ -1,0 +1,4 @@
+Eevee
+├─ Water Stone → Vaporeon
+├─ Thunder Stone → Jolteon
+└─ Fire Stone → Flareon

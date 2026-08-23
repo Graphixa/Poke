@@ -1,0 +1,9 @@
+Pikachu #025
+
+HP                35
+Attack            55
+Defense           40
+Special Attack    50
+Special Defense   50
+Speed             90
+Total            320

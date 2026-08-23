@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: poke
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: poke
+    main: ./cmd/poke
+    binary: poke
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/Graphixa/Pokedex/pkg/version.Version={{.Version}}
+        -X github.com/Graphixa/Pokedex/pkg/version.Commit={{.Commit}}
+        -X github.com/Graphixa/Pokedex/pkg/version.Date={{.Date}}
+
+  # Second Windows executable and Unix alias binary (same package as poke).
+  # Archives ship both names; Homebrew can later install pokedex as a symlink.
+  - id: pokedex
+    main: ./cmd/poke
+    binary: pokedex
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/Graphixa/Pokedex/pkg/version.Version={{.Version}}
+        -X github.com/Graphixa/Pokedex/pkg/version.Commit={{.Commit}}
+        -X github.com/Graphixa/Pokedex/pkg/version.Date={{.Date}}
+
+archives:
+  - id: default
+    ids:
+      - poke
+      - pokedex
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))?!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\(.+\))?!?:.+$'
+      order: 1
+    - title: Documentation
+      regexp: '^.*?docs(\(.+\))?!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^chore(\(.+\))?:'
+      - '^ci(\(.+\))?:'
+      - '^test(\(.+\))?:'
+      - '^build(\(.+\))?:'
+      - '^Merge pull request'
+      - '^Merge branch'
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "poke {{.Version}}"
+  # Scoop is out of scope for v1. Homebrew tap is a post-v1 follow-up
+  # after the first tagged GitHub Release (see README).
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"

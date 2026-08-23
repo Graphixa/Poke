@@ -1,0 +1,3 @@
+Charmander
+└─ Level 16 → Charmeleon
+   └─ Level 36 → Charizard

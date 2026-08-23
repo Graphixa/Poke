@@ -1,1 +1,11 @@
-plans/
+plans/*
+!plans/DECISIONS.md
+!plans/MANUAL_RC.md
+.cross-build/
+dist/
+poke
+poke.exe
+pokedex
+pokedex.exe
+plans/DECISIONS.md
+plans/MANUAL_RC.md
