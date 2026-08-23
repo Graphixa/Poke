@@ -1,3 +1,10 @@
+# Browse TUI wireframe
+
+Canonical visual contract for Pokedex browse mode. Product rules, CLI, and phases live in [plans/SPEC.md](plans/SPEC.md) (see section 5). If this layout changes, update the spec in the same change.
+
+Implementing agents: match regions, proportions, and information density. Do not invent extra panes, a second chrome bar, or a different tab set.
+
+```
 Pokedex — Browse Mode
 
 ┌──────────────────────────────────────┬──────────────────────────────────────────────────────────────┐
@@ -29,3 +36,11 @@ Pokedex — Browse Mode
 └──────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
 
  Type to filter • ↑↓ move • Tab next panel • PgUp/PgDn scroll details • Esc clear • q quit
+```
+
+Notes:
+
+- Left ~1/3, right ~2/3.
+- This snapshot is Charmander on the Evolution tab after a `c`-prefix filter. Other tabs replace only the inner detail card.
+- Sprite slot is a 1:1 square; v1 fills it with half-block `front_default` art (placeholder until that phase).
+- `q` quits only when the search query is empty; typed `q` otherwise goes into the filter. `Ctrl+C` always quits.
