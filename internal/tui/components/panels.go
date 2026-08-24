@@ -123,7 +123,7 @@ func SpritePlaceholder(name string, width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, label)
 }
 
-// SpritePanel renders precomputed half-block ANSI as an unbordered frame.
+// SpritePanel renders precomputed ANSI sprite art as an unbordered frame.
 // ansi is clipped/padded to width×height cells.
 func SpritePanel(ansi string, width, height int) string {
 	if width < 1 {

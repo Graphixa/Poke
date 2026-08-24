@@ -60,8 +60,8 @@ type Data struct {
 }
 
 type Render struct {
-	// SpriteMode selects the logical renderer class:
-	// auto | image | halfblock | braille | ascii | off
+	// SpriteMode selects sprite output: auto | off.
+	// auto = native image when supported, else chafa, else placeholder.
 	SpriteMode string `yaml:"sprite_mode"`
 	// SpriteSource selects pixel (nearest) or artwork (filtered) assets.
 	SpriteSource string `yaml:"sprite_source"`
@@ -71,15 +71,13 @@ type Render struct {
 	Dithering string `yaml:"dithering"`
 	// Animate is reserved; v1 only supports "auto"/"off" (animation not required).
 	Animate string `yaml:"animate"`
-	// Images is an advanced native-protocol hint for the Image renderer:
-	// auto | kitty | iterm | off. Prefer sprite_mode for class selection.
-	Images string `yaml:"images"`
 	// Sprite selects which PokeAPI sprite field to use (v1: front_default).
 	Sprite string `yaml:"sprite"`
 
-	// Deprecated fields retained for older config files.
-	Halfblock           bool `yaml:"halfblock"`
-	PlaceholderFallback bool `yaml:"placeholder_fallback"`
+	// Deprecated fields retained for older config files (ignored at runtime).
+	Images              string `yaml:"images"`
+	Halfblock           bool   `yaml:"halfblock"`
+	PlaceholderFallback bool   `yaml:"placeholder_fallback"`
 }
 
 type TUI struct {
@@ -121,15 +119,14 @@ func Default() Config {
 			Color:               "auto",
 			Dithering:           "none",
 			Animate:             "auto",
-			Images:              "auto",
 			Halfblock:           true,
 			PlaceholderFallback: true,
 			Sprite:              "front_default",
 		},
 		TUI: TUI{
 			ShowSprite:         true,
-			MinWidthForSprite:  110,
-			MinHeightForSprite: 40,
+			MinWidthForSprite:  80,
+			MinHeightForSprite: 28,
 			FooterHelp:         "compact",
 		},
 		Theme: Theme{Name: "catppuccin"},
@@ -161,9 +158,12 @@ func (c Config) Validate() error {
 		problems = append(problems, "data.version_group must not be empty")
 	}
 	switch c.Render.SpriteMode {
-	case "", "auto", "image", "halfblock", "braille", "ascii", "off":
+	case "", "auto", "off":
+		// Allowed.
+	case "image", "chafa", "halfblock", "braille", "ascii":
+		// Deprecated; EffectiveSpriteMode remaps to auto (or off via legacy).
 	default:
-		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "halfblock", "braille", "ascii", "off"`)
+		problems = append(problems, `render.sprite_mode must be one of "auto", "off"`)
 	}
 	switch c.Render.SpriteSource {
 	case "", "pixel", "artwork":
@@ -185,11 +185,7 @@ func (c Config) Validate() error {
 	default:
 		problems = append(problems, `render.animate must be one of "auto", "on", "off"`)
 	}
-	switch c.Render.Images {
-	case "off", "auto", "kitty", "iterm":
-	default:
-		problems = append(problems, `render.images must be one of "auto", "kitty", "iterm", "off"`)
-	}
+	// render.images is deprecated and ignored (native protocol is auto-detected).
 	if c.Render.Sprite != "front_default" {
 		problems = append(problems, `render.sprite must be "front_default" in v1`)
 	}
@@ -217,17 +213,23 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// EffectiveSpriteMode returns the logical sprite renderer preference, honouring
-// legacy halfblock/images fields when sprite_mode is unset.
+// EffectiveSpriteMode returns auto or off. Native image vs chafa is chosen by
+// capability detection, not config. Deprecated mode names remap to auto.
 func (c Config) EffectiveSpriteMode() string {
-	if c.Render.SpriteMode != "" {
-		return c.Render.SpriteMode
-	}
-	// Legacy configs without sprite_mode.
-	if !c.Render.Halfblock && (c.Render.Images == "off" || c.Render.Images == "") {
+	mode := c.Render.SpriteMode
+	switch mode {
+	case "off":
 		return "off"
+	case "":
+		// Legacy configs without sprite_mode.
+		if !c.Render.Halfblock && (c.Render.Images == "off" || c.Render.Images == "") {
+			return "off"
+		}
+		return "auto"
+	default:
+		// auto, image, chafa, and old text modes all mean "use the auto chain".
+		return "auto"
 	}
-	return "auto"
 }
 
 type Paths struct {
@@ -279,10 +281,23 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
+	migrateLegacySpriteGates(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate config: %w", err)
 	}
 	return cfg, nil
+}
+
+// migrateLegacySpriteGates lowers pre-adaptive 110×52 gates that hid sprites
+// on common terminal sizes (e.g. default Windows Terminal ~120×30).
+func migrateLegacySpriteGates(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if cfg.TUI.MinWidthForSprite == 110 && cfg.TUI.MinHeightForSprite == 52 {
+		cfg.TUI.MinWidthForSprite = 80
+		cfg.TUI.MinHeightForSprite = 28
+	}
 }
 
 // Initialize atomically creates a default config and never replaces an

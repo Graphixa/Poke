@@ -16,10 +16,10 @@ func (f SearchHandlerFunc) Search(ctx context.Context, query string) error {
 	return f(ctx, query)
 }
 
-// TestHandlerFunc adapts a function to TestHandler.
-type TestHandlerFunc func(context.Context) error
+// ChafaHandlerFunc adapts a function to ChafaHandler.
+type ChafaHandlerFunc func(context.Context) error
 
-func (f TestHandlerFunc) TestSprites(ctx context.Context) error {
+func (f ChafaHandlerFunc) TestChafaSprites(ctx context.Context) error {
 	return f(ctx)
 }
 

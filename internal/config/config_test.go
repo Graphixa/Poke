@@ -44,6 +44,21 @@ func TestLoadOverlaysDefaultsAndIgnoresUnknownFields(t *testing.T) {
 	}
 }
 
+func TestLoadMigratesLegacySpriteGates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte("tui:\n  min_width_for_sprite: 110\n  min_height_for_sprite: 52\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TUI.MinWidthForSprite != 80 || cfg.TUI.MinHeightForSprite != 28 {
+		t.Fatalf("legacy gates not migrated: %+v", cfg.TUI)
+	}
+}
+
 func TestLoadRejectsInvalidYAMLAndValues(t *testing.T) {
 	tests := map[string]string{
 		"yaml":     "network: [",

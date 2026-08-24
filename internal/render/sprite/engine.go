@@ -4,6 +4,7 @@ import (
 	"context"
 	"image"
 	"image/color"
+	"sync"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -35,6 +36,19 @@ type Engine struct {
 	ClearNativeFn ClearNativeFunc
 	// OnNativeFail is called when native image rendering fails (session fallback).
 	OnNativeFail func()
+
+	memOnce sync.Once
+	mem     *ansiMemCache
+}
+
+func (e *Engine) memory() *ansiMemCache {
+	if e == nil {
+		return nil
+	}
+	e.memOnce.Do(func() {
+		e.mem = newANSIMemCache(128)
+	})
+	return e.mem
 }
 
 // RenderResult is either ANSI cell-art or a placeholder request.
@@ -52,8 +66,9 @@ func (e *Engine) ClearNative() {
 	}
 }
 
-// Render converts front_default into the fixed sprite frame. cells is accepted
-// for TUI compatibility but the fixed (bucketed) frame size is used.
+// Render converts front_default into a sprite frame. cells is the square edge
+// requested by the TUI (bucketed); when ≤0 the engine's configured/default
+// frame size is used.
 func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
 	if e == nil {
 		return RenderResult{UsePlaceholder: true}
@@ -61,8 +76,10 @@ func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) 
 	if err := ctx.Err(); err != nil {
 		return RenderResult{UsePlaceholder: true}
 	}
-	_ = cells
 	fw, fh := e.frameSize()
+	if cells >= MinFrameSize {
+		fw, fh = cells, cells
+	}
 	label := displayName(pokemon)
 
 	if e.Preference == ModeOff {
@@ -104,7 +121,9 @@ func (e *Engine) renderChain(ctx context.Context, img image.Image, opts RenderOp
 			}
 			started = true
 		}
-		if !rend.Supported(e.Caps) {
+		// Explicit preference may start on a class that caps mark unsupported;
+		// attempt it once, then require Supported for later fallbacks.
+		if !rend.Supported(e.Caps) && (start == nil || rend.Name() != start.Name()) {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
@@ -116,8 +135,13 @@ func (e *Engine) renderChain(ctx context.Context, img image.Image, opts RenderOp
 		if rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "" {
 			color := effectiveColor(opts.ColorMode, e.Caps)
 			key = CacheKey(opts.ContentHash, opts.Source, rend.Name(), opts.Width, opts.Height, color)
+			if cached, ok := e.memory().Get(key); ok {
+				debuglog.Renderf("%s mem cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
+				return RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name()}
+			}
 			if e.Artefacts != nil {
 				if cached, err := e.Artefacts.Halfblock(ctx, key); err == nil && cached != "" {
+					e.memory().Put(key, cached)
 					debuglog.Renderf("%s cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
 					return RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name()}
 				}
@@ -136,8 +160,11 @@ func (e *Engine) renderChain(ctx context.Context, img image.Image, opts RenderOp
 		if err := ctx.Err(); err != nil {
 			return RenderResult{UsePlaceholder: true}
 		}
-		if key != "" && e.Artefacts != nil && !frame.Native {
-			_ = e.Artefacts.StoreHalfblock(ctx, key, frame.Text)
+		if key != "" && !frame.Native {
+			e.memory().Put(key, frame.Text)
+			if e.Artefacts != nil {
+				_ = e.Artefacts.StoreHalfblock(ctx, key, frame.Text)
+			}
 		}
 		debuglog.Renderf("%s render pokemon=%d frame=%dx%d key=%s", rend.Name(), pokemonID, opts.Width, opts.Height, key)
 		if frame.Backend == "placeholder" {

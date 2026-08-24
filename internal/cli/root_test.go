@@ -150,7 +150,7 @@ func TestDebugFlagInvokesCallback(t *testing.T) {
 	}
 }
 
-func TestTestCommandRoutes(t *testing.T) {
+func TestChafaCommandRoutes(t *testing.T) {
 	called := false
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -160,19 +160,19 @@ func TestTestCommandRoutes(t *testing.T) {
 			ConfigFile: filepath.Join(t.TempDir(), "config.yaml"),
 			CacheDir:   filepath.Join(t.TempDir(), "cache"),
 		},
-		Test: TestHandlerFunc(func(context.Context) error {
+		Chafa: ChafaHandlerFunc(func(context.Context) error {
 			called = true
 			return nil
 		}),
 		Stdout: stdout,
 		Stderr: stderr,
 	})
-	root.SetArgs([]string{"test"})
+	root.SetArgs([]string{"chafa"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	if !called {
-		t.Fatal("TestSprites was not called")
+		t.Fatal("TestChafaSprites was not called")
 	}
 }
 

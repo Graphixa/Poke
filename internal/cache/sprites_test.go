@@ -31,7 +31,7 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	key := sprite.CacheKey(hash, sprite.SourcePixel, "halfblock", 8, 8, sprite.ColorTrueColor)
+	key := sprite.CacheKey(hash, sprite.SourcePixel, "chafa", 8, 8, sprite.ColorTrueColor)
 	if err := svc.StoreHalfblock(context.Background(), key, "ANSI"); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 	}
 
 	// Dimension change → different key → miss (invalidation).
-	other := sprite.CacheKey(hash, sprite.SourcePixel, "halfblock", 10, 10, sprite.ColorTrueColor)
+	other := sprite.CacheKey(hash, sprite.SourcePixel, "chafa", 10, 10, sprite.ColorTrueColor)
 	if _, err := svc.Halfblock(context.Background(), other); err == nil {
 		t.Fatal("expected miss for different size key")
 	}

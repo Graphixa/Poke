@@ -205,13 +205,14 @@ func renderSearch(d BrowseData, width int) string {
 	return components.Search(d.Query, width)
 }
 
-// SpriteSideFor returns the fixed sprite frame width when the right pane can
-// host it; otherwise 0. Height is unused (frame is square) but kept for callers.
+// SpriteSideFor returns the largest square sprite frame that fits in the right
+// pane; 0 when even the minimum frame cannot fit.
 func SpriteSideFor(rightWidth, _ int) int {
-	if rightWidth < sprite.MinRightWidthForSprite {
-		return 0
+	budget := rightWidth - sprite.SeparatorWidth - sprite.MinInfoWidthBesideSprite
+	if budget > sprite.FrameWidth {
+		budget = sprite.FrameWidth
 	}
-	return sprite.FrameWidth
+	return sprite.BucketFloor(budget)
 }
 
 func renderRight(d BrowseData, width, height int) string {
@@ -255,9 +256,8 @@ func renderIdentityBand(d BrowseData, width int) string {
 		if side <= 0 {
 			side = SpriteSideFor(width, 0)
 		}
-		if side >= sprite.FrameWidth {
-			side = sprite.FrameWidth
-			frameH = sprite.FrameHeight
+		if side >= sprite.MinFrameSize {
+			frameH = side
 			if d.SpriteANSI != "" {
 				art = components.SpritePanel(d.SpriteANSI, side, frameH)
 			} else if d.HasSelected {

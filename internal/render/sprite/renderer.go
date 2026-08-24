@@ -16,7 +16,7 @@ type Renderer interface {
 // Frame is the render output consumed by the TUI sprite panel.
 type Frame struct {
 	Text    string
-	Backend string // logical class: image, halfblock, braille, ascii, placeholder
+	Backend string // logical class: image, chafa, placeholder
 	// Native is true when Text embeds native graphics sequences.
 	Native bool
 }

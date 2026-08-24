@@ -333,7 +333,7 @@ func (m *Model) currentSpriteCells() int {
 	return m.currentSpriteSide()
 }
 
-func (m *Model) handleSpriteLayoutChange(prevShow bool, _ int) tea.Cmd {
+func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 	lay := m.layout()
 	if !lay.ShowSprite {
 		m.cancelSprite()
@@ -342,8 +342,9 @@ func (m *Model) handleSpriteLayoutChange(prevShow bool, _ int) tea.Cmd {
 		}
 		return nil
 	}
-	// Fixed frame: only reload when transitioning from hidden → shown.
-	if !prevShow {
+	side := m.currentSpriteSide()
+	// Reload when the sprite becomes visible or its frame size changes.
+	if !prevShow || prevSide != side {
 		if sel, ok := m.selected(); ok {
 			m.clearSpriteArt(m.resources[sel.ID])
 		}

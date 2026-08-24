@@ -19,7 +19,7 @@ func TestEnableAndSanitize(t *testing.T) {
 	}
 	Requestf("GET /pokemon/1 status=200")
 	Cachef("hit species id=1")
-	Renderf("halfblock cells=12 hash=abc")
+	Renderf("chafa cells=12 hash=abc")
 	Requestf("authorization=secret-token-value")
 
 	_ = Global().Close()
@@ -29,7 +29,7 @@ func TestEnableAndSanitize(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(body)
-	for _, want := range []string{"[request]", "[cache]", "[render]", "GET /pokemon/1", "hit species", "halfblock"} {
+	for _, want := range []string{"[request]", "[cache]", "[render]", "GET /pokemon/1", "hit species", "chafa"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

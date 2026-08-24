@@ -16,22 +16,16 @@ func TestNativeCapableEnv(t *testing.T) {
 	t.Setenv("KITTY_WINDOW_ID", "")
 	t.Setenv("GHOSTTY_RESOURCES_DIR", "")
 	t.Setenv("TERM", "xterm")
-	if spriteimage.NativeCapable("off") {
-		t.Fatal("off should be false")
-	}
-	if spriteimage.NativeCapable("nope") {
-		t.Fatal("unknown should be false")
-	}
-	if spriteimage.NativeCapable("auto") {
-		t.Fatal("auto without hints should be false")
+	if spriteimage.NativeCapable() {
+		t.Fatal("without hints should be false")
 	}
 	t.Setenv("KITTY_WINDOW_ID", "1")
-	if !spriteimage.NativeCapable("auto") {
+	if !spriteimage.NativeCapable() {
 		t.Fatal("expected kitty via KITTY_WINDOW_ID")
 	}
 	t.Setenv("KITTY_WINDOW_ID", "")
 	t.Setenv("TERM_PROGRAM", "iTerm.app")
-	if !spriteimage.NativeCapable("auto") {
+	if !spriteimage.NativeCapable() {
 		t.Fatal("expected iterm")
 	}
 }
@@ -43,7 +37,7 @@ func TestBackendDisable(t *testing.T) {
 	}
 	os.Setenv("KITTY_WINDOW_ID", "1")
 	t.Cleanup(func() { os.Unsetenv("KITTY_WINDOW_ID") })
-	b = spriteimage.New("auto")
+	b = spriteimage.New()
 	if !b.Available() {
 		t.Fatal("expected available")
 	}
@@ -56,7 +50,7 @@ func TestBackendDisable(t *testing.T) {
 func TestRenderPNGBad(t *testing.T) {
 	os.Setenv("KITTY_WINDOW_ID", "1")
 	t.Cleanup(func() { os.Unsetenv("KITTY_WINDOW_ID") })
-	b := spriteimage.New("auto")
+	b := spriteimage.New()
 	_, err := b.RenderPNG([]byte("not-png"), 8, 8)
 	if err == nil {
 		t.Fatal("expected decode error")
@@ -76,7 +70,7 @@ func TestRenderPNGBypassRestored(t *testing.T) {
 	if err := png.Encode(&buf, img); err != nil {
 		t.Fatal(err)
 	}
-	b := spriteimage.New("auto")
+	b := spriteimage.New()
 	// May fail in CI without a real terminal protocol handler; still must restore env.
 	_, _ = b.RenderPNG(buf.Bytes(), 4, 4)
 	if got := os.Getenv("TERMIMG_BYPASS_DETECTION"); got != prev {

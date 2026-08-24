@@ -50,7 +50,7 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 		Details: details,
 		Sprites: sprites,
 	})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
 	core := tui.CoreMsgForTest(m.SelectionGen(), 4, domain.Pokemon{
@@ -90,7 +90,7 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	}
 
 	// Show again at a different size — prior art must not reappear until a matching render.
-	updated, cmd = m.Update(tea.WindowSizeMsg{Width: 140, Height: 48})
+	updated, cmd = m.Update(tea.WindowSizeMsg{Width: 140, Height: 56})
 	m = updated.(tui.Model)
 	if !m.LayoutFlags().ShowSprite {
 		t.Fatal("expected sprite visible again")
@@ -119,7 +119,7 @@ func TestSpriteCancelOnSelectionChange(t *testing.T) {
 		Details: details,
 		Sprites: sprites,
 	})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
 	core := tui.CoreMsgForTest(m.SelectionGen(), 4, domain.Pokemon{
@@ -166,7 +166,7 @@ func TestTypingDoesNotBlockOnSprite(t *testing.T) {
 		Details: details,
 		Sprites: sprites,
 	})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
 	updated, _ = m.Update(key("p"))

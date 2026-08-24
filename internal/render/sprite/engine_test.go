@@ -14,9 +14,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/ascii"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/braille"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
+	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 )
 
@@ -127,42 +125,41 @@ func TestSourceResolve(t *testing.T) {
 
 func TestModeResolverPriority(t *testing.T) {
 	modes := sprite.NewModeResolver(
-		halfblock.Renderer{},
-		braille.Renderer{},
-		ascii.Renderer{},
+		spritechafa.Renderer{},
 		placeholder.Renderer{},
 	)
-	caps := sprite.Capabilities{TrueColor: true, ANSI256: true, Unicode: true, Braille: true}
+	caps := sprite.Capabilities{TrueColor: true, ANSI256: true}
 	r := modes.Resolve(caps, sprite.ModeAuto)
-	if r == nil || r.Name() != "halfblock" {
+	if r == nil || r.Name() != "chafa" {
 		t.Fatalf("auto = %v", r)
 	}
-	r = modes.Resolve(caps, sprite.ModeBraille)
-	if r == nil || r.Name() != "braille" {
-		t.Fatalf("braille = %v", r)
+	r = modes.Resolve(caps, sprite.ModeChafa)
+	if r == nil || r.Name() != "chafa" {
+		t.Fatalf("chafa = %v", r)
 	}
 	r = modes.Resolve(sprite.Capabilities{}, sprite.ModeAuto)
-	if r == nil || r.Name() != "ascii" {
-		// ascii Supported always true; placeholder after
-		if r.Name() != "ascii" && r.Name() != "placeholder" {
-			t.Fatalf("empty caps auto = %s", r.Name())
-		}
+	if r == nil || r.Name() != "placeholder" {
+		t.Fatalf("empty caps auto = %v, want placeholder", r)
+	}
+	r = modes.Resolve(sprite.Capabilities{}, sprite.ModeChafa)
+	if r == nil || r.Name() != "chafa" {
+		t.Fatalf("forced chafa without caps = %v, want chafa", r)
 	}
 }
 
-func TestEngineHalfblockAndCache(t *testing.T) {
+func TestEngineChafaAndCache(t *testing.T) {
 	store := newMemStore()
 	png := mustPNG(t, color.RGBA{0, 128, 255, 255})
 	api := &fakeAPI{data: map[string][]byte{"https://example/s.png": png}}
 	engine := &sprite.Engine{
 		Source: &sprite.SourceResolver{Store: store, API: api},
 		Modes: sprite.NewModeResolver(
-			halfblock.Renderer{},
+			spritechafa.Renderer{},
 			placeholder.Renderer{},
 		),
 		Artefacts:  store,
 		Caps:       sprite.Capabilities{TrueColor: true, ANSI256: true},
-		Preference: sprite.ModeHalfblock,
+		Preference: sprite.ModeChafa,
 		Color:      sprite.ColorTrueColor,
 		SourceKind: sprite.SourcePixel,
 		Background: color.RGBA{A: 255},
@@ -172,11 +169,8 @@ func TestEngineHalfblockAndCache(t *testing.T) {
 		Sprites: domain.Sprites{FrontDefault: "https://example/s.png"},
 	}
 	res := engine.Render(context.Background(), poke, 24)
-	if res.UsePlaceholder || res.ANSI == "" || res.Backend != "halfblock" {
+	if res.UsePlaceholder || res.ANSI == "" || res.Backend != "chafa" {
 		t.Fatalf("result=%+v", res)
-	}
-	if !strings.Contains(res.ANSI, "▀") {
-		t.Fatal("expected half-block glyph")
 	}
 	if res.CacheKey == "" {
 		t.Fatal("expected cache key")
@@ -200,26 +194,12 @@ func TestEnginePlaceholder(t *testing.T) {
 	}
 }
 
-func TestBrailleASCIIPlaceholder(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
-	for y := 2; y < 6; y++ {
-		for x := 2; x < 6; x++ {
-			img.SetRGBA(x, y, color.RGBA{255, 255, 255, 255})
-		}
-	}
+func TestPlaceholderRenderer(t *testing.T) {
 	opts := sprite.RenderOptions{
 		Width: 24, Height: 8, PreserveAR: true,
 		BackgroundColor: color.RGBA{A: 255},
 		Source:          sprite.SourcePixel,
 		Label:           "Test",
-	}
-	bf, err := (braille.Renderer{}).Render(context.Background(), img, opts)
-	if err != nil || bf.Backend != "braille" || bf.Text == "" {
-		t.Fatalf("braille: %+v err=%v", bf, err)
-	}
-	af, err := (ascii.Renderer{}).Render(context.Background(), img, opts)
-	if err != nil || af.Backend != "ascii" || af.Text == "" {
-		t.Fatalf("ascii: %+v err=%v", af, err)
 	}
 	pf, err := (placeholder.Renderer{}).Render(context.Background(), nil, opts)
 	if err != nil || !strings.Contains(pf.Text, "Test") {
@@ -228,12 +208,12 @@ func TestBrailleASCIIPlaceholder(t *testing.T) {
 }
 
 func TestCacheKeyRoundTrip(t *testing.T) {
-	key := sprite.CacheKey("abc", sprite.SourcePixel, "halfblock", 24, 24, sprite.ColorTrueColor)
+	key := sprite.CacheKey("abc", sprite.SourcePixel, "chafa", 24, 24, sprite.ColorTrueColor)
 	hash, src, mode, w, h, color, ver, err := sprite.ParseCacheKey(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash != "abc" || src != sprite.SourcePixel || mode != "halfblock" || w != 24 || h != 24 || color != sprite.ColorTrueColor || ver != sprite.AlgorithmVersion {
+	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || color != sprite.ColorTrueColor || ver != sprite.AlgorithmVersion {
 		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s", hash, src, mode, w, h, color, ver)
 	}
 	if sprite.BucketSize(23) != 24 && sprite.BucketSize(23) != 20 {

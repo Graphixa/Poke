@@ -11,8 +11,6 @@ type Capabilities struct {
 	NativeImage bool
 	TrueColor   bool
 	ANSI256     bool
-	Unicode     bool
-	Braille     bool
 }
 
 // DetectCapabilities builds a conservative capability snapshot from the
@@ -21,14 +19,10 @@ type Capabilities struct {
 func DetectCapabilities(nativeImage bool) Capabilities {
 	trueColor := detectTrueColor()
 	ansi256 := trueColor || detectANSI256()
-	unicode := detectUnicode()
 	return Capabilities{
 		NativeImage: nativeImage,
 		TrueColor:   trueColor,
 		ANSI256:     ansi256,
-		Unicode:     unicode,
-		// Braille needs Unicode; assume modern terminals that advertise UTF-8.
-		Braille: unicode,
 	}
 }
 
@@ -41,10 +35,18 @@ func detectTrueColor() bool {
 	if strings.Contains(term, "truecolor") || term == "xterm-kitty" || term == "wezterm" {
 		return true
 	}
+	// Modern GUI terminals support 24-bit colour even when TERM is dumb/empty
+	// (common under Windows Terminal, ConEmu, and some IDE hosts).
+	if modernColorTerminal() {
+		return true
+	}
 	return false
 }
 
 func detectANSI256() bool {
+	if modernColorTerminal() {
+		return true
+	}
 	term := strings.ToLower(os.Getenv("TERM"))
 	if term == "" || term == "dumb" {
 		return false
@@ -57,20 +59,18 @@ func detectANSI256() bool {
 	return true
 }
 
-func detectUnicode() bool {
-	for _, key := range []string{"LANG", "LC_ALL", "LC_CTYPE"} {
-		v := strings.ToLower(os.Getenv(key))
-		if strings.Contains(v, "utf-8") || strings.Contains(v, "utf8") {
-			return true
-		}
-	}
-	// Windows terminals and most modern hosts are UTF-8 capable.
-	if os.Getenv("WT_SESSION") != "" || os.Getenv("TERM_PROGRAM") != "" {
+// modernColorTerminal reports hosts that are known to support rich colour
+// output regardless of a missing/dumb TERM value.
+func modernColorTerminal() bool {
+	if os.Getenv("WT_SESSION") != "" {
 		return true
 	}
-	term := strings.ToLower(os.Getenv("TERM"))
-	if term == "" || term == "dumb" {
-		return false
+	if os.Getenv("ConEmuANSI") != "" || os.Getenv("ConEmuPID") != "" {
+		return true
 	}
-	return true
+	switch strings.ToLower(os.Getenv("TERM_PROGRAM")) {
+	case "windowsterminal", "wezterm", "iterm.app", "ghostty", "alacritty", "vscode", "warpterminal":
+		return true
+	}
+	return false
 }

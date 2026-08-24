@@ -19,19 +19,23 @@ func TestLayoutBreakpoints(t *testing.T) {
 		verbose, short  bool
 		onePane         bool
 		tooSmall        bool
+		spriteSize      int
 	}{
-		{120, 40, true, true, true, false, false, false},
-		{109, 40, false, true, true, false, false, false},
-		{110, 39, false, true, true, false, false, false},
-		{99, 40, false, true, true, false, false, false},
-		{87, 40, false, false, true, false, false, false},
-		{88, 24, false, false, true, false, false, false},
-		{75, 40, false, false, false, false, false, false},
-		{63, 40, false, false, false, true, false, false},
-		{51, 40, false, false, false, true, true, false},
-		{80, 17, false, false, false, false, true, false},
-		{39, 20, false, false, false, true, true, true},
-		{50, 11, false, false, false, true, true, true},
+		{120, 52, true, true, true, false, false, false, 40},
+		{120, 40, true, true, true, false, false, false, 28},
+		{120, 30, true, true, true, false, false, false, 16},
+		{109, 52, true, true, true, false, false, false, 40},
+		{80, 28, true, false, true, false, false, false, 16},
+		{79, 40, false, false, true, false, false, false, 0},
+		{99, 52, true, true, true, false, false, false, 40},
+		{87, 40, true, false, true, false, false, false, 28},
+		{88, 24, false, false, true, false, false, false, 0},
+		{75, 40, false, false, false, false, false, false, 0},
+		{63, 40, false, false, false, true, false, false, 0},
+		{51, 40, false, false, false, true, true, false, 0},
+		{80, 17, false, false, false, false, true, false, 0},
+		{39, 20, false, false, false, true, true, true, 0},
+		{50, 11, false, false, false, true, true, true, 0},
 	}
 	for _, tc := range cases {
 		m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}})
@@ -42,11 +46,14 @@ func TestLayoutBreakpoints(t *testing.T) {
 				tc.w, tc.h, f.ShowSprite, f.ShowSummary, f.VerboseFooter, f.ShortTabs, f.OnePane, f.TooSmall,
 				tc.sprite, tc.summary, tc.verbose, tc.short, tc.onePane, tc.tooSmall)
 		}
+		if f.SpriteSize != tc.spriteSize {
+			t.Fatalf("%dx%d SpriteSize=%d want %d", tc.w, tc.h, f.SpriteSize, tc.spriteSize)
+		}
 	}
 }
 
 func TestSpritePlaceholder(t *testing.T) {
-	out := components.SpritePlaceholder("Charmander", 24, 24)
+	out := components.SpritePlaceholder("Charmander", 40, 40)
 	if !strings.Contains(out, "[ Charmander ]") {
 		t.Fatalf("placeholder = %q", out)
 	}
@@ -58,13 +65,13 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		{Summary: domain.SpeciesSummary{ID: 5, DisplayName: "Charmeleon", Types: []string{"fire"}}},
 	}
 	out := views.Browse(views.BrowseData{
-		Width: 120, Height: 40,
+		Width: 120, Height: 52,
 		Query: "c",
 		Rows:  rows, ListOff: 0,
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
 		ShowSprite:  true, ShowSummary: true, VerboseFooter: true,
-		SpriteSide:  24,
+		SpriteSide:  40,
 		ActiveTab: 1,
 		TabLabels: []string{"Stats", "Evolution", "Locations", "Moves", "Flavour", "Info"},
 		Info: components.MainInfo{
@@ -92,11 +99,11 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 	}
 	// Query is non-empty so placeholder text is replaced by the typed query.
 	out2 := views.Browse(views.BrowseData{
-		Width: 120, Height: 40, Query: "c",
+		Width: 120, Height: 52, Query: "c",
 		Rows: rows, HasSelected: true,
 		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
 		ShowSprite: true, ShowSummary: true, VerboseFooter: true,
-		SpriteSide:  24,
+		SpriteSide:  40,
 		TabLabels:   []string{"Stats", "Evolution", "Locations", "Moves", "Flavour", "Info"},
 		Info:        components.MainInfo{Types: "Fire"},
 		DetailTitle: "Stats",

@@ -18,9 +18,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/ascii"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/braille"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
+	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 	"github.com/Graphixa/Pokedex/internal/search"
@@ -59,7 +57,7 @@ func main() {
 
 	ds := app.NewDetailService(svc.Cache)
 	src := detailAdapter{DetailService: ds}
-	img := spriteimage.New(svc.Config.Render.Images)
+	img := spriteimage.New()
 	caps := sprite.DetectCapabilities(img.Available())
 	colorMode := sprite.ColorTrueColor
 	if !caps.TrueColor {
@@ -69,9 +67,7 @@ func main() {
 		Source: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
 		Modes: sprite.NewModeResolver(
 			img,
-			halfblock.Renderer{},
-			braille.Renderer{},
-			ascii.Renderer{},
+			spritechafa.Renderer{},
 			placeholder.Renderer{},
 		),
 		Artefacts:     svc.Cache,
@@ -90,12 +86,12 @@ func main() {
 		Selected:           selected,
 		Prefill:            "c",
 		Context:            ctx,
-		MinWidthForSprite:  110,
-		MinHeightForSprite: 40,
+		MinWidthForSprite:  80,
+		MinHeightForSprite: 28,
 	})
 
 	var model tea.Model = m
-	model, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	model, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	drain(&model, cmd)
 	drain(&model, model.(tui.Model).Init())
 

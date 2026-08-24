@@ -6,12 +6,10 @@ import "image/color"
 type RenderMode string
 
 const (
-	ModeAuto       RenderMode = "auto"
-	ModeImage      RenderMode = "image"
-	ModeHalfblock  RenderMode = "halfblock"
-	ModeBraille    RenderMode = "braille"
-	ModeASCII      RenderMode = "ascii"
-	ModeOff        RenderMode = "off"
+	ModeAuto        RenderMode = "auto"
+	ModeImage       RenderMode = "image"
+	ModeChafa       RenderMode = "chafa"
+	ModeOff         RenderMode = "off"
 	ModePlaceholder RenderMode = "placeholder"
 )
 
@@ -50,7 +48,7 @@ const (
 
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
-const AlgorithmVersion = "v1"
+const AlgorithmVersion = "v2"
 
 // RenderOptions control a single sprite conversion.
 type RenderOptions struct {

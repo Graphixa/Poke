@@ -7,14 +7,15 @@ type ModeResolver struct {
 
 // NewModeResolver builds the default fallback chain:
 //
-//	image → truecolor/256 halfblock → braille → ascii → placeholder
+//	image → chafa mosaic → placeholder
 func NewModeResolver(renderers ...Renderer) *ModeResolver {
 	return &ModeResolver{Renderers: renderers}
 }
 
 // Resolve picks the best supported renderer for preference.
-// ModeAuto walks the full chain; a specific mode still falls back if
-// unsupported (except ModeOff, which forces placeholder when present).
+// ModeAuto walks the full chain. An explicit mode is returned when present in
+// the chain so the engine can attempt it even if capability detection is
+// uncertain; render failure still falls forward. ModeOff forces placeholder.
 func (r *ModeResolver) Resolve(caps Capabilities, preference RenderMode) Renderer {
 	if r == nil || len(r.Renderers) == 0 {
 		return nil
@@ -27,11 +28,11 @@ func (r *ModeResolver) Resolve(caps Capabilities, preference RenderMode) Rendere
 	switch pref {
 	case ModeOff, ModePlaceholder:
 		return r.findByName("placeholder")
-	case ModeImage, ModeHalfblock, ModeBraille, ModeASCII:
-		if rend := r.findPreferred(pref, caps); rend != nil {
+	case ModeImage, ModeChafa:
+		if rend := r.findPreferred(pref); rend != nil {
 			return rend
 		}
-		// Preferred mode unsupported → continue auto chain after that mode.
+		// Preferred mode not registered → continue auto chain after that mode.
 		return r.resolveAuto(caps, skipBefore(pref))
 	default: // auto
 		return r.resolveAuto(caps, "")
@@ -54,10 +55,10 @@ func (r *ModeResolver) resolveAuto(caps Capabilities, skipUntil string) Renderer
 	return r.findByName("placeholder")
 }
 
-func (r *ModeResolver) findPreferred(mode RenderMode, caps Capabilities) Renderer {
+func (r *ModeResolver) findPreferred(mode RenderMode) Renderer {
 	name := string(mode)
 	for _, rend := range r.Renderers {
-		if rend.Name() == name && rend.Supported(caps) {
+		if rend.Name() == name {
 			return rend
 		}
 	}
@@ -81,12 +82,8 @@ func skipBefore(mode RenderMode) string {
 	switch mode {
 	case ModeImage:
 		return "image"
-	case ModeHalfblock:
-		return "halfblock"
-	case ModeBraille:
-		return "braille"
-	case ModeASCII:
-		return "ascii"
+	case ModeChafa:
+		return "chafa"
 	default:
 		return ""
 	}

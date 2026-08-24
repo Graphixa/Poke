@@ -5,9 +5,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/ascii"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/braille"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
+	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 	"github.com/Graphixa/Pokedex/internal/search"
@@ -68,7 +66,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		return err
 	}
 
-	img := spriteimage.New(svc.Config.Render.Images)
+	img := spriteimage.New()
 	caps := sprite.DetectCapabilities(img.Available())
 	colorMode := sprite.ColorMode(svc.Config.Render.Color)
 	if colorMode == "" || colorMode == sprite.ColorAuto {
@@ -90,9 +88,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		},
 		Modes: sprite.NewModeResolver(
 			img,
-			halfblock.Renderer{},
-			braille.Renderer{},
-			ascii.Renderer{},
+			spritechafa.Renderer{},
 			placeholder.Renderer{},
 		),
 		Artefacts:     svc.Cache,

@@ -49,7 +49,7 @@ type Options struct {
 	Random         RandomHandler
 	Cache          CacheCommands
 	Theme          ThemeHandler
-	Test           TestHandler
+	Chafa          ChafaHandler
 	Stdout         io.Writer
 	Stderr         io.Writer
 	// OnDebug is invoked when --debug is set. path may be empty for the default log file.
@@ -61,9 +61,9 @@ type ThemeHandler interface {
 	Theme(context.Context) error
 }
 
-// TestHandler runs temporary visual sprite renderer comparisons.
-type TestHandler interface {
-	TestSprites(context.Context) error
+// ChafaHandler runs temporary Chafa sprite renderer comparisons.
+type ChafaHandler interface {
+	TestChafaSprites(context.Context) error
 }
 
 // CacheCommands handles cache maintenance subcommands.
@@ -158,7 +158,7 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newSearchCommand(options))
 	cmd.AddCommand(newRandomCommand(options))
 	cmd.AddCommand(newThemeCommand(options))
-	cmd.AddCommand(newTestCommand(options))
+	cmd.AddCommand(newChafaCommand(options))
 	return cmd
 }
 
@@ -327,17 +327,17 @@ func newThemeCommand(options Options) *cobra.Command {
 	}
 }
 
-func newTestCommand(options Options) *cobra.Command {
+func newChafaCommand(options Options) *cobra.Command {
 	return &cobra.Command{
-		Use:   "test",
-		Short: "Temporary: compare sprite renderers (halfblock/braille/ascii)",
-		Long:  "Renders Charizard and Blastoise with half-block, braille, ASCII, and placeholder at several sizes for visual assessment.",
+		Use:   "chafa",
+		Short: "Temporary: render sprites with Chafa (ploMP4/chafa-go)",
+		Long:  "Renders Charizard and Blastoise with Chafa at several cell sizes for visual assessment.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if options.Test == nil {
-				return fmt.Errorf("sprite test is unavailable")
+			if options.Chafa == nil {
+				return fmt.Errorf("chafa sprite test is unavailable")
 			}
-			return options.Test.TestSprites(cmd.Context())
+			return options.Chafa.TestChafaSprites(cmd.Context())
 		},
 	}
 }

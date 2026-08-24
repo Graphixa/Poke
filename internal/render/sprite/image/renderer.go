@@ -33,10 +33,10 @@ type Renderer struct {
 	failed bool
 }
 
-// New creates an Image renderer. imagesMode is "auto"|"kitty"|"iterm"|"off"
-// and only influences internal protocol selection — never exposed upward.
-func New(imagesMode string) *Renderer {
-	return &Renderer{proto: resolveProtocol(imagesMode)}
+// New creates an Image renderer that auto-detects Kitty/iTerm support from the
+// environment. There is no user-facing protocol override.
+func New() *Renderer {
+	return &Renderer{proto: detectProtocol()}
 }
 
 // Name returns the logical renderer class.
@@ -73,35 +73,18 @@ func (r *Renderer) Disable() {
 }
 
 // NativeCapable reports whether env heuristics suggest a native protocol.
-func NativeCapable(imagesMode string) bool {
-	return resolveProtocol(imagesMode) != protocolNone
+func NativeCapable() bool {
+	return detectProtocol() != protocolNone
 }
 
-func resolveProtocol(mode string) protocol {
-	switch mode {
-	case "off", "":
-		return protocolNone
-	case "kitty":
-		if envKitty() {
-			return protocolKitty
-		}
-		return protocolNone
-	case "iterm":
-		if envITerm() {
-			return protocolITerm
-		}
-		return protocolNone
-	case "auto":
-		if envKitty() {
-			return protocolKitty
-		}
-		if envITerm() {
-			return protocolITerm
-		}
-		return protocolNone
-	default:
-		return protocolNone
+func detectProtocol() protocol {
+	if envKitty() {
+		return protocolKitty
 	}
+	if envITerm() {
+		return protocolITerm
+	}
+	return protocolNone
 }
 
 func envKitty() bool {

@@ -25,6 +25,17 @@ func BucketSize(n int) int {
 	return best
 }
 
+// BucketFloor returns the largest SizeBucket that is ≤ n, or 0 if none fit.
+func BucketFloor(n int) int {
+	best := 0
+	for _, b := range SizeBuckets {
+		if b <= n && b > best {
+			best = b
+		}
+	}
+	return best
+}
+
 func abs(x int) int {
 	if x < 0 {
 		return -x
@@ -36,7 +47,7 @@ func abs(x int) int {
 //
 //	<hash>-<source>-<mode>-<w>x<h>-<color>-<version>
 //
-// Example: 004abc-pixel-halfblock-24x24-truecolor-v1
+// Example: 004abc-pixel-chafa-24x24-truecolor-v2
 func CacheKey(contentHash string, source SpriteSource, mode string, w, h int, color ColorMode) string {
 	if source == "" {
 		source = SourcePixel

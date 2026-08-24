@@ -5,17 +5,20 @@ import "github.com/Graphixa/Pokedex/internal/render/sprite"
 // Default responsive breakpoints. Sprite mins are overridden by config when set
 // on the model (see layoutThresholds).
 const (
-	defaultMinSpriteWidth  = 110
-	defaultMinSpriteHeight = 40
-	minSummaryWidth        = 88
-	minSummaryHeight       = 25
-	minFooterWidth         = 76
-	minFooterHeight        = 22
-	minTabWidth            = 64
-	minTwoPaneWidth        = 52
-	minTwoPaneHeight       = 18
-	minUsableWidth         = 40
-	minUsableHeight        = 12
+	defaultMinSpriteWidth = 80
+	// Room for a compact mosaic frame plus tabs/detail/footer chrome.
+	defaultMinSpriteHeight = 28
+	// Rows reserved outside the sprite itself (frame chrome, tabs, detail, footer).
+	spriteChromeRows = 12
+	minSummaryWidth  = 88
+	minSummaryHeight = 25
+	minFooterWidth   = 76
+	minFooterHeight  = 22
+	minTabWidth      = 64
+	minTwoPaneWidth  = 52
+	minTwoPaneHeight = 18
+	minUsableWidth   = 40
+	minUsableHeight  = 12
 )
 
 // layoutThresholds holds size gates; zero fields mean defaults.
@@ -45,6 +48,8 @@ type LayoutFlags struct {
 	ShortTabs     bool
 	OnePane       bool
 	TooSmall      bool
+	// SpriteSize is the square frame edge in cells when ShowSprite is true.
+	SpriteSize int
 }
 
 func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
@@ -52,6 +57,7 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	if width <= 0 || height <= 0 {
 		// Before the first WindowSizeMsg, assume a full layout for tests/snapshots.
 		f.ShowSprite = !th.DisableSprite
+		f.SpriteSize = sprite.FrameWidth
 		f.ShowSummary = true
 		f.VerboseFooter = true
 		return f
@@ -59,13 +65,30 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	f.TooSmall = width < minUsableWidth || height < minUsableHeight
 	f.OnePane = width < minTwoPaneWidth || height < minTwoPaneHeight
 	minSW, minSH := th.spriteMin()
-	canFitFrame := f.rightWidth() >= sprite.MinRightWidthForSprite
+	frame := maxSpriteFrame(height, f.rightWidth())
 	f.ShowSprite = !th.DisableSprite && !f.OnePane && !f.TooSmall &&
-		width >= minSW && height >= minSH && canFitFrame
+		width >= minSW && height >= minSH && frame >= sprite.MinFrameSize
+	if f.ShowSprite {
+		f.SpriteSize = frame
+	}
 	f.ShowSummary = !f.OnePane && !f.TooSmall && width >= minSummaryWidth && height >= minSummaryHeight
 	f.VerboseFooter = !f.TooSmall && width >= minFooterWidth && height >= minFooterHeight
 	f.ShortTabs = width < minTabWidth
 	return f
+}
+
+// maxSpriteFrame picks the largest bucketed square frame that fits the terminal.
+func maxSpriteFrame(termH, rightW int) int {
+	hBudget := termH - spriteChromeRows
+	wBudget := rightW - sprite.SeparatorWidth - sprite.MinInfoWidthBesideSprite
+	n := hBudget
+	if wBudget < n {
+		n = wBudget
+	}
+	if n > sprite.FrameWidth {
+		n = sprite.FrameWidth
+	}
+	return sprite.BucketFloor(n)
 }
 
 func (f LayoutFlags) leftWidth() int {
@@ -89,10 +112,10 @@ func (f LayoutFlags) rightWidth() int {
 	return f.Width - f.leftWidth()
 }
 
-// spriteFrameSize returns the fixed frame dimensions when the sprite is shown.
+// spriteFrameSize returns the square frame dimensions when the sprite is shown.
 func (f LayoutFlags) spriteFrameSize() (w, h int) {
-	if !f.ShowSprite {
+	if !f.ShowSprite || f.SpriteSize < sprite.MinFrameSize {
 		return 0, 0
 	}
-	return sprite.FrameWidth, sprite.FrameHeight
+	return f.SpriteSize, f.SpriteSize
 }

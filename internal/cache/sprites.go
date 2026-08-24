@@ -43,7 +43,7 @@ func (s *Service) Halfblock(ctx context.Context, key string) (string, error) {
 	return string(data), nil
 }
 
-// StoreHalfblock persists a derived sprite artefact (half-block, braille, ascii, …).
+// StoreHalfblock persists a derived sprite artefact (chafa ANSI, …).
 func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
 	if key == "" {
 		return errors.New("cache: refuse to store empty halfblock key")

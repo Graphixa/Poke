@@ -22,8 +22,8 @@ type Options struct {
 	Selected *domain.SpeciesSummary
 	Prefill  string
 	Context  context.Context
-	// MinWidthForSprite / MinHeightForSprite gate the fixed sprite frame.
-	// Zero uses package defaults (110×40).
+	// MinWidthForSprite / MinHeightForSprite gate when the sprite panel may appear.
+	// Zero uses package defaults (80×28). Frame size scales down to fit.
 	MinWidthForSprite  int
 	MinHeightForSprite int
 	// DisableSprite forces the sprite panel off regardless of terminal size.
