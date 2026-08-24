@@ -8,6 +8,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/textwidth"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
@@ -107,39 +108,45 @@ func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int)
 	return strings.Join(lines, "\n")
 }
 
-// SpritePlaceholder renders an unbordered 1:1 square with a centred [ Name ].
-func SpritePlaceholder(name string, side int) string {
-	if side < 5 {
-		side = 5
+// SpritePlaceholder renders an unbordered frame with a centred [ Name ].
+func SpritePlaceholder(name string, width, height int) string {
+	if width < 1 {
+		width = sprite.FrameWidth
+	}
+	if height < 1 {
+		height = sprite.FrameHeight
 	}
 	label := "[ " + name + " ]"
-	if textwidth.Width(label) > side {
-		label = textwidth.Truncate(label, side)
+	if textwidth.Width(label) > width {
+		label = textwidth.Truncate(label, width)
 	}
-	return lipgloss.Place(side, side, lipgloss.Center, lipgloss.Center, label)
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, label)
 }
 
-// SpritePanel renders precomputed half-block ANSI as an unbordered square.
-// ansi must already be cells×cells lines; it is clipped/padded to side×side.
-func SpritePanel(ansi string, side int) string {
-	if side < 5 {
-		side = 5
+// SpritePanel renders precomputed half-block ANSI as an unbordered frame.
+// ansi is clipped/padded to width×height cells.
+func SpritePanel(ansi string, width, height int) string {
+	if width < 1 {
+		width = sprite.FrameWidth
+	}
+	if height < 1 {
+		height = sprite.FrameHeight
 	}
 	lines := strings.Split(ansi, "\n")
-	if len(lines) > side {
-		lines = lines[:side]
+	if len(lines) > height {
+		lines = lines[:height]
 	}
-	for len(lines) < side {
-		lines = append(lines, strings.Repeat(" ", side))
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", width))
 	}
 	for i := range lines {
 		w := lipgloss.Width(lines[i])
-		if w < side {
-			lines[i] = lines[i] + strings.Repeat(" ", side-w)
-		} else if w > side {
-			lines[i] = lipgloss.NewStyle().MaxWidth(side).Render(lines[i])
-			if lipgloss.Width(lines[i]) < side {
-				lines[i] += strings.Repeat(" ", side-lipgloss.Width(lines[i]))
+		if w < width {
+			lines[i] = lines[i] + strings.Repeat(" ", width-w)
+		} else if w > width {
+			lines[i] = lipgloss.NewStyle().MaxWidth(width).Render(lines[i])
+			if lipgloss.Width(lines[i]) < width {
+				lines[i] += strings.Repeat(" ", width-lipgloss.Width(lines[i]))
 			}
 		}
 	}

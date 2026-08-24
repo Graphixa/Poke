@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/render/halfblock"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 func TestSpriteAndHalfblockArtefacts(t *testing.T) {
@@ -31,9 +31,7 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	key := halfblock.CacheKey(hash, halfblock.Options{
-		Width: 8, Height: 8, Palette: halfblock.PaletteTrueColor,
-	})
+	key := sprite.CacheKey(hash, sprite.SourcePixel, "halfblock", 8, 8, sprite.ColorTrueColor)
 	if err := svc.StoreHalfblock(context.Background(), key, "ANSI"); err != nil {
 		t.Fatal(err)
 	}
@@ -43,9 +41,7 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 	}
 
 	// Dimension change → different key → miss (invalidation).
-	other := halfblock.CacheKey(hash, halfblock.Options{
-		Width: 10, Height: 10, Palette: halfblock.PaletteTrueColor,
-	})
+	other := sprite.CacheKey(hash, sprite.SourcePixel, "halfblock", 10, 10, sprite.ColorTrueColor)
 	if _, err := svc.Halfblock(context.Background(), other); err == nil {
 		t.Fatal("expected miss for different size key")
 	}

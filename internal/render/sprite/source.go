@@ -1,4 +1,4 @@
-package sprites
+package sprite
 
 import (
 	"bytes"
@@ -24,64 +24,64 @@ type Downloader interface {
 	GetSprite(ctx context.Context, spriteURL string) (io.ReadCloser, error)
 }
 
-// Resolver selects front_default, downloads through the cache, and validates PNG.
-type Resolver struct {
+// SourceResolver selects front_default, downloads through the cache, and validates PNG.
+type SourceResolver struct {
 	Store PNGStore
 	API   Downloader
 }
 
-// Result is either validated PNG bytes or a signal to use the name placeholder.
-type Result struct {
+// SourceResult is either validated PNG bytes or a signal to use the placeholder.
+type SourceResult struct {
 	ContentHash    string
 	PNG            []byte
 	UsePlaceholder bool
 }
 
 // Resolve returns front_default PNG bytes, or UsePlaceholder when missing/invalid.
-func (r *Resolver) Resolve(ctx context.Context, pokemon domain.Pokemon) Result {
+func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon) SourceResult {
 	url := pokemon.Sprites.FrontDefault
 	if url == "" {
-		return Result{UsePlaceholder: true}
+		return SourceResult{UsePlaceholder: true}
 	}
 	if r.Store != nil {
 		hash, data, err := r.Store.SpriteByURL(ctx, url)
 		if err == nil && len(data) > 0 {
 			if ValidatePNG(data) == nil {
-				return Result{ContentHash: hash, PNG: data}
+				return SourceResult{ContentHash: hash, PNG: data}
 			}
 		}
 	}
 	if r.API == nil {
-		return Result{UsePlaceholder: true}
+		return SourceResult{UsePlaceholder: true}
 	}
 	data, err := download(ctx, r.API, url)
 	if err != nil || len(data) == 0 {
-		return Result{UsePlaceholder: true}
+		return SourceResult{UsePlaceholder: true}
 	}
 	if err := ValidatePNG(data); err != nil {
-		return Result{UsePlaceholder: true}
+		return SourceResult{UsePlaceholder: true}
 	}
 	hash := ContentHash(data)
 	if r.Store != nil {
 		_ = r.Store.StoreSpriteByURL(ctx, url, hash, data)
 	}
-	return Result{ContentHash: hash, PNG: data}
+	return SourceResult{ContentHash: hash, PNG: data}
 }
 
 // ValidatePNG reports whether data is a decodable PNG image.
 func ValidatePNG(data []byte) error {
 	if len(data) == 0 {
-		return fmt.Errorf("sprites: empty png")
+		return fmt.Errorf("sprite: empty png")
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("sprites: invalid png: %w", err)
+		return fmt.Errorf("sprite: invalid png: %w", err)
 	}
 	if format != "png" {
-		return fmt.Errorf("sprites: not png (%s)", format)
+		return fmt.Errorf("sprite: not png (%s)", format)
 	}
 	if cfg.Width < 1 || cfg.Height < 1 {
-		return fmt.Errorf("sprites: empty dimensions")
+		return fmt.Errorf("sprite: empty dimensions")
 	}
 	return nil
 }

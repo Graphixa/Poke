@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -35,7 +34,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.Species = msg.species
 		r.HasCore = true
 		r.CoreErr = nil
-		r.clearSprite()
+		m.clearSpriteArt(r)
 		return m, tea.Batch(m.ensureTabLoadLocked(), m.ensureSpriteLoad())
 
 	case evolutionMsg:
@@ -315,40 +314,38 @@ func (m *Model) cancelSprite() {
 	m.spriteReqID++
 }
 
+func (m *Model) clearSpriteArt(r *resourceCache) {
+	if m.sprites != nil {
+		m.sprites.ClearNative()
+	}
+	if r != nil {
+		r.clearSprite()
+	}
+}
+
 func (m *Model) currentSpriteSide() int {
 	lay := m.layout()
-	if !lay.ShowSprite {
-		return 0
-	}
-	// Sprite floats in the right pane beside identity info (unbordered).
-	return views.SpriteSideFor(lay.rightWidth(), m.height)
+	w, _ := lay.spriteFrameSize()
+	return w
 }
 
 func (m *Model) currentSpriteCells() int {
-	side := m.currentSpriteSide()
-	if side < 5 {
-		return 0
-	}
-	return side
+	return m.currentSpriteSide()
 }
 
-func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
+func (m *Model) handleSpriteLayoutChange(prevShow bool, _ int) tea.Cmd {
 	lay := m.layout()
 	if !lay.ShowSprite {
 		m.cancelSprite()
 		if sel, ok := m.selected(); ok {
-			if r := m.resources[sel.ID]; r != nil {
-				r.clearSprite()
-			}
+			m.clearSpriteArt(m.resources[sel.ID])
 		}
 		return nil
 	}
-	side := m.currentSpriteSide()
-	if !prevShow || side != prevSide {
+	// Fixed frame: only reload when transitioning from hidden → shown.
+	if !prevShow {
 		if sel, ok := m.selected(); ok {
-			if r := m.resources[sel.ID]; r != nil {
-				r.clearSprite()
-			}
+			m.clearSpriteArt(m.resources[sel.ID])
 		}
 		return m.ensureSpriteLoad()
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
@@ -204,28 +205,13 @@ func renderSearch(d BrowseData, width int) string {
 	return components.Search(d.Query, width)
 }
 
-// SpriteSideFor sizes the unbordered sprite square in the right identity band.
+// SpriteSideFor returns the fixed sprite frame width when the right pane can
+// host it; otherwise 0. Height is unused (frame is square) but kept for callers.
 func SpriteSideFor(rightWidth, _ int) int {
-	return spriteSideForRight(rightWidth)
-}
-
-func spriteSideForRight(rightWidth int) int {
-	// Float beside identity fields (header + type/ability block), not the summary.
-	side := rightWidth * 30 / 100
-	if side < 8 {
-		side = 8
-	}
-	maxSide := 12
-	if side > maxSide {
-		side = maxSide
-	}
-	if side > rightWidth-20 {
-		side = rightWidth - 20
-	}
-	if side < 5 {
+	if rightWidth < sprite.MinRightWidthForSprite {
 		return 0
 	}
-	return side
+	return sprite.FrameWidth
 }
 
 func renderRight(d BrowseData, width, height int) string {
@@ -262,41 +248,44 @@ func renderRight(d BrowseData, width, height int) string {
 // left, unbordered sprite on the right, separated by " │ ".
 func renderIdentityBand(d BrowseData, width int) string {
 	side := 0
-	var sprite string
+	frameH := 0
+	var art string
 	if d.ShowSprite {
 		side = d.SpriteSide
 		if side <= 0 {
-			side = spriteSideForRight(width)
+			side = SpriteSideFor(width, 0)
 		}
-		if side >= 5 {
+		if side >= sprite.FrameWidth {
+			side = sprite.FrameWidth
+			frameH = sprite.FrameHeight
 			if d.SpriteANSI != "" {
-				sprite = components.SpritePanel(d.SpriteANSI, side)
+				art = components.SpritePanel(d.SpriteANSI, side, frameH)
 			} else if d.HasSelected {
-				sprite = components.SpritePlaceholder(d.Selected.DisplayName, side)
+				art = components.SpritePlaceholder(d.Selected.DisplayName, side, frameH)
 			}
 		} else {
 			side = 0
-			sprite = ""
+			art = ""
 		}
 	}
 
 	bandH := d.IdentityHeight
 	if bandH <= 0 {
-		bandH = side
-		if bandH < 8 {
-			bandH = 8
+		bandH = frameH
+		if bandH < identityMinBand {
+			bandH = identityMinBand
 		}
 	}
-	if sprite != "" && bandH < side {
-		bandH = side
+	if art != "" && bandH < frameH {
+		bandH = frameH
 	}
 
-	sepW := 3 // " │ "
+	sepW := sprite.SeparatorWidth
 	infoW := width
-	if sprite != "" {
+	if art != "" {
 		infoW = width - side - sepW
-		if infoW < 16 {
-			sprite = ""
+		if infoW < sprite.MinInfoWidthBesideSprite {
+			art = ""
 			side = 0
 			infoW = width
 		}
@@ -318,13 +307,15 @@ func renderIdentityBand(d BrowseData, width int) string {
 	}
 
 	text = lipgloss.NewStyle().Width(infoW).Height(bandH).MaxHeight(bandH).Render(text)
-	if sprite == "" {
+	if art == "" {
 		return text
 	}
 	sep := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(" │ ")
-	sprite = lipgloss.NewStyle().Width(side).Height(bandH).MaxHeight(bandH).Render(sprite)
-	return lipgloss.JoinHorizontal(lipgloss.Top, text, sep, sprite)
+	art = lipgloss.NewStyle().Width(side).Height(bandH).MaxHeight(bandH).Render(art)
+	return lipgloss.JoinHorizontal(lipgloss.Top, text, sep, art)
 }
+
+const identityMinBand = 8
 
 func visibleRows(rows []components.ListRow, off, count int) []components.ListRow {
 	if off < 0 {

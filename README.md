@@ -96,7 +96,7 @@ Typing always filters the list (including the letter `q`). Press `?` in browse m
 
 Unbound in v1: Enter, `r`, `/`.
 
-Sprites need roughly **100×30** terminal cells; smaller terminals hide the sprite and keep browse usable. Below about **40×12**, the UI shows a “terminal too small” message.
+Sprites need roughly **110×40** terminal cells for the fixed 24×24 sprite frame; smaller terminals hide the sprite and keep browse usable. Below about **40×12**, the UI shows a “terminal too small” message. Capable terminals (Kitty / iTerm2) may show the PNG natively; others use coloured half-block cell art.
 
 ## Config and cache paths
 

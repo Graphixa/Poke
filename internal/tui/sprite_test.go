@@ -40,6 +40,8 @@ func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (stri
 	return f.ansi, false
 }
 
+func (f *fakeSprites) ClearNative() {}
+
 func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}

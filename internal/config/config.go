@@ -60,10 +60,26 @@ type Data struct {
 }
 
 type Render struct {
-	Images              string `yaml:"images"`
-	Halfblock           bool   `yaml:"halfblock"`
-	PlaceholderFallback bool   `yaml:"placeholder_fallback"`
-	Sprite              string `yaml:"sprite"`
+	// SpriteMode selects the logical renderer class:
+	// auto | image | halfblock | braille | ascii | off
+	SpriteMode string `yaml:"sprite_mode"`
+	// SpriteSource selects pixel (nearest) or artwork (filtered) assets.
+	SpriteSource string `yaml:"sprite_source"`
+	// Color selects colour encoding: auto | truecolor | 256 | mono
+	Color string `yaml:"color"`
+	// Dithering is reserved; v1 only supports "none".
+	Dithering string `yaml:"dithering"`
+	// Animate is reserved; v1 only supports "auto"/"off" (animation not required).
+	Animate string `yaml:"animate"`
+	// Images is an advanced native-protocol hint for the Image renderer:
+	// auto | kitty | iterm | off. Prefer sprite_mode for class selection.
+	Images string `yaml:"images"`
+	// Sprite selects which PokeAPI sprite field to use (v1: front_default).
+	Sprite string `yaml:"sprite"`
+
+	// Deprecated fields retained for older config files.
+	Halfblock           bool `yaml:"halfblock"`
+	PlaceholderFallback bool `yaml:"placeholder_fallback"`
 }
 
 type TUI struct {
@@ -100,15 +116,20 @@ func Default() Config {
 		},
 		Data: Data{Language: "en", VersionGroup: "latest"},
 		Render: Render{
-			Images:              "off",
+			SpriteMode:          "auto",
+			SpriteSource:        "pixel",
+			Color:               "auto",
+			Dithering:           "none",
+			Animate:             "auto",
+			Images:              "auto",
 			Halfblock:           true,
 			PlaceholderFallback: true,
 			Sprite:              "front_default",
 		},
 		TUI: TUI{
 			ShowSprite:         true,
-			MinWidthForSprite:  100,
-			MinHeightForSprite: 30,
+			MinWidthForSprite:  110,
+			MinHeightForSprite: 40,
 			FooterHelp:         "compact",
 		},
 		Theme: Theme{Name: "catppuccin"},
@@ -139,8 +160,35 @@ func (c Config) Validate() error {
 	if c.Data.VersionGroup == "" {
 		problems = append(problems, "data.version_group must not be empty")
 	}
-	if c.Render.Images != "off" {
-		problems = append(problems, `render.images must be "off" in v1`)
+	switch c.Render.SpriteMode {
+	case "", "auto", "image", "halfblock", "braille", "ascii", "off":
+	default:
+		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "halfblock", "braille", "ascii", "off"`)
+	}
+	switch c.Render.SpriteSource {
+	case "", "pixel", "artwork":
+	default:
+		problems = append(problems, `render.sprite_source must be one of "pixel", "artwork"`)
+	}
+	switch c.Render.Color {
+	case "", "auto", "truecolor", "256", "mono":
+	default:
+		problems = append(problems, `render.color must be one of "auto", "truecolor", "256", "mono"`)
+	}
+	switch c.Render.Dithering {
+	case "", "none":
+	default:
+		problems = append(problems, `render.dithering must be "none" in v1`)
+	}
+	switch c.Render.Animate {
+	case "", "auto", "on", "off":
+	default:
+		problems = append(problems, `render.animate must be one of "auto", "on", "off"`)
+	}
+	switch c.Render.Images {
+	case "off", "auto", "kitty", "iterm":
+	default:
+		problems = append(problems, `render.images must be one of "auto", "kitty", "iterm", "off"`)
 	}
 	if c.Render.Sprite != "front_default" {
 		problems = append(problems, `render.sprite must be "front_default" in v1`)
@@ -167,6 +215,19 @@ func (c Config) Validate() error {
 		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// EffectiveSpriteMode returns the logical sprite renderer preference, honouring
+// legacy halfblock/images fields when sprite_mode is unset.
+func (c Config) EffectiveSpriteMode() string {
+	if c.Render.SpriteMode != "" {
+		return c.Render.SpriteMode
+	}
+	// Legacy configs without sprite_mode.
+	if !c.Render.Halfblock && (c.Render.Images == "off" || c.Render.Images == "") {
+		return "off"
+	}
+	return "auto"
 }
 
 type Paths struct {

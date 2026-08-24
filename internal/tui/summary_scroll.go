@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/tui/components"
 )
 
@@ -63,13 +64,13 @@ func (m *Model) advanceSummaryScroll() {
 const identityInfoLines = 8
 
 func (m Model) identityBandHeight() int {
-	side := m.currentSpriteSide()
+	_, frameH := m.layout().spriteFrameSize()
 	// Keep room for stacked info + Summary under it beside the sprite.
 	minText := identityInfoLines + 3
-	if side < minText {
+	if frameH < minText {
 		return minText
 	}
-	return side
+	return frameH
 }
 
 func (m Model) summaryColumnWidth() int {
@@ -81,10 +82,9 @@ func (m Model) summaryColumnWidth() int {
 	if !lay.ShowSprite {
 		return right
 	}
-	side := m.currentSpriteSide()
-	sepW := 3
-	infoW := right - side - sepW
-	if infoW < 16 {
+	side, _ := lay.spriteFrameSize()
+	infoW := right - side - sprite.SeparatorWidth
+	if infoW < sprite.MinInfoWidthBesideSprite {
 		return right
 	}
 	return infoW

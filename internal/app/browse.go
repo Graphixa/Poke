@@ -4,10 +4,15 @@ import (
 	"context"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/halfblock"
-	"github.com/Graphixa/Pokedex/internal/render/sprites"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/ascii"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/braille"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
+	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui"
+	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
 type tuiDetails struct {
@@ -35,15 +40,21 @@ func (t tuiDetails) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon) ([
 }
 
 type tuiSprites struct {
-	*sprites.Renderer
+	*sprite.Engine
 }
 
 func (t tuiSprites) Render(ctx context.Context, pokemon domain.Pokemon, cells int) (string, bool) {
-	if t.Renderer == nil {
+	if t.Engine == nil {
 		return "", true
 	}
-	res := t.Renderer.Render(ctx, pokemon, cells)
+	res := t.Engine.Render(ctx, pokemon, cells)
 	return res.ANSI, res.UsePlaceholder
+}
+
+func (t tuiSprites) ClearNative() {
+	if t.Engine != nil {
+		t.Engine.ClearNative()
+	}
 }
 
 func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
@@ -56,21 +67,53 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	if err != nil {
 		return err
 	}
-	renderer := &sprites.Renderer{
-		Resolver: &sprites.Resolver{
+
+	img := spriteimage.New(svc.Config.Render.Images)
+	caps := sprite.DetectCapabilities(img.Available())
+	colorMode := sprite.ColorMode(svc.Config.Render.Color)
+	if colorMode == "" || colorMode == sprite.ColorAuto {
+		if caps.TrueColor {
+			colorMode = sprite.ColorTrueColor
+		} else {
+			colorMode = sprite.Color256
+		}
+	}
+	sourceKind := sprite.SpriteSource(svc.Config.Render.SpriteSource)
+	if sourceKind == "" {
+		sourceKind = sprite.SourcePixel
+	}
+
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{
 			Store: svc.Cache,
 			API:   svc.API,
 		},
-		Artefacts: svc.Cache,
-		Enabled:   svc.Config.Render.Halfblock,
-		Palette:   halfblock.DetectPalette(),
+		Modes: sprite.NewModeResolver(
+			img,
+			halfblock.Renderer{},
+			braille.Renderer{},
+			ascii.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:     svc.Cache,
+		Caps:          caps,
+		Preference:    sprite.RenderMode(svc.Config.EffectiveSpriteMode()),
+		Color:         colorMode,
+		SourceKind:    sourceKind,
+		Background:    style.BaseRGBA(),
+		ClearNativeFn: spriteimage.ClearBestEffort,
+		OnNativeFail:  img.Disable,
 	}
+
 	return tui.Run(ctx, tui.Options{
-		Index:    search.Build(index),
-		Details:  tuiDetails{NewDetailService(svc.Cache)},
-		Sprites:  tuiSprites{renderer},
-		Selected: req.Selected,
-		Prefill:  req.Prefill,
-		Context:  ctx,
+		Index:              search.Build(index),
+		Details:            tuiDetails{NewDetailService(svc.Cache)},
+		Sprites:            tuiSprites{engine},
+		Selected:           req.Selected,
+		Prefill:            req.Prefill,
+		Context:            ctx,
+		MinWidthForSprite:  svc.Config.TUI.MinWidthForSprite,
+		MinHeightForSprite: svc.Config.TUI.MinHeightForSprite,
+		DisableSprite:      !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
 	})
 }

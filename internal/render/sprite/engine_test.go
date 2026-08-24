@@ -1,0 +1,251 @@
+package sprite_test
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/ascii"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/braille"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
+)
+
+type memStore struct {
+	mu       sync.Mutex
+	byURL    map[string]string
+	png      map[string][]byte
+	artefact map[string]string
+}
+
+func newMemStore() *memStore {
+	return &memStore{
+		byURL:    make(map[string]string),
+		png:      make(map[string][]byte),
+		artefact: make(map[string]string),
+	}
+}
+
+func (m *memStore) SpriteByURL(_ context.Context, url string) (string, []byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	hash, ok := m.byURL[url]
+	if !ok {
+		return "", nil, errors.New("not found")
+	}
+	data, ok := m.png[hash]
+	if !ok {
+		return "", nil, errors.New("not found")
+	}
+	return hash, append([]byte(nil), data...), nil
+}
+
+func (m *memStore) StoreSpriteByURL(_ context.Context, url, contentHash string, data []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.byURL[url] = contentHash
+	m.png[contentHash] = append([]byte(nil), data...)
+	return nil
+}
+
+func (m *memStore) Halfblock(_ context.Context, key string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.artefact[key]
+	if !ok {
+		return "", errors.New("not found")
+	}
+	return v, nil
+}
+
+func (m *memStore) StoreHalfblock(_ context.Context, key, ansi string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.artefact[key] = ansi
+	return nil
+}
+
+type fakeAPI struct {
+	data map[string][]byte
+	err  error
+}
+
+func (f *fakeAPI) GetSprite(_ context.Context, url string) (io.ReadCloser, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	data, ok := f.data[url]
+	if !ok {
+		return nil, errors.New("missing")
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func mustPNG(t *testing.T, c color.RGBA) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 2; x++ {
+			img.SetRGBA(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestSourceResolve(t *testing.T) {
+	store := newMemStore()
+	png := mustPNG(t, color.RGBA{255, 0, 0, 255})
+	api := &fakeAPI{data: map[string][]byte{"https://example/a.png": png}}
+	r := &sprite.SourceResolver{Store: store, API: api}
+	res := r.Resolve(context.Background(), domain.Pokemon{
+		Sprites: domain.Sprites{FrontDefault: "https://example/a.png"},
+	})
+	if res.UsePlaceholder || len(res.PNG) == 0 || res.ContentHash == "" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	// Second resolve hits store.
+	res2 := r.Resolve(context.Background(), domain.Pokemon{
+		Sprites: domain.Sprites{FrontDefault: "https://example/a.png"},
+	})
+	if res2.ContentHash != res.ContentHash {
+		t.Fatalf("cache miss: %s vs %s", res2.ContentHash, res.ContentHash)
+	}
+}
+
+func TestModeResolverPriority(t *testing.T) {
+	modes := sprite.NewModeResolver(
+		halfblock.Renderer{},
+		braille.Renderer{},
+		ascii.Renderer{},
+		placeholder.Renderer{},
+	)
+	caps := sprite.Capabilities{TrueColor: true, ANSI256: true, Unicode: true, Braille: true}
+	r := modes.Resolve(caps, sprite.ModeAuto)
+	if r == nil || r.Name() != "halfblock" {
+		t.Fatalf("auto = %v", r)
+	}
+	r = modes.Resolve(caps, sprite.ModeBraille)
+	if r == nil || r.Name() != "braille" {
+		t.Fatalf("braille = %v", r)
+	}
+	r = modes.Resolve(sprite.Capabilities{}, sprite.ModeAuto)
+	if r == nil || r.Name() != "ascii" {
+		// ascii Supported always true; placeholder after
+		if r.Name() != "ascii" && r.Name() != "placeholder" {
+			t.Fatalf("empty caps auto = %s", r.Name())
+		}
+	}
+}
+
+func TestEngineHalfblockAndCache(t *testing.T) {
+	store := newMemStore()
+	png := mustPNG(t, color.RGBA{0, 128, 255, 255})
+	api := &fakeAPI{data: map[string][]byte{"https://example/s.png": png}}
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store, API: api},
+		Modes: sprite.NewModeResolver(
+			halfblock.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeHalfblock,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+	}
+	poke := domain.Pokemon{
+		ID: 4, DisplayName: "Charmander",
+		Sprites: domain.Sprites{FrontDefault: "https://example/s.png"},
+	}
+	res := engine.Render(context.Background(), poke, 24)
+	if res.UsePlaceholder || res.ANSI == "" || res.Backend != "halfblock" {
+		t.Fatalf("result=%+v", res)
+	}
+	if !strings.Contains(res.ANSI, "▀") {
+		t.Fatal("expected half-block glyph")
+	}
+	if res.CacheKey == "" {
+		t.Fatal("expected cache key")
+	}
+	// Second render hits artefact cache.
+	res2 := engine.Render(context.Background(), poke, 24)
+	if res2.ANSI != res.ANSI || res2.CacheKey != res.CacheKey {
+		t.Fatalf("cache mismatch")
+	}
+}
+
+func TestEnginePlaceholder(t *testing.T) {
+	engine := &sprite.Engine{
+		Source:     &sprite.SourceResolver{},
+		Modes:      sprite.NewModeResolver(placeholder.Renderer{}),
+		Preference: sprite.ModeAuto,
+	}
+	res := engine.Render(context.Background(), domain.Pokemon{DisplayName: "Bulbasaur"}, 24)
+	if !res.UsePlaceholder {
+		t.Fatalf("expected placeholder: %+v", res)
+	}
+}
+
+func TestBrailleASCIIPlaceholder(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 2; y < 6; y++ {
+		for x := 2; x < 6; x++ {
+			img.SetRGBA(x, y, color.RGBA{255, 255, 255, 255})
+		}
+	}
+	opts := sprite.RenderOptions{
+		Width: 24, Height: 8, PreserveAR: true,
+		BackgroundColor: color.RGBA{A: 255},
+		Source:          sprite.SourcePixel,
+		Label:           "Test",
+	}
+	bf, err := (braille.Renderer{}).Render(context.Background(), img, opts)
+	if err != nil || bf.Backend != "braille" || bf.Text == "" {
+		t.Fatalf("braille: %+v err=%v", bf, err)
+	}
+	af, err := (ascii.Renderer{}).Render(context.Background(), img, opts)
+	if err != nil || af.Backend != "ascii" || af.Text == "" {
+		t.Fatalf("ascii: %+v err=%v", af, err)
+	}
+	pf, err := (placeholder.Renderer{}).Render(context.Background(), nil, opts)
+	if err != nil || !strings.Contains(pf.Text, "Test") {
+		t.Fatalf("placeholder: %+v err=%v", pf, err)
+	}
+}
+
+func TestCacheKeyRoundTrip(t *testing.T) {
+	key := sprite.CacheKey("abc", sprite.SourcePixel, "halfblock", 24, 24, sprite.ColorTrueColor)
+	hash, src, mode, w, h, color, ver, err := sprite.ParseCacheKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != "abc" || src != sprite.SourcePixel || mode != "halfblock" || w != 24 || h != 24 || color != sprite.ColorTrueColor || ver != sprite.AlgorithmVersion {
+		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s", hash, src, mode, w, h, color, ver)
+	}
+	if sprite.BucketSize(23) != 24 && sprite.BucketSize(23) != 20 {
+		t.Fatalf("bucket 23 = %d", sprite.BucketSize(23))
+	}
+}
+
+func TestValidatePNG(t *testing.T) {
+	if err := sprite.ValidatePNG(mustPNG(t, color.RGBA{1, 2, 3, 255})); err != nil {
+		t.Fatal(err)
+	}
+	if err := sprite.ValidatePNG([]byte("xyz")); err == nil {
+		t.Fatal("expected error")
+	}
+}

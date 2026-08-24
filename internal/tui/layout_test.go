@@ -21,8 +21,9 @@ func TestLayoutBreakpoints(t *testing.T) {
 		tooSmall        bool
 	}{
 		{120, 40, true, true, true, false, false, false},
+		{109, 40, false, true, true, false, false, false},
+		{110, 39, false, true, true, false, false, false},
 		{99, 40, false, true, true, false, false, false},
-		{100, 29, false, true, true, false, false, false},
 		{87, 40, false, false, true, false, false, false},
 		{88, 24, false, false, true, false, false, false},
 		{75, 40, false, false, false, false, false, false},
@@ -45,7 +46,7 @@ func TestLayoutBreakpoints(t *testing.T) {
 }
 
 func TestSpritePlaceholder(t *testing.T) {
-	out := components.SpritePlaceholder("Charmander", 20)
+	out := components.SpritePlaceholder("Charmander", 24, 24)
 	if !strings.Contains(out, "[ Charmander ]") {
 		t.Fatalf("placeholder = %q", out)
 	}
@@ -57,12 +58,13 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		{Summary: domain.SpeciesSummary{ID: 5, DisplayName: "Charmeleon", Types: []string{"fire"}}},
 	}
 	out := views.Browse(views.BrowseData{
-		Width: 120, Height: 36,
+		Width: 120, Height: 40,
 		Query: "c",
 		Rows:  rows, ListOff: 0,
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
 		ShowSprite:  true, ShowSummary: true, VerboseFooter: true,
+		SpriteSide:  24,
 		ActiveTab: 1,
 		TabLabels: []string{"Stats", "Evolution", "Locations", "Moves", "Flavour", "Info"},
 		Info: components.MainInfo{
@@ -90,10 +92,11 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 	}
 	// Query is non-empty so placeholder text is replaced by the typed query.
 	out2 := views.Browse(views.BrowseData{
-		Width: 120, Height: 36, Query: "c",
+		Width: 120, Height: 40, Query: "c",
 		Rows: rows, HasSelected: true,
 		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
 		ShowSprite: true, ShowSummary: true, VerboseFooter: true,
+		SpriteSide:  24,
 		TabLabels:   []string{"Stats", "Evolution", "Locations", "Moves", "Flavour", "Info"},
 		Info:        components.MainInfo{Types: "Fire"},
 		DetailTitle: "Stats",

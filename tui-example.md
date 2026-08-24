@@ -38,7 +38,7 @@ Pokedex — Browse Mode
 Notes:
 
 - Left ~1/3 (search + species list only), right ~2/3.
-- Right identity band is **two columns**: (main info stacked above Summary) | unbordered sprite. Separator is `│` before the sprite. Summary is not a third side-by-side column.
+- Right identity band is **two columns**: (main info stacked above Summary) | unbordered **fixed 24×24** sprite. Separator is `│` before the sprite. Summary is not a third side-by-side column. Aspect ratio is preserved (letterboxed); the sprite region hides when the terminal is too small.
 - Press `i` (with empty search) for a Pokémon info modal; `i` / Esc closes it. Typed `i` while filtering goes into the search box.
 - This snapshot is Charmander on the Evolution tab after a `c`-prefix filter. Other tabs replace only the inner detail card.
 - `q` quits only when the search query is empty; typed `q` otherwise goes into the filter. `Ctrl+C` always quits.

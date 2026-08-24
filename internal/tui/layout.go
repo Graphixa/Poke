@@ -1,19 +1,40 @@
 package tui
 
-// Responsive breakpoints from plans/DECISIONS.md.
+import "github.com/Graphixa/Pokedex/internal/render/sprite"
+
+// Default responsive breakpoints. Sprite mins are overridden by config when set
+// on the model (see layoutThresholds).
 const (
-	minSpriteWidth   = 100
-	minSpriteHeight  = 30
-	minSummaryWidth  = 88
-	minSummaryHeight = 25
-	minFooterWidth   = 76
-	minFooterHeight  = 22
-	minTabWidth      = 64
-	minTwoPaneWidth  = 52
-	minTwoPaneHeight = 18
-	minUsableWidth   = 40
-	minUsableHeight  = 12
+	defaultMinSpriteWidth  = 110
+	defaultMinSpriteHeight = 40
+	minSummaryWidth        = 88
+	minSummaryHeight       = 25
+	minFooterWidth         = 76
+	minFooterHeight        = 22
+	minTabWidth            = 64
+	minTwoPaneWidth        = 52
+	minTwoPaneHeight       = 18
+	minUsableWidth         = 40
+	minUsableHeight        = 12
 )
+
+// layoutThresholds holds size gates; zero fields mean defaults.
+type layoutThresholds struct {
+	MinSpriteWidth  int
+	MinSpriteHeight int
+	DisableSprite   bool
+}
+
+func (t layoutThresholds) spriteMin() (w, h int) {
+	w, h = t.MinSpriteWidth, t.MinSpriteHeight
+	if w <= 0 {
+		w = defaultMinSpriteWidth
+	}
+	if h <= 0 {
+		h = defaultMinSpriteHeight
+	}
+	return w, h
+}
 
 // LayoutFlags describe which regions are visible for the current terminal size.
 type LayoutFlags struct {
@@ -26,18 +47,21 @@ type LayoutFlags struct {
 	TooSmall      bool
 }
 
-func layoutFor(width, height int) LayoutFlags {
+func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	f := LayoutFlags{Width: width, Height: height}
 	if width <= 0 || height <= 0 {
 		// Before the first WindowSizeMsg, assume a full layout for tests/snapshots.
-		f.ShowSprite = true
+		f.ShowSprite = !th.DisableSprite
 		f.ShowSummary = true
 		f.VerboseFooter = true
 		return f
 	}
 	f.TooSmall = width < minUsableWidth || height < minUsableHeight
 	f.OnePane = width < minTwoPaneWidth || height < minTwoPaneHeight
-	f.ShowSprite = !f.OnePane && !f.TooSmall && width >= minSpriteWidth && height >= minSpriteHeight
+	minSW, minSH := th.spriteMin()
+	canFitFrame := f.rightWidth() >= sprite.MinRightWidthForSprite
+	f.ShowSprite = !th.DisableSprite && !f.OnePane && !f.TooSmall &&
+		width >= minSW && height >= minSH && canFitFrame
 	f.ShowSummary = !f.OnePane && !f.TooSmall && width >= minSummaryWidth && height >= minSummaryHeight
 	f.VerboseFooter = !f.TooSmall && width >= minFooterWidth && height >= minFooterHeight
 	f.ShortTabs = width < minTabWidth
@@ -65,21 +89,10 @@ func (f LayoutFlags) rightWidth() int {
 	return f.Width - f.leftWidth()
 }
 
-func (f LayoutFlags) spriteSide() int {
-	rw := f.rightWidth()
-	side := rw * 30 / 100
-	if side < 8 {
-		side = 8
+// spriteFrameSize returns the fixed frame dimensions when the sprite is shown.
+func (f LayoutFlags) spriteFrameSize() (w, h int) {
+	if !f.ShowSprite {
+		return 0, 0
 	}
-	maxSide := 12
-	if side > maxSide {
-		side = maxSide
-	}
-	if side > rw-20 {
-		side = rw - 20
-	}
-	if side < 5 {
-		return 0
-	}
-	return side
+	return sprite.FrameWidth, sprite.FrameHeight
 }

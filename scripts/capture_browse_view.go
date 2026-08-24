@@ -17,8 +17,12 @@ import (
 	"github.com/Graphixa/Pokedex/internal/app"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/halfblock"
-	"github.com/Graphixa/Pokedex/internal/render/sprites"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/ascii"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/braille"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
+	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui"
 )
@@ -55,24 +59,43 @@ func main() {
 
 	ds := app.NewDetailService(svc.Cache)
 	src := detailAdapter{DetailService: ds}
-	renderer := &sprites.Renderer{
-		Resolver:  &sprites.Resolver{Store: svc.Cache, API: svc.API},
-		Artefacts: svc.Cache,
-		Enabled:   svc.Config.Render.Halfblock,
-		Palette:   halfblock.DetectPalette(),
+	img := spriteimage.New(svc.Config.Render.Images)
+	caps := sprite.DetectCapabilities(img.Available())
+	colorMode := sprite.ColorTrueColor
+	if !caps.TrueColor {
+		colorMode = sprite.Color256
+	}
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
+		Modes: sprite.NewModeResolver(
+			img,
+			halfblock.Renderer{},
+			braille.Renderer{},
+			ascii.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:     svc.Cache,
+		Caps:          caps,
+		Preference:    sprite.RenderMode(svc.Config.EffectiveSpriteMode()),
+		Color:         colorMode,
+		SourceKind:    sprite.SourcePixel,
+		ClearNativeFn: spriteimage.ClearBestEffort,
+		OnNativeFail:  img.Disable,
 	}
 
 	m := tui.NewModel(tui.Options{
-		Index:    idx,
-		Details:  src,
-		Sprites:  spriteAdapter{renderer},
-		Selected: selected,
-		Prefill:  "c",
-		Context:  ctx,
+		Index:              idx,
+		Details:            src,
+		Sprites:            spriteAdapter{engine},
+		Selected:           selected,
+		Prefill:            "c",
+		Context:            ctx,
+		MinWidthForSprite:  110,
+		MinHeightForSprite: 40,
 	})
 
 	var model tea.Model = m
-	model, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 36})
+	model, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	drain(&model, cmd)
 	drain(&model, model.(tui.Model).Init())
 
@@ -137,15 +160,21 @@ func (d detailAdapter) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon)
 }
 
 type spriteAdapter struct {
-	*sprites.Renderer
+	*sprite.Engine
 }
 
 func (s spriteAdapter) Render(ctx context.Context, pokemon domain.Pokemon, cells int) (string, bool) {
-	if s.Renderer == nil {
+	if s.Engine == nil {
 		return "", true
 	}
-	res := s.Renderer.Render(ctx, pokemon, cells)
+	res := s.Engine.Render(ctx, pokemon, cells)
 	return res.ANSI, res.UsePlaceholder
+}
+
+func (s spriteAdapter) ClearNative() {
+	if s.Engine != nil {
+		s.Engine.ClearNative()
+	}
 }
 
 func drain(model *tea.Model, cmd tea.Cmd) {

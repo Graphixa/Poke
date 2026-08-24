@@ -1,6 +1,7 @@
 package style
 
 import (
+	"fmt"
 	"image/color"
 	"strings"
 	"sync"
@@ -180,4 +181,22 @@ func title(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// BaseRGBA returns the theme base colour as an opaque RGBA for sprite letterboxing.
+func BaseRGBA() color.RGBA {
+	mu.RLock()
+	hex := active.Base
+	mu.RUnlock()
+	return parseHexRGBA(hex)
+}
+
+func parseHexRGBA(hex string) color.RGBA {
+	hex = strings.TrimPrefix(strings.TrimSpace(hex), "#")
+	if len(hex) != 6 {
+		return color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
+	}
+	var r, g, b uint8
+	fmt.Sscanf(hex, "%02x%02x%02x", &r, &g, &b)
+	return color.RGBA{R: r, G: g, B: b, A: 255}
 }

@@ -5,52 +5,54 @@ import (
 	"image/color"
 	"os"
 	"strings"
+
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-// PaletteMode selects the ANSI colour encoding.
-type PaletteMode string
+// ColorMode aliases the parent package colour modes used for ANSI encoding.
+type ColorMode = sprite.ColorMode
 
 const (
-	PaletteTrueColor PaletteMode = "truecolor"
-	Palette256       PaletteMode = "256"
+	ColorTrueColor = sprite.ColorTrueColor
+	Color256       = sprite.Color256
 )
 
 const resetSeq = "\x1b[0m"
 
-// DetectPalette chooses truecolor when COLORTERM advertises it, otherwise 256.
-func DetectPalette() PaletteMode {
+// DetectColorMode chooses truecolor when advertised, otherwise 256.
+func DetectColorMode() ColorMode {
 	ct := strings.ToLower(os.Getenv("COLORTERM"))
 	if ct == "truecolor" || ct == "24bit" {
-		return PaletteTrueColor
+		return ColorTrueColor
 	}
 	term := strings.ToLower(os.Getenv("TERM"))
 	if strings.Contains(term, "truecolor") || term == "xterm-kitty" || term == "wezterm" {
-		return PaletteTrueColor
+		return ColorTrueColor
 	}
-	return Palette256
+	return Color256
 }
 
-func writeFG(b *strings.Builder, c color.RGBA, mode PaletteMode) {
+func writeFG(b *strings.Builder, c color.RGBA, mode ColorMode) {
 	switch mode {
-	case Palette256:
+	case Color256:
 		fmt.Fprintf(b, "\x1b[38;5;%dm", to256(c))
 	default:
 		fmt.Fprintf(b, "\x1b[38;2;%d;%d;%dm", c.R, c.G, c.B)
 	}
 }
 
-func writeBG(b *strings.Builder, c color.RGBA, mode PaletteMode) {
+func writeBG(b *strings.Builder, c color.RGBA, mode ColorMode) {
 	switch mode {
-	case Palette256:
+	case Color256:
 		fmt.Fprintf(b, "\x1b[48;5;%dm", to256(c))
 	default:
 		fmt.Fprintf(b, "\x1b[48;2;%d;%d;%dm", c.R, c.G, c.B)
 	}
 }
 
-// to256 maps an RGB colour to the nearest xterm 256-colour index.
+// to256 maps RGB to the nearest xterm 256-colour index using a simple
+// perceptual (weighted) distance against the cube and grayscale ramps.
 func to256(c color.RGBA) int {
-	// Try the 6x6x6 colour cube (indices 16–231) and grayscale (232–255).
 	cube := func(v uint8) int {
 		switch {
 		case v < 48:
@@ -63,12 +65,7 @@ func to256(c color.RGBA) int {
 	}
 	ri, gi, bi := cube(c.R), cube(c.G), cube(c.B)
 	cubeIdx := 16 + 36*ri + 6*gi + bi
-	cubeColor := color.RGBA{
-		R: cubeLevel(ri),
-		G: cubeLevel(gi),
-		B: cubeLevel(bi),
-		A: 255,
-	}
+	cubeColor := color.RGBA{R: cubeLevel(ri), G: cubeLevel(gi), B: cubeLevel(bi), A: 255}
 
 	grayIdx := 232
 	if avg := (int(c.R) + int(c.G) + int(c.B)) / 3; avg > 8 {
@@ -93,11 +90,12 @@ func cubeLevel(i int) uint8 {
 	return uint8(55 + (i-1)*40)
 }
 
+// Weighted RGB distance (closer to perceptual than raw Euclidean).
 func colourDist(a, b color.RGBA) int {
 	dr := int(a.R) - int(b.R)
 	dg := int(a.G) - int(b.G)
 	db := int(a.B) - int(b.B)
-	return dr*dr + dg*dg + db*db
+	return 2*dr*dr + 4*dg*dg + 3*db*db
 }
 
 // NormalizeANSI replaces ESC bytes so golden files stay readable and stable.

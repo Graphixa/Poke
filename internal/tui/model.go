@@ -22,6 +22,12 @@ type Options struct {
 	Selected *domain.SpeciesSummary
 	Prefill  string
 	Context  context.Context
+	// MinWidthForSprite / MinHeightForSprite gate the fixed sprite frame.
+	// Zero uses package defaults (110×40).
+	MinWidthForSprite  int
+	MinHeightForSprite int
+	// DisableSprite forces the sprite panel off regardless of terminal size.
+	DisableSprite bool
 }
 
 // Model is the Bubble Tea browse state machine.
@@ -30,6 +36,8 @@ type Model struct {
 	index   *search.Index
 	details DetailSource
 	sprites SpriteRenderer
+
+	layoutTh layoutThresholds
 
 	width  int
 	height int
@@ -70,6 +78,11 @@ func NewModel(opts Options) Model {
 		index:     opts.Index,
 		details:   opts.Details,
 		sprites:   opts.Sprites,
+		layoutTh: layoutThresholds{
+			MinSpriteWidth:  opts.MinWidthForSprite,
+			MinSpriteHeight: opts.MinHeightForSprite,
+			DisableSprite:   opts.DisableSprite,
+		},
 		resources: make(map[int]*resourceCache),
 		activeTab: TabStats,
 		keys:      defaultKeyMap(),
@@ -154,7 +167,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m *Model) layout() LayoutFlags {
-	return layoutFor(m.width, m.height)
+	return layoutFor(m.width, m.height, m.layoutTh)
 }
 
 func (m *Model) queryValue() string {
@@ -294,6 +307,9 @@ func (m *Model) bumpSelection() {
 	m.selectionGen++
 	m.detailVP.GotoTop()
 	m.cancelSprite()
+	if m.sprites != nil {
+		m.sprites.ClearNative()
+	}
 }
 
 func (m *Model) ensureResource(id int) *resourceCache {

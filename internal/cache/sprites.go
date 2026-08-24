@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 
-	"github.com/Graphixa/Pokedex/internal/render/halfblock"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 // SpriteByURL returns cached PNG bytes for a sprite URL when present.
@@ -34,7 +34,7 @@ func (s *Service) StoreSpriteByURL(ctx context.Context, url, contentHash string,
 	return s.store.StoreSpriteURL(ctx, sha256Hex(url), contentHash)
 }
 
-// Halfblock returns a cached half-block artefact by key.
+// Halfblock returns a cached derived sprite artefact by key.
 func (s *Service) Halfblock(ctx context.Context, key string) (string, error) {
 	data, err := s.store.Halfblock(ctx, key)
 	if err != nil {
@@ -43,13 +43,13 @@ func (s *Service) Halfblock(ctx context.Context, key string) (string, error) {
 	return string(data), nil
 }
 
-// StoreHalfblock persists a derived half-block artefact.
+// StoreHalfblock persists a derived sprite artefact (half-block, braille, ascii, …).
 func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
 	if key == "" {
 		return errors.New("cache: refuse to store empty halfblock key")
 	}
 	// Validate key shape so callers cannot write outside halfblock/.
-	if _, _, _, _, _, err := halfblock.ParseCacheKey(key); err != nil {
+	if _, _, _, _, _, _, _, err := sprite.ParseCacheKey(key); err != nil {
 		return err
 	}
 	return s.store.StoreHalfblock(ctx, key, []byte(ansi))
