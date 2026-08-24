@@ -66,18 +66,20 @@ func (f LayoutFlags) rightWidth() int {
 }
 
 func (f LayoutFlags) spriteSide() int {
-	lw := f.leftWidth() - 2
-	if lw < 8 {
-		lw = 8
+	rw := f.rightWidth()
+	side := rw * 30 / 100
+	if side < 8 {
+		side = 8
 	}
-	// Keep the sprite panel square and leave room for search + list.
-	maxSide := f.Height / 3
-	if maxSide < 6 {
-		maxSide = 6
-	}
-	side := lw
+	maxSide := 12
 	if side > maxSide {
 		side = maxSide
+	}
+	if side > rw-20 {
+		side = rw - 20
+	}
+	if side < 5 {
+		return 0
 	}
 	return side
 }

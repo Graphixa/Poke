@@ -1,0 +1,12 @@
+theme_name: "Dracula"
+style: dark
+
+colors:
+  primary: "#bd93f9"
+  secondary: "#8be9fd"
+  components: "#f8f8f2"
+  placeholders: "#6272a4"
+  base: "#44475a"
+  warning: "#f1fa8c"
+  error: "#ff5555"
+  success: "#50fa7b"

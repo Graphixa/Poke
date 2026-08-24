@@ -99,7 +99,7 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected reflow sprite load")
 	}
-	wrongCells := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), 4, cells, "OLDSIZE", false)
+	wrongCells := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), 4, cells+3, "OLDSIZE", false)
 	updated, _ = m.Update(wrongCells)
 	m = updated.(tui.Model)
 	if m.HasSpriteANSI() {

@@ -90,7 +90,34 @@ func formatEvolutionLines(tree domain.EvolutionTree) []string {
 	if len(lines) == 0 {
 		return []string{"No evolution data."}
 	}
+	rootName := tree.Root.DisplayName
+	if rootName == "" {
+		rootName = output.TitleFromSlug(tree.Root.SpeciesSlug)
+	}
+	finalName := evolutionFinalName(tree.Root)
+	lines = append(lines, "")
+	if len(tree.Root.Children) == 0 {
+		lines = append(lines, "Stage: Final")
+	} else {
+		lines = append(lines, "Stage: Basic")
+	}
+	lines = append(lines, "Final evolution: "+finalName)
+	lines = append(lines, "Trigger source: evolution-chain")
+	_ = rootName
 	return lines
+}
+
+func evolutionFinalName(node domain.EvolutionNode) string {
+	if len(node.Children) == 0 {
+		name := node.DisplayName
+		if name == "" {
+			return output.TitleFromSlug(node.SpeciesSlug)
+		}
+		return name
+	}
+	// Prefer the last branch's deepest leaf (linear chains).
+	last := node.Children[len(node.Children)-1].Target
+	return evolutionFinalName(last)
 }
 
 func writeEvoNode(lines *[]string, node domain.EvolutionNode, isRoot bool) {

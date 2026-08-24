@@ -1,0 +1,36 @@
+╭─ Pokedex — Browse Mode ──────────────┬───────────────────────────────────────────────────────────────────────────────╮
+│> c                                   │Charmander #004               Summary                            │ ▄▄▄▄▄▄▄▄▄▄▄▄│
+│──────────────────────────────────────│Type: Fire                    From the time it is born, a flame    ▄▄▄▄▄▄▄▄▄▄▄▄│
+│> Charmander         #004  Fire       │Species: Lizard Pokémon       burns at the tip of its tail. Its    ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Charmeleon         #005  Fire       │Height: 0.6 m    Weight: 8.5  life would end if the flame were     ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Charizard          #006  Fire/Flyi  │kg                            to go out.                           ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Caterpie           #010  Bug        │Ability: Blaze                                                     ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Clefairy           #035  Fairy      │Hidden: Solar Power                                                ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Clefable           #036  Fairy      │Base Exp: 62                                                       ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Cloyster           #091  Water/Ice  │                                                                   ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Cubone             #104  Ground     │                                                                   ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Chansey            #113  Normal     │                                                                   ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Chikorita          #152  Grass      │                                                                   ▄▄▄▄▄▄▄▄▄▄▄▄│
+│  Cyndaquil          #155  Fire       │───────────────────────────────────────────────────────────────────────────────│
+│  Croconaw           #159  Water      │[Stats] [Evolution] [Locations] [Moves] [Flavour] [Info]                       │
+│  Crobat             #169  Poison/Fl… │───────────────────────────────────────────────────────────────────────────────│
+│  Chinchou           #170  Water/Elec │╭─  Evolution  ───────────────────────────────────────────────────────────────╮│
+│  Cleffa             #173  Fairy      ││Charmander ── Level 16 ──► Charmeleon                                        ││
+│  Corsola            #222  Water/Rock ││Charmeleon ── Level 36 ──► Charizard                                         ││
+│  Celebi             #251  Psychic/G… ││                                                                             ││
+│  Combusken          #256  Fire/Figh  ││Stage: Basic                                                                 ││
+│  Cascoon            #268  Bug        ││Final evolution: Charizard                                                   ││
+│  Carvanha           #318  Water/Dark ││Trigger source: evolution-chain                                              ││
+│  Camerupt           #323  Fire/Grou  ││                                                                             ││
+│  Cacnea             #331  Grass      ││                                                                             ││
+│  Cacturne           #332  Grass/Dark ││                                                                             ││
+│  Corphish           #341  Water      ││                                                                             ││
+│  Crawdaunt          #342  Water/Dark ││                                                                             ││
+│  Claydol            #344  Ground/Ps… ││                                                                             ││
+│  Cradily            #346  Rock/Grass ││                                                                             ││
+│  Castform           #351  Normal     ││                                                                             ││
+│  Chimecho           #358  Psychic    ││                                                                             ││
+│  Clamperl           #366  Water      ││                                                                             ││
+│  Chimchar           #390  Fire       │╰─────────────────────────────────────────────────────────────────────────────╯│
+╰──────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────╯
+ Type to filter • ↑↓ move • Tab tabs • i info • PgUp/PgDn scroll • Esc clear • q quit                                   

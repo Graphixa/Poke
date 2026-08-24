@@ -13,6 +13,17 @@ import (
 	"github.com/Graphixa/Pokedex/internal/usererr"
 )
 
+func init() {
+	views.DefaultFrame = views.FrameRenderer{
+		Calculate: func(termW, termH, headerH, footerH, margin, sep int) (int, int, int) {
+			lay := CalculatePanelLayout(termW, termH, headerH, footerH, margin, sep)
+			return lay.LeftWidth, lay.RightWidth, lay.PanelHeight
+		},
+		Combine: RenderCombinedFrame,
+		Fill:    FillTerminalArea,
+	}
+}
+
 func (m Model) View() tea.View {
 	if m.quitting {
 		return tea.NewView("")
@@ -35,26 +46,39 @@ func (m Model) browseData() views.BrowseData {
 		rows[i] = components.ListRow{Summary: s, Selected: i == m.cursor}
 	}
 
+	query := m.queryValue()
+	search := m.search
+	searchW := m.width/3 - 4
+	if searchW < 10 {
+		searchW = 10
+	}
+	search.SetWidth(searchW)
+
 	data := views.BrowseData{
-		Width:         m.width,
-		Height:        m.height,
-		Query:         m.query,
-		Rows:          rows,
-		ListOff:       m.listOff,
-		ListRows:      m.listVisibleRows(),
-		ShowSprite:    lay.ShowSprite,
-		ShowSummary:   lay.ShowSummary,
-		ShortTabs:     lay.ShortTabs,
-		VerboseFooter: lay.VerboseFooter,
-		OnePane:       lay.OnePane,
-		TooSmall:      lay.TooSmall,
-		ShowListPane:  m.query != "",
-		ActiveTab:     int(m.activeTab),
-		TabLabels:     labels,
-		DetailTitle:   m.activeTab.Label(false),
-		DetailLines:   m.detailContentLines(),
-		DetailOff:     m.detailOff,
-		ShowHelp:      m.showHelp,
+		Width:          m.width,
+		Height:         m.height,
+		Query:          query,
+		SearchView:     search.View(),
+		Rows:           rows,
+		ListOff:        m.listOff,
+		ListRows:       m.listVisibleRows(),
+		ShowSprite:     lay.ShowSprite,
+		ShowSummary:    lay.ShowSummary,
+		ShortTabs:      lay.ShortTabs,
+		VerboseFooter:  lay.VerboseFooter,
+		OnePane:        lay.OnePane,
+		TooSmall:       lay.TooSmall,
+		ShowListPane:   query != "",
+		ActiveTab:      int(m.activeTab),
+		TabLabels:      labels,
+		DetailTitle:    m.activeTab.Label(false),
+		DetailLines:    m.detailContentLines(),
+		DetailOff:      m.detailVP.YOffset(),
+		ShowHelp:       m.showHelp,
+		HelpBody:       m.help.FullHelpView(m.keys.FullHelp()),
+		ShowInfo:       m.showInfo,
+		SummaryOff:     m.summaryVP.YOffset(),
+		IdentityHeight: m.identityBandHeight(),
 	}
 
 	if sel, ok := m.selected(); ok {
@@ -65,8 +89,41 @@ func (m Model) browseData() views.BrowseData {
 		if r := m.resources[sel.ID]; r != nil && r.HasSprite && !r.SpritePlaceholder && r.SpriteANSI != "" {
 			data.SpriteANSI = r.SpriteANSI
 		}
+		if m.showInfo {
+			data.DetailLines = m.infoModalLines()
+		}
 	}
 	return data
+}
+
+func (m Model) infoModalLines() []string {
+	sel, ok := m.selected()
+	if !ok {
+		return []string{"No Pokémon selected."}
+	}
+	r := m.resources[sel.ID]
+	if r == nil || !r.HasCore {
+		return []string{"Loading…"}
+	}
+	lines := []string{
+		"Type: " + style.TypeSummary(pokemonTypeNames(r.Pokemon)),
+		"Species: " + dashOr(r.Species.Genus),
+		"Height: " + views.FormatHeight(r.Pokemon.HeightDecimeter),
+		"Weight: " + views.FormatWeight(r.Pokemon.WeightHectogram),
+		"",
+	}
+	lines = append(lines, formatInfoLines(r.Species)...)
+	if s := latestSummary(r.Species); s != "" {
+		lines = append(lines, "", "Flavour:", s)
+	}
+	return lines
+}
+
+func dashOr(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }
 
 func (m Model) mainInfo(showSummary bool) components.MainInfo {

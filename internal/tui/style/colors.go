@@ -3,43 +3,117 @@ package style
 import (
 	"image/color"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 )
 
-// Accessible type colours favour contrast on common dark terminals while
-// remaining distinct under deuteranopia-friendly hue spacing. Every coloured
-// type token also carries a non-colour cue (title-cased name).
-var typeColors = map[string]color.Color{
-	"normal":   lipgloss.Color("#A8A878"),
-	"fire":     lipgloss.Color("#F08030"),
-	"water":    lipgloss.Color("#6890F0"),
-	"electric": lipgloss.Color("#F8D030"),
-	"grass":    lipgloss.Color("#78C850"),
-	"ice":      lipgloss.Color("#98D8D8"),
-	"fighting": lipgloss.Color("#C03028"),
-	"poison":   lipgloss.Color("#A040A0"),
-	"ground":   lipgloss.Color("#E0C068"),
-	"flying":   lipgloss.Color("#A890F0"),
-	"psychic":  lipgloss.Color("#F85888"),
-	"bug":      lipgloss.Color("#A8B820"),
-	"rock":     lipgloss.Color("#B8A038"),
-	"ghost":    lipgloss.Color("#705898"),
-	"dragon":   lipgloss.Color("#7038F8"),
-	"dark":     lipgloss.Color("#705848"),
-	"steel":    lipgloss.Color("#B8B8D0"),
-	"fairy":    lipgloss.Color("#EE99AC"),
+// Palette is the active theme colours (FontGet-inspired).
+type Palette struct {
+	Primary      string
+	Secondary    string
+	Components   string
+	Placeholders string
+	Base         string
+	Warning      string
+	Error        string
+	Success      string
 }
 
 var (
-	statusError   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")).Bold(true)
-	statusWarn    = lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040")).Bold(true)
-	statusOK      = lipgloss.NewStyle().Foreground(lipgloss.Color("#6BCB77"))
-	statusMuted   = lipgloss.NewStyle().Faint(true)
-	statusLoading = lipgloss.NewStyle().Foreground(lipgloss.Color("#7EC8E3"))
-	activeTab     = lipgloss.NewStyle().Bold(true).Underline(true)
-	inactiveTab   = lipgloss.NewStyle().Faint(true)
+	mu         sync.RWMutex
+	active     = DefaultPalette()
+	typeColors = map[string]color.Color{
+		"normal":   lipgloss.Color("#A8A878"),
+		"fire":     lipgloss.Color("#F08030"),
+		"water":    lipgloss.Color("#6890F0"),
+		"electric": lipgloss.Color("#F8D030"),
+		"grass":    lipgloss.Color("#78C850"),
+		"ice":      lipgloss.Color("#98D8D8"),
+		"fighting": lipgloss.Color("#C03028"),
+		"poison":   lipgloss.Color("#A040A0"),
+		"ground":   lipgloss.Color("#E0C068"),
+		"flying":   lipgloss.Color("#A890F0"),
+		"psychic":  lipgloss.Color("#F85888"),
+		"bug":      lipgloss.Color("#A8B820"),
+		"rock":     lipgloss.Color("#B8A038"),
+		"ghost":    lipgloss.Color("#705898"),
+		"dragon":   lipgloss.Color("#7038F8"),
+		"dark":     lipgloss.Color("#705848"),
+		"steel":    lipgloss.Color("#B8B8D0"),
+		"fairy":    lipgloss.Color("#EE99AC"),
+	}
 )
+
+// DefaultPalette is Catppuccin-inspired defaults used when no theme is loaded.
+func DefaultPalette() Palette {
+	return Palette{
+		Primary:      "#cba6f7",
+		Secondary:    "#94e2d5",
+		Components:   "#cdd6f4",
+		Placeholders: "#7f849c",
+		Base:         "#313244",
+		Warning:      "#f9e2af",
+		Error:        "#e78284",
+		Success:      "#a6e3a1",
+	}
+}
+
+// SetPalette installs the active theme colours for the process.
+func SetPalette(p Palette) {
+	mu.Lock()
+	defer mu.Unlock()
+	active = p
+}
+
+// CurrentPalette returns a copy of the active palette.
+func CurrentPalette() Palette {
+	mu.RLock()
+	defer mu.RUnlock()
+	return active
+}
+
+func fg(hex string) color.Color {
+	if hex == "" {
+		return lipgloss.NoColor{}
+	}
+	return lipgloss.Color(hex)
+}
+
+// PrimaryColor is the main accent (titles, active emphasis).
+func PrimaryColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Primary)
+}
+
+// BorderColor is used for frames and separators.
+func BorderColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Placeholders)
+}
+
+// SecondaryColor is used for labels / secondary accents.
+func SecondaryColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Secondary)
+}
+
+func statusStyles() (err, warn, ok, muted, loading, activeTab, inactiveTab lipgloss.Style) {
+	mu.RLock()
+	p := active
+	mu.RUnlock()
+	err = lipgloss.NewStyle().Foreground(fg(p.Error)).Bold(true)
+	warn = lipgloss.NewStyle().Foreground(fg(p.Warning)).Bold(true)
+	ok = lipgloss.NewStyle().Foreground(fg(p.Success))
+	muted = lipgloss.NewStyle().Foreground(fg(p.Placeholders)).Faint(true)
+	loading = lipgloss.NewStyle().Foreground(fg(p.Secondary))
+	activeTab = lipgloss.NewStyle().Foreground(fg(p.Primary)).Bold(true).Underline(true)
+	inactiveTab = lipgloss.NewStyle().Foreground(fg(p.Placeholders))
+	return
+}
 
 // TypeLabel returns a coloured type name; the text itself is the non-colour cue.
 func TypeLabel(name string) string {
@@ -63,37 +137,38 @@ func TypeSummary(types []string) string {
 	return strings.Join(parts, "/")
 }
 
-// StatusError prefixes a clear textual marker so colour is not required.
 func StatusError(msg string) string {
-	return statusError.Render("[ERROR] ") + msg
+	err, _, _, _, _, _, _ := statusStyles()
+	return err.Render("[ERROR] ") + msg
 }
 
-// StatusWarn prefixes a textual warning marker.
 func StatusWarn(msg string) string {
-	return statusWarn.Render("[!] ") + msg
+	_, warn, _, _, _, _, _ := statusStyles()
+	return warn.Render("[!] ") + msg
 }
 
-// StatusLoading renders a loading cue with a textual marker.
 func StatusLoading(msg string) string {
 	if msg == "" {
 		msg = "Loading…"
 	}
-	return statusLoading.Render("… ") + msg
+	_, _, _, _, loading, _, _ := statusStyles()
+	return loading.Render("… ") + msg
 }
 
-// StatusOK is a quiet success cue.
 func StatusOK(msg string) string {
-	return statusOK.Render("OK ") + msg
+	_, _, ok, _, _, _, _ := statusStyles()
+	return ok.Render("OK ") + msg
 }
 
-// StatusMuted is faint secondary text.
 func StatusMuted(msg string) string {
-	return statusMuted.Render(msg)
+	_, _, _, muted, _, _, _ := statusStyles()
+	return muted.Render(msg)
 }
 
 // TabToken styles an active or inactive tab label with underline (non-colour).
 func TabToken(label string, active bool) string {
 	token := "[" + label + "]"
+	_, _, _, _, _, activeTab, inactiveTab := statusStyles()
 	if active {
 		return activeTab.Render(token)
 	}

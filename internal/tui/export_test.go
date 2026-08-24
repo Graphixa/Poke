@@ -4,12 +4,13 @@ import "github.com/Graphixa/Pokedex/internal/domain"
 
 // Exported accessors for model/layout tests.
 
-func (m Model) Query() string      { return m.query }
+func (m Model) Query() string      { return m.queryValue() }
 func (m Model) CanQuitWithQ() bool { return m.canQuitWithQ() }
 func (m Model) HelpVisible() bool  { return m.showHelp }
+func (m Model) InfoVisible() bool  { return m.showInfo }
 func (m Model) Quitting() bool     { return m.quitting }
 func (m Model) ActiveTab() Tab     { return m.activeTab }
-func (m Model) DetailOffset() int  { return m.detailOff }
+func (m Model) DetailOffset() int  { return m.detailVP.YOffset() }
 func (m Model) SelectionGen() int  { return m.selectionGen }
 func (m Model) Width() int         { return m.width }
 func (m Model) Height() int        { return m.height }

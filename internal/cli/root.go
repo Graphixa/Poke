@@ -48,10 +48,16 @@ type Options struct {
 	Search         SearchHandler
 	Random         RandomHandler
 	Cache          CacheCommands
+	Theme          ThemeHandler
 	Stdout         io.Writer
 	Stderr         io.Writer
 	// OnDebug is invoked when --debug is set. path may be empty for the default log file.
 	OnDebug func(path string) error
+}
+
+// ThemeHandler launches the interactive theme selector.
+type ThemeHandler interface {
+	Theme(context.Context) error
 }
 
 // CacheCommands handles cache maintenance subcommands.
@@ -145,6 +151,7 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newUpdateCommand(options))
 	cmd.AddCommand(newSearchCommand(options))
 	cmd.AddCommand(newRandomCommand(options))
+	cmd.AddCommand(newThemeCommand(options))
 	return cmd
 }
 
@@ -294,6 +301,21 @@ func newUpdateCommand(options Options) *cobra.Command {
 				return fmt.Errorf("cache refresh is unavailable")
 			}
 			return options.Cache.Refresh(cmd.Context())
+		},
+	}
+}
+
+func newThemeCommand(options Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "theme",
+		Short: "Interactive theme selector with live preview",
+		Long:  "Launch an interactive TUI to select and preview colour themes (FontGet-style).",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if options.Theme == nil {
+				return fmt.Errorf("theme selector is unavailable")
+			}
+			return options.Theme.Theme(cmd.Context())
 		},
 	}
 }

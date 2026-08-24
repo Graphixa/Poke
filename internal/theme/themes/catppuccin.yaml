@@ -1,0 +1,12 @@
+theme_name: "Catppuccin"
+style: dark
+
+colors:
+  primary: "#cba6f7"
+  secondary: "#94e2d5"
+  components: "#cdd6f4"
+  placeholders: "#7f849c"
+  base: "#313244"
+  warning: "#f9e2af"
+  error: "#e78284"
+  success: "#a6e3a1"

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -16,6 +17,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prevSide := m.currentSpriteSide()
 		m.width = msg.Width
 		m.height = msg.Height
+		m.help.SetWidth(msg.Width)
 		m.ensureListVisible()
 		return m, m.handleSpriteLayoutChange(prevShow, prevSide)
 
@@ -101,6 +103,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case summaryTickMsg:
+		m.advanceSummaryScroll()
+		return m, tickSummary()
+
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
@@ -108,82 +114,116 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-
-	if key == "ctrl+c" {
+	if key.Matches(msg, m.keys.ForceQuit) {
 		m.quitting = true
 		return m, tea.Quit
 	}
 
 	if m.showHelp {
-		switch key {
-		case "esc", "?":
+		if key.Matches(msg, m.keys.Help, m.keys.Clear) {
 			m.showHelp = false
 		}
 		return m, nil
 	}
 
-	switch key {
-	case "ctrl+c":
-		m.quitting = true
-		return m, tea.Quit
-	case "?":
+	if m.showInfo {
+		if key.Matches(msg, m.keys.Clear, m.keys.Info) {
+			m.showInfo = false
+		}
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Unbound) {
+		return m, nil
+	}
+
+	if key.Matches(msg, m.keys.Help) {
 		m.showHelp = true
 		return m, nil
-	case "esc":
-		m.clearQuery()
-		return m, m.syncSelectionLoads()
-	case "q":
+	}
+
+	if key.Matches(msg, m.keys.Info) {
+		if m.queryValue() == "" && m.hasSelectedCore() {
+			m.showInfo = true
+			return m, nil
+		}
+		return m.updateSearch(msg)
+	}
+
+	if key.Matches(msg, m.keys.Quit) {
 		if m.layout().TooSmall || m.canQuitWithQ() {
 			m.quitting = true
 			return m, tea.Quit
 		}
-		m.appendRune('q')
-		return m, m.syncSelectionLoads()
-	case "up":
-		m.moveCursor(-1)
-		return m, m.syncSelectionLoads()
-	case "down":
-		m.moveCursor(1)
-		return m, m.syncSelectionLoads()
-	case "tab":
-		m.activeTab = m.activeTab.Next()
-		m.detailOff = 0
-		return m, m.ensureTabLoadLocked()
-	case "shift+tab":
-		m.activeTab = m.activeTab.Prev()
-		m.detailOff = 0
-		return m, m.ensureTabLoadLocked()
-	case "pgup":
-		m.scrollDetail(-m.detailPageSize())
-		return m, nil
-	case "pgdown":
-		m.scrollDetail(m.detailPageSize())
-		return m, nil
-	case "home":
-		m.detailOff = 0
-		return m, nil
-	case "end":
-		m.scrollDetail(1 << 20)
-		return m, nil
-	case "backspace":
-		m.backspace()
-		return m, m.syncSelectionLoads()
-	case "enter", "r", "/":
-		// Reserved / unbound in Phase 4.
-		return m, nil
-	case "space":
-		m.appendRune(' ')
+		return m.updateSearch(msg)
+	}
+
+	if key.Matches(msg, m.keys.Clear) {
+		m.clearQuery()
 		return m, m.syncSelectionLoads()
 	}
 
-	if msg.Text != "" && !msg.Mod.Contains(tea.ModCtrl) && !msg.Mod.Contains(tea.ModAlt) {
-		for _, r := range msg.Text {
-			m.appendRune(r)
-		}
+	if key.Matches(msg, m.keys.Up) {
+		m.moveCursor(-1)
+		m.summaryVP.GotoTop()
 		return m, m.syncSelectionLoads()
 	}
-	return m, nil
+	if key.Matches(msg, m.keys.Down) {
+		m.moveCursor(1)
+		m.summaryVP.GotoTop()
+		return m, m.syncSelectionLoads()
+	}
+	if key.Matches(msg, m.keys.TabNext) {
+		m.activeTab = m.activeTab.Next()
+		m.detailVP.GotoTop()
+		return m, m.ensureTabLoadLocked()
+	}
+	if key.Matches(msg, m.keys.TabPrev) {
+		m.activeTab = m.activeTab.Prev()
+		m.detailVP.GotoTop()
+		return m, m.ensureTabLoadLocked()
+	}
+	if key.Matches(msg, m.keys.PageUp) {
+		m.scrollDetail(-m.detailPageSize())
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.PageDown) {
+		m.scrollDetail(m.detailPageSize())
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.Home) {
+		m.syncDetailViewport()
+		m.detailVP.GotoTop()
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.End) {
+		m.syncDetailViewport()
+		m.detailVP.GotoBottom()
+		return m, nil
+	}
+
+	return m.updateSearch(msg)
+}
+
+func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	prev := m.search.Value()
+	var cmd tea.Cmd
+	m.search, cmd = m.search.Update(msg)
+	if m.search.Value() != prev {
+		m.refilter()
+		m.detailVP.GotoTop()
+		return m, tea.Batch(cmd, m.syncSelectionLoads())
+	}
+	return m, cmd
+}
+
+func (m Model) hasSelectedCore() bool {
+	sel, ok := m.selected()
+	if !ok {
+		return false
+	}
+	r := m.resources[sel.ID]
+	return r != nil && r.HasCore
 }
 
 func (m *Model) isSelectedID(id int) bool {
@@ -205,6 +245,7 @@ func (m *Model) syncSelectionLoads() tea.Cmd {
 	}
 	m.trackedID = id
 	m.bumpSelection()
+	m.summaryVP.GotoTop()
 	return m.ensureSelectionLoads()
 }
 
@@ -279,11 +320,8 @@ func (m *Model) currentSpriteSide() int {
 	if !lay.ShowSprite {
 		return 0
 	}
-	bodyH := m.height - 2
-	if bodyH < 5 {
-		bodyH = 5
-	}
-	return views.SpriteSideFor(lay.leftWidth(), bodyH)
+	// Sprite floats in the right pane beside identity info (unbordered).
+	return views.SpriteSideFor(lay.rightWidth(), m.height)
 }
 
 func (m *Model) currentSpriteCells() int {
@@ -291,7 +329,7 @@ func (m *Model) currentSpriteCells() int {
 	if side < 5 {
 		return 0
 	}
-	return side - 2
+	return side
 }
 
 func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
@@ -363,18 +401,11 @@ func (m *Model) detailPageSize() int {
 }
 
 func (m *Model) scrollDetail(delta int) {
-	lines := m.detailContentLines()
-	m.detailLines = lines
-	maxOff := len(lines) - 1
-	if maxOff < 0 {
-		maxOff = 0
-	}
-	m.detailOff += delta
-	if m.detailOff < 0 {
-		m.detailOff = 0
-	}
-	if m.detailOff > maxOff {
-		m.detailOff = maxOff
+	m.syncDetailViewport()
+	if delta > 0 {
+		m.detailVP.ScrollDown(delta)
+	} else if delta < 0 {
+		m.detailVP.ScrollUp(-delta)
 	}
 }
 

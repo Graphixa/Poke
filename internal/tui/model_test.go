@@ -3,6 +3,7 @@ package tui_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -176,6 +177,13 @@ func drainCmds(t *testing.T, model *tea.Model, cmd tea.Cmd) {
 	case nil:
 		return
 	default:
+		// Skip delayed tick follow-ups so tests do not hang on summary auto-scroll.
+		typeName := fmt.Sprintf("%T", msg)
+		if strings.Contains(typeName, "summaryTickMsg") {
+			next, _ := (*model).Update(msg)
+			*model = next
+			return
+		}
 		next, nextCmd := (*model).Update(msg)
 		*model = next
 		drainCmds(t, model, nextCmd)

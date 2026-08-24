@@ -41,6 +41,7 @@ type Config struct {
 	Data    Data    `yaml:"data"`
 	Render  Render  `yaml:"render"`
 	TUI     TUI     `yaml:"tui"`
+	Theme   Theme   `yaml:"theme"`
 	CLI     CLI     `yaml:"cli"`
 	Network Network `yaml:"network"`
 }
@@ -70,6 +71,11 @@ type TUI struct {
 	MinWidthForSprite  int    `yaml:"min_width_for_sprite"`
 	MinHeightForSprite int    `yaml:"min_height_for_sprite"`
 	FooterHelp         string `yaml:"footer_help"`
+}
+
+// Theme selects the TUI colour palette (FontGet-compatible YAML themes).
+type Theme struct {
+	Name string `yaml:"name"`
 }
 
 type CLI struct {
@@ -105,7 +111,8 @@ func Default() Config {
 			MinHeightForSprite: 30,
 			FooterHelp:         "compact",
 		},
-		CLI: CLI{DefaultMode: "browse"},
+		Theme: Theme{Name: "catppuccin"},
+		CLI:   CLI{DefaultMode: "browse"},
 		Network: Network{
 			Timeout:        Duration{10 * time.Second},
 			Retries:        3,
@@ -260,6 +267,48 @@ func Initialize(path string) (bool, error) {
 		return false, fmt.Errorf("install config atomically: %w", err)
 	}
 	return true, nil
+}
+
+// Save writes cfg to path atomically (temp file + rename).
+func Save(path string, cfg Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary config: %w", err)
+	}
+	tempName := temp.Name()
+	defer os.Remove(tempName)
+	_ = temp.Chmod(0o600)
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return fmt.Errorf("write temporary config: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempName, path); err != nil {
+		return fmt.Errorf("install config: %w", err)
+	}
+	return nil
+}
+
+// SetThemeName updates only the theme name and persists the full config.
+func SetThemeName(path, name string) error {
+	cfg, err := Load(path)
+	if err != nil {
+		return err
+	}
+	cfg.Theme.Name = name
+	return Save(path, cfg)
 }
 
 type CommandRunner interface {

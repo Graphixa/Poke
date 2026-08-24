@@ -68,9 +68,14 @@ poke cache clear
 poke config path
 poke config init
 poke config edit
+
+# Colour themes (interactive selector with live preview)
+poke theme
 ```
 
 All of the above work with `pokedex` instead of `poke`.
+
+Default theme is **Catppuccin**. Bundled themes include Nord, Dracula, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can be placed next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
 
 ## Browse keyboard reference
 

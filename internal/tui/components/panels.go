@@ -12,13 +12,19 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-var (
-	borderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
-	mutedStyle  = lipgloss.NewStyle().Faint(true)
-	boldStyle   = lipgloss.NewStyle().Bold(true)
-)
+func borderSty() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(style.BorderColor())
+}
 
-// Search renders the left-column search prompt.
+func mutedSty() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(style.BorderColor()).Faint(true)
+}
+
+func boldSty() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
+}
+
+// Search renders the left-column search prompt (fallback when textinput view is absent).
 func Search(query string, width int) string {
 	if width < 8 {
 		width = 8
@@ -26,11 +32,19 @@ func Search(query string, width int) string {
 	prompt := "> "
 	body := query
 	if body == "" {
-		body = mutedStyle.Render("Search Pokémon…")
+		body = mutedSty().Render("Search Pokémon…")
 		line := prompt + body
 		return textwidth.PadRight(line, width)
 	}
 	line := prompt + body
+	return textwidth.PadRight(textwidth.Truncate(line, width), width)
+}
+
+// PadSearchLine fits a pre-rendered bubbles/textinput row into the column width.
+func PadSearchLine(line string, width int) string {
+	if width < 8 {
+		width = 8
+	}
 	return textwidth.PadRight(textwidth.Truncate(line, width), width)
 }
 
@@ -93,54 +107,49 @@ func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int)
 	return strings.Join(lines, "\n")
 }
 
-// SpritePlaceholder renders a bordered 1:1 square with [ Name ].
+// SpritePlaceholder renders an unbordered 1:1 square with a centred [ Name ].
 func SpritePlaceholder(name string, side int) string {
 	if side < 5 {
 		side = 5
 	}
 	label := "[ " + name + " ]"
-	innerW := side - 2
-	if innerW < 3 {
-		innerW = 3
+	if textwidth.Width(label) > side {
+		label = textwidth.Truncate(label, side)
 	}
-	if textwidth.Width(label) > innerW {
-		label = textwidth.Truncate(label, innerW)
-	}
-	inner := lipgloss.Place(innerW, innerW, lipgloss.Center, lipgloss.Center, label)
-	return borderStyle.Render(inner)
+	return lipgloss.Place(side, side, lipgloss.Center, lipgloss.Center, label)
 }
 
-// SpritePanel renders precomputed half-block ANSI inside a bordered square.
-// ansi must already be cells×cells lines; it is clipped to the inner square.
+// SpritePanel renders precomputed half-block ANSI as an unbordered square.
+// ansi must already be cells×cells lines; it is clipped/padded to side×side.
 func SpritePanel(ansi string, side int) string {
 	if side < 5 {
 		side = 5
 	}
-	inner := side - 2
-	if inner < 3 {
-		inner = 3
-	}
 	lines := strings.Split(ansi, "\n")
-	if len(lines) > inner {
-		lines = lines[:inner]
+	if len(lines) > side {
+		lines = lines[:side]
 	}
-	for len(lines) < inner {
-		lines = append(lines, strings.Repeat(" ", inner))
+	for len(lines) < side {
+		lines = append(lines, strings.Repeat(" ", side))
 	}
 	for i := range lines {
-		// Pad visually when ANSI width is shorter; lipgloss.Width ignores escapes.
 		w := lipgloss.Width(lines[i])
-		if w < inner {
-			lines[i] = lines[i] + strings.Repeat(" ", inner-w)
+		if w < side {
+			lines[i] = lines[i] + strings.Repeat(" ", side-w)
+		} else if w > side {
+			lines[i] = lipgloss.NewStyle().MaxWidth(side).Render(lines[i])
+			if lipgloss.Width(lines[i]) < side {
+				lines[i] += strings.Repeat(" ", side-lipgloss.Width(lines[i]))
+			}
 		}
 	}
-	return borderStyle.Render(strings.Join(lines, "\n"))
+	return strings.Join(lines, "\n")
 }
 
 // Header renders "Name #NNN".
 func Header(name string, id int, width int) string {
 	line := fmt.Sprintf("%s %s", name, output.FormatDex(id))
-	return boldStyle.Render(textwidth.PadRight(textwidth.Truncate(line, width), width))
+	return boldSty().Render(textwidth.PadRight(textwidth.Truncate(line, width), width))
 }
 
 // MainInfo holds right-pane identity fields.
@@ -182,81 +191,196 @@ func InfoBlock(info MainInfo, width int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// SummaryColumn renders a "Summary" heading and a clipped, offset-scrollable body.
+func SummaryColumn(summary string, width, height, offset int) string {
+	if width < 8 {
+		width = 8
+	}
+	if height < 2 {
+		height = 2
+	}
+	title := boldSty().Render("Summary")
+	lines := []string{textwidth.PadRight(title, width)}
+	bodyH := height - 1
+	if summary == "" {
+		lines = append(lines, textwidth.PadRight(mutedSty().Render("—"), width))
+		for len(lines) < height {
+			lines = append(lines, strings.Repeat(" ", width))
+		}
+		return strings.Join(lines[:height], "\n")
+	}
+	wrapped := wrap(summary, width)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(wrapped) {
+		offset = len(wrapped)
+	}
+	for i := 0; i < bodyH; i++ {
+		idx := offset + i
+		if idx < len(wrapped) {
+			lines = append(lines, textwidth.PadRight(wrapped[idx], width))
+		} else {
+			lines = append(lines, strings.Repeat(" ", width))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// SummaryWrappedLines returns the wrapped summary lines for scroll math.
+func SummaryWrappedLines(summary string, width int) []string {
+	if width < 8 {
+		width = 8
+	}
+	return wrap(summary, width)
+}
+
+// InfoModal renders a centred overlay with species info details.
+func InfoModal(title string, lines []string, width, height int) string {
+	body := make([]string, 0, len(lines)+4)
+	body = append(body, title, "")
+	body = append(body, lines...)
+	body = append(body, "", "Press i or Esc to close")
+	cardW := min(width-4, 56)
+	if cardW < 28 {
+		cardW = min(width, 28)
+	}
+	styleCard := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(style.BorderColor()).
+		Padding(1, 2).
+		Width(cardW)
+	var b strings.Builder
+	for i, line := range body {
+		if i == 0 {
+			b.WriteString(boldSty().Render(line))
+		} else {
+			b.WriteString(line)
+		}
+		if i < len(body)-1 {
+			b.WriteByte('\n')
+		}
+	}
+	card := styleCard.Render(b.String())
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, card)
+}
+
 // Tabs renders the six detail tabs with underline on the active tab.
+// Uses ANSI-aware width so underline styles are not sliced mid-escape.
 func Tabs(active int, labels []string, width int) string {
 	parts := make([]string, 0, len(labels))
 	for i, label := range labels {
 		parts = append(parts, style.TabToken(label, i == active))
 	}
 	line := strings.Join(parts, " ")
-	return textwidth.PadRight(textwidth.Truncate(line, width), width)
+	if width <= 0 {
+		return line
+	}
+	if textwidth.Width(line) <= width {
+		return textwidth.PadRight(line, width)
+	}
+	// Drop inactive trailing tabs until the row fits; never slice ANSI mid-token.
+	for len(parts) > 1 && textwidth.Width(strings.Join(parts, " ")) > width {
+		parts = parts[:len(parts)-1]
+	}
+	line = strings.Join(parts, " ")
+	if textwidth.Width(line) > width {
+		line = lipgloss.NewStyle().MaxWidth(width).Render(line)
+	}
+	return textwidth.PadRight(line, width)
 }
 
-// DetailCardTitled renders a card with an inline title in the top border region.
+// DetailCardTitled renders a titled rounded card matching tui-example.md:
+//
+//	╭─  Evolution  ─────────╮
+//	│ body…                 │
+//	╰───────────────────────╯
 func DetailCardTitled(title string, lines []string, offset, width, height int) string {
 	if width < 12 {
 		width = 12
 	}
-	if height < 4 {
-		height = 4
+	if height < 3 {
+		height = 3
 	}
 	innerW := width - 2
-	innerH := height - 2
-	header := "─  " + title + "  "
-	for textwidth.Width(header) < innerW {
-		header += "─"
+	bodyH := height - 2
+	if bodyH < 1 {
+		bodyH = 1
 	}
-	header = textwidth.Truncate(header, innerW)
 
-	bodyLines := make([]string, 0, innerH-1)
-	for i := 0; i < innerH-1; i++ {
-		idx := offset + i
-		if idx >= 0 && idx < len(lines) {
-			bodyLines = append(bodyLines, textwidth.PadRight(textwidth.Truncate(lines[idx], innerW), innerW))
-		} else {
-			bodyLines = append(bodyLines, strings.Repeat(" ", innerW))
+	border := lipgloss.NewStyle().Foreground(style.BorderColor())
+	tl, tr := border.Render("╭"), border.Render("╮")
+	bl, br := border.Render("╰"), border.Render("╯")
+	vert := border.Render("│")
+	horiz := border.Render("─")
+
+	titleBit := "  " + title + "  "
+	prefix := tl + horiz + titleBit
+	remain := innerW - textwidth.Width(horiz+titleBit)
+	if remain < 0 {
+		titleBit = textwidth.TruncatePlain("  "+title+"  ", innerW-1)
+		prefix = tl + horiz + titleBit
+		remain = innerW - textwidth.Width(horiz+titleBit)
+		if remain < 0 {
+			remain = 0
 		}
 	}
-	content := header + "\n" + strings.Join(bodyLines, "\n")
-	return borderStyle.Width(innerW).Height(innerH).Render(content)
+	top := prefix + strings.Repeat(horiz, remain) + tr
+	bottom := bl + strings.Repeat(horiz, innerW) + br
+
+	var b strings.Builder
+	b.WriteString(top)
+	b.WriteByte('\n')
+	for i := 0; i < bodyH; i++ {
+		idx := offset + i
+		var body string
+		if idx >= 0 && idx < len(lines) {
+			body = textwidth.PadRight(textwidth.Truncate(lines[idx], innerW), innerW)
+		} else {
+			body = strings.Repeat(" ", innerW)
+		}
+		b.WriteString(vert)
+		b.WriteString(body)
+		b.WriteString(vert)
+		if i < bodyH-1 {
+			b.WriteByte('\n')
+		}
+	}
+	b.WriteByte('\n')
+	b.WriteString(bottom)
+	return b.String()
 }
 
-// Footer renders the compact hint line.
+// Footer renders the compact hint line (wireframe wording).
 func Footer(verbose bool, width int) string {
 	var text string
 	if verbose {
-		text = " Type to filter • ↑↓ move • Tab next panel • PgUp/PgDn scroll details • Esc clear • q quit • ? help"
+		text = " Type to filter • ↑↓ move • Tab tabs • i info • PgUp/PgDn scroll • Esc clear • q quit"
 	} else {
-		text = " type • ↑↓ • Tab • PgUp/PgDn • Esc • q • ?"
+		text = " type • ↑↓ • Tab • i • PgUp/PgDn • Esc • q"
 	}
-	return mutedStyle.Render(textwidth.PadRight(textwidth.Truncate(text, width), width))
+	return mutedSty().Render(textwidth.PadRight(textwidth.Truncate(text, width), width))
 }
 
 // HelpOverlay renders the keybinding help card.
-func HelpOverlay(width, height int) string {
-	body := strings.Join([]string{
-		"Browse help",
-		"",
-		"Type          Filter list (including q)",
-		"Backspace     Delete from search",
-		"Esc           Clear search (or close help)",
-		"↑ / ↓         Move selection",
-		"Tab / S-Tab   Cycle detail tabs",
-		"PgUp / PgDn   Scroll detail panel",
-		"Home / End    Jump in detail panel",
-		"q             Quit when search empty",
-		"Ctrl+C        Always quit",
-		"?             Toggle this help",
-		"",
-		"Colour is optional: active tab is underlined;",
-		"errors use [ERROR], warnings use [!].",
-		"",
-		"Press Esc or ? to close",
-	}, "\n")
+// body is typically bubbles/help FullHelpView output; a built-in fallback is used when empty.
+func HelpOverlay(body string, width, height int) string {
+	if strings.TrimSpace(body) == "" {
+		body = strings.Join([]string{
+			"Browse help",
+			"",
+			"Type to filter • ↑/↓ move • Tab tabs",
+			"i info • PgUp/PgDn scroll • Esc clear • q quit",
+			"",
+			"Press Esc or ? to close",
+		}, "\n")
+	} else {
+		body = "Browse help\n\n" + body + "\n\nPress Esc or ? to close"
+	}
 	styleCard := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Padding(1, 2).
-		Width(min(width-4, 56))
+		Width(min(width-4, 64))
 	card := styleCard.Render(body)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, card)
 }

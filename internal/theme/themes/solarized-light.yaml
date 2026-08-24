@@ -1,0 +1,12 @@
+theme_name: "Solarized Light"
+style: light
+
+colors:
+  primary: "#268bd2"
+  secondary: "#2aa198"
+  components: "#657b83"
+  placeholders: "#93a1a1"
+  base: "#eee8d5"
+  warning: "#b58900"
+  error: "#dc322f"
+  success: "#859900"

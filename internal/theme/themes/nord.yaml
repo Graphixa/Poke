@@ -1,0 +1,12 @@
+theme_name: "Nord"
+style: dark
+
+colors:
+  primary: "#88c0d0"
+  secondary: "#81a1c1"
+  components: "#eceff4"
+  placeholders: "#4c566a"
+  base: "#3b4252"
+  warning: "#ebcb8b"
+  error: "#bf616a"
+  success: "#a3be8c"

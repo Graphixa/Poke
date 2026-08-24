@@ -7,11 +7,13 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/Graphixa/Pokedex/internal/cli"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
+	"github.com/Graphixa/Pokedex/internal/theme"
 	"github.com/Graphixa/Pokedex/internal/usererr"
 )
 
@@ -25,6 +27,7 @@ type Runtime struct {
 	Search         cli.SearchHandler
 	Random         cli.RandomHandler
 	Cache          cli.CacheCommands
+	Theme          cli.ThemeHandler
 	Rand           IntnRand
 	Stdout         io.Writer
 	Stderr         io.Writer
@@ -64,12 +67,14 @@ func Execute(ctx context.Context, runtime Runtime) error {
 	handler := runtime.Handler
 	searchHandler := runtime.Search
 	randomHandler := runtime.Random
-	if handler == nil || searchHandler == nil || randomHandler == nil {
+	themeHandler := runtime.Theme
+	if handler == nil || searchHandler == nil || randomHandler == nil || themeHandler == nil {
 		appHandler := &Handler{
 			Services: services,
 			Stdout:   runtime.Stdout,
 			Stderr:   runtime.Stderr,
 			Rand:     runtime.Rand,
+			Paths:    paths,
 		}
 		if appHandler.Browse == nil {
 			appHandler.Browse = appHandler.openBrowse
@@ -83,6 +88,14 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		if randomHandler == nil {
 			randomHandler = appHandler
 		}
+		if themeHandler == nil {
+			themeHandler = appHandler
+		}
+	}
+
+	// Apply configured theme before any TUI runs.
+	if svc, err := services(); err == nil {
+		ApplyTheme(paths, svc.Config)
 	}
 
 	root := cli.NewRoot(cli.Options{
@@ -94,6 +107,7 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		Search:         searchHandler,
 		Random:         randomHandler,
 		Cache:          cacheCmds,
+		Theme:          themeHandler,
 		Stdout:         runtime.Stdout,
 		Stderr:         runtime.Stderr,
 		OnDebug: func(path string) error {
@@ -109,6 +123,16 @@ func Execute(ctx context.Context, runtime Runtime) error {
 	})
 	root.SetArgs(runtime.Args)
 	return root.ExecuteContext(ctx)
+}
+
+// ApplyTheme loads and installs the configured colour theme.
+func ApplyTheme(paths config.Paths, cfg config.Config) {
+	dir := theme.ThemesDir(filepath.Dir(paths.ConfigFile))
+	f, _, err := theme.Resolve(dir, cfg.Theme.Name)
+	if err != nil {
+		return
+	}
+	theme.Apply(f)
 }
 
 func lazyServices(paths config.Paths) func() (*Services, error) {

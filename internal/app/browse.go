@@ -51,6 +51,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	if err != nil {
 		return err
 	}
+	ApplyTheme(h.Paths, svc.Config)
 	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
 	if err != nil {
 		return err

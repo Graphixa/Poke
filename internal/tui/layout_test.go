@@ -79,9 +79,10 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		"> c",
 		"Charmander",
 		"#004",
-		"[ Charma",
 		"Evolution",
 		"Type to filter",
+		"[Stats]",
+		"[Locations]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)

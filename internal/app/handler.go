@@ -8,6 +8,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/cli"
+	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/search"
@@ -21,6 +22,7 @@ type IntnRand interface {
 // Handler implements search, random, and root inline/browse routing.
 type Handler struct {
 	Services func() (*Services, error)
+	Paths    config.Paths
 	Stdout   io.Writer
 	Stderr   io.Writer
 	Rand     IntnRand
