@@ -169,7 +169,6 @@ func TestEnsureIndexStartupPolicy(t *testing.T) {
 	clock := fixedClock{t: now}
 	store := cache.NewStore(root, clock)
 	cfg := testConfig()
-	cfg.Cache.RefreshOnStart = true
 	cfg.Cache.AutoRefresh = true
 
 	api := &fakeAPI{listErr: pokeapi.ErrOffline}

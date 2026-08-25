@@ -16,33 +16,33 @@ import (
 func TestLayoutBreakpoints(t *testing.T) {
 	// List ~58% / detail ~42%; aspect-corrected pad; chrome=8.
 	cases := []struct {
-		w, h            int
-		sprite, summary bool
-		verbose         bool
-		onePane         bool
-		tooSmall        bool
-		spriteSize      int
+		w, h       int
+		sprite     bool
+		verbose    bool
+		onePane    bool
+		tooSmall   bool
+		spriteSize int
 	}{
-		{120, 52, true, true, true, false, false, 40},
-		{120, 34, true, true, true, false, false, 40},
-		{120, 22, true, false, true, false, false, 20}, // min body; below summary height gate
-		{120, 21, false, false, false, false, false, 0},
-		{71, 26, true, false, false, false, false, 24},
-		{70, 40, true, false, false, false, false, 24},
-		{88, 40, true, true, true, false, false, 24},
-		{51, 40, false, false, false, true, false, 0},
-		{80, 17, false, false, false, true, false, 0},
-		{39, 20, false, false, false, true, true, 0},
-		{50, 11, false, false, false, true, true, 0},
+		{120, 52, true, true, false, false, 40},
+		{120, 34, true, true, false, false, 40},
+		{120, 22, true, true, false, false, 20}, // min body; below summary height gate
+		{120, 21, false, false, false, false, 0},
+		{71, 26, true, false, false, false, 24},
+		{70, 40, true, false, false, false, 24},
+		{88, 40, true, true, false, false, 24},
+		{51, 40, false, false, true, false, 0},
+		{80, 17, false, false, true, false, 0},
+		{39, 20, false, false, true, true, 0},
+		{50, 11, false, false, true, true, 0},
 	}
 	for _, tc := range cases {
 		m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}})
 		m = apply(t, m, tea.WindowSizeMsg{Width: tc.w, Height: tc.h})
 		f := m.LayoutFlags()
-		if f.ShowSprite != tc.sprite || f.ShowSummary != tc.summary || f.VerboseFooter != tc.verbose || f.OnePane != tc.onePane || f.TooSmall != tc.tooSmall {
-			t.Fatalf("%dx%d => sprite=%v summary=%v verbose=%v one=%v small=%v; want sprite=%v summary=%v verbose=%v one=%v small=%v",
-				tc.w, tc.h, f.ShowSprite, f.ShowSummary, f.VerboseFooter, f.OnePane, f.TooSmall,
-				tc.sprite, tc.summary, tc.verbose, tc.onePane, tc.tooSmall)
+		if f.ShowSprite != tc.sprite || f.VerboseFooter != tc.verbose || f.OnePane != tc.onePane || f.TooSmall != tc.tooSmall {
+			t.Fatalf("%dx%d => sprite=%v verbose=%v one=%v small=%v; want sprite=%v verbose=%v one=%v small=%v",
+				tc.w, tc.h, f.ShowSprite, f.VerboseFooter, f.OnePane, f.TooSmall,
+				tc.sprite, tc.verbose, tc.onePane, tc.tooSmall)
 		}
 		if f.SpriteSize != tc.spriteSize {
 			t.Fatalf("%dx%d SpriteSize=%d want %d", tc.w, tc.h, f.SpriteSize, tc.spriteSize)
@@ -114,10 +114,10 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
 		ShowSprite:  true, VerboseFooter: true,
-		BrowseView:  0,
-		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:    sprite.MaxFrameSize,
-		LeftWidth:   70, RightWidth: 49,
+		BrowseView: 0,
+		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		BodySize:   sprite.MaxFrameSize,
+		LeftWidth:  70, RightWidth: 49,
 		HeaderTypes: "Fire",
 		HeaderGenus: "Lizard Pokémon",
 		SpriteANSI:  "[sprite]",
@@ -167,10 +167,10 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
 		ShowSprite:  true, VerboseFooter: true,
-		BrowseView:  0,
-		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:    sprite.MaxFrameSize,
-		LeftWidth:   70, RightWidth: 49,
+		BrowseView: 0,
+		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		BodySize:   sprite.MaxFrameSize,
+		LeftWidth:  70, RightWidth: 49,
 		ShowDialog:    true,
 		DialogSection: 0,
 		DialogLabels:  []string{"Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
@@ -190,12 +190,12 @@ func TestBrowseSwitcherBottomAnchored(t *testing.T) {
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 52,
 		Rows: rows, HasSelected: true,
-		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
-		ShowSprite:  true, VerboseFooter: true,
-		BrowseView:  0,
-		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:    sprite.MinFrameSize,
-		LeftWidth:   70, RightWidth: 49,
+		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
+		ShowSprite: true, VerboseFooter: true,
+		BrowseView: 0,
+		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		BodySize:   sprite.MinFrameSize,
+		LeftWidth:  70, RightWidth: 49,
 		HeaderTypes: "Fire",
 		SpriteANSI:  "X",
 	})
@@ -232,7 +232,7 @@ func TestSummaryUsesFullPaneWidth(t *testing.T) {
 		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
 		BodySize:   sprite.MinFrameSize,
 		LeftWidth:  70, RightWidth: 49,
-		ViewLines:  []string{long},
+		ViewLines: []string{long},
 	})
 	plain := stripANSI(out)
 	if !strings.Contains(plain, "flavour") {

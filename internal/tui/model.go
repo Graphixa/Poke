@@ -22,11 +22,6 @@ type Options struct {
 	Selected *domain.SpeciesSummary
 	Prefill  string
 	Context  context.Context
-	// MinWidthForSprite / MinHeightForSprite gate when the sprite panel may appear.
-	// Zero uses package defaults (frame-derived mins). Sprite longest-side scales
-	// between MinFrameSize and MaxFrameSize when the terminal allows.
-	MinWidthForSprite  int
-	MinHeightForSprite int
 	// DisableSprite forces the sprite panel off regardless of terminal size.
 	DisableSprite bool
 }
@@ -75,14 +70,12 @@ func NewModel(opts Options) Model {
 		ctx = context.Background()
 	}
 	m := Model{
-		ctx:       ctx,
-		index:     opts.Index,
-		details:   opts.Details,
-		sprites:   opts.Sprites,
+		ctx:     ctx,
+		index:   opts.Index,
+		details: opts.Details,
+		sprites: opts.Sprites,
 		layoutTh: layoutThresholds{
-			MinSpriteWidth:  opts.MinWidthForSprite,
-			MinSpriteHeight: opts.MinHeightForSprite,
-			DisableSprite:   opts.DisableSprite,
+			DisableSprite: opts.DisableSprite,
 		},
 		resources:     make(map[int]*resourceCache),
 		browseView:    BrowseSprite,

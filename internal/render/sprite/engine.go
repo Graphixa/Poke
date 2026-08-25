@@ -209,9 +209,7 @@ func (e *Engine) renderOptions(label string, fw, fh int, hash string) RenderOpti
 	return RenderOptions{
 		Width:           fw,
 		Height:          fh,
-		PreserveAR:      true,
 		ColorMode:       color,
-		Background:      BackgroundTheme,
 		BackgroundColor: bg,
 		AlphaThreshold:  16,
 		Source:          source,

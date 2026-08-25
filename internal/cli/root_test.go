@@ -150,32 +150,6 @@ func TestDebugFlagInvokesCallback(t *testing.T) {
 	}
 }
 
-func TestChafaCommandRoutes(t *testing.T) {
-	called := false
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	root := NewRoot(Options{
-		InvocationPath: "poke",
-		Paths: config.Paths{
-			ConfigFile: filepath.Join(t.TempDir(), "config.yaml"),
-			CacheDir:   filepath.Join(t.TempDir(), "cache"),
-		},
-		Chafa: ChafaHandlerFunc(func(context.Context) error {
-			called = true
-			return nil
-		}),
-		Stdout: stdout,
-		Stderr: stderr,
-	})
-	root.SetArgs([]string{"chafa"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !called {
-		t.Fatal("TestChafaSprites was not called")
-	}
-}
-
 type recordingRunner struct{}
 
 func (*recordingRunner) Run(string, ...string) error {

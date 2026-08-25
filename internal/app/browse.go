@@ -60,7 +60,6 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	if err != nil {
 		return err
 	}
-	ApplyTheme(h.Paths, svc.Config)
 	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
 	if err != nil {
 		return err
@@ -102,14 +101,12 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 
 	return tui.Run(ctx, tui.Options{
-		Index:              search.Build(index),
-		Details:            tuiDetails{NewDetailService(svc.Cache)},
-		Sprites:            tuiSprites{engine},
-		Selected:           req.Selected,
-		Prefill:            req.Prefill,
-		Context:            ctx,
-		MinWidthForSprite:  svc.Config.TUI.MinWidthForSprite,
-		MinHeightForSprite: svc.Config.TUI.MinHeightForSprite,
-		DisableSprite:      !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
+		Index:         search.Build(index),
+		Details:       tuiDetails{NewDetailService(svc.Cache)},
+		Sprites:       tuiSprites{engine},
+		Selected:      req.Selected,
+		Prefill:       req.Prefill,
+		Context:       ctx,
+		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
 	})
 }

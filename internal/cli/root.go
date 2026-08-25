@@ -49,7 +49,6 @@ type Options struct {
 	Random         RandomHandler
 	Cache          CacheCommands
 	Theme          ThemeHandler
-	Chafa          ChafaHandler
 	Stdout         io.Writer
 	Stderr         io.Writer
 	// OnDebug is invoked when --debug is set. path may be empty for the default log file.
@@ -59,11 +58,6 @@ type Options struct {
 // ThemeHandler launches the interactive theme selector.
 type ThemeHandler interface {
 	Theme(context.Context) error
-}
-
-// ChafaHandler runs temporary Chafa sprite renderer comparisons.
-type ChafaHandler interface {
-	TestChafaSprites(context.Context) error
 }
 
 // CacheCommands handles cache maintenance subcommands.
@@ -158,7 +152,6 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newSearchCommand(options))
 	cmd.AddCommand(newRandomCommand(options))
 	cmd.AddCommand(newThemeCommand(options))
-	cmd.AddCommand(newChafaCommand(options))
 	return cmd
 }
 
@@ -323,21 +316,6 @@ func newThemeCommand(options Options) *cobra.Command {
 				return fmt.Errorf("theme selector is unavailable")
 			}
 			return options.Theme.Theme(cmd.Context())
-		},
-	}
-}
-
-func newChafaCommand(options Options) *cobra.Command {
-	return &cobra.Command{
-		Use:   "chafa",
-		Short: "Temporary: render sprites with Chafa (ploMP4/chafa-go)",
-		Long:  "Renders Charizard and Blastoise with Chafa at several cell sizes for visual assessment.",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if options.Chafa == nil {
-				return fmt.Errorf("chafa sprite test is unavailable")
-			}
-			return options.Chafa.TestChafaSprites(cmd.Context())
 		},
 	}
 }

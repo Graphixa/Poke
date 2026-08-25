@@ -47,15 +47,6 @@ func (m Model) browseViewLines() []string {
 	}
 }
 
-func (m Model) detailContentLines() []string {
-	// Kept for dialog / tests that still call through the viewport path.
-	return m.dialogContentLines()
-}
-
-func formatStatsLines(p domain.Pokemon) []string {
-	return formatStatsBars(p)
-}
-
 func formatStatsBars(p domain.Pokemon) []string {
 	bar := func(label string, v int) string {
 		const maxStat = 255
@@ -565,24 +556,4 @@ func latestSummary(s domain.Species) string {
 		}
 	}
 	return output.CleanFlavor(text)
-}
-
-func abbreviateTypes(types []string, max int) string {
-	joined := output.JoinTypes(types)
-	if max <= 0 || len(joined) <= max {
-		return joined
-	}
-	if len(types) < 2 {
-		return truncate(joined, max)
-	}
-	first := output.TitleFromSlug(types[0])
-	second := output.TitleFromSlug(types[1])
-	if len(second) > 4 {
-		second = second[:4]
-	}
-	out := first + "/" + second
-	if len(out) > max {
-		return truncate(out, max)
-	}
-	return out
 }

@@ -32,9 +32,6 @@ const (
 	FrameHeight = MaxFrameSize / CellAspectY
 )
 
-// SeparatorWidth is reserved for optional chrome near the sprite region.
-const SeparatorWidth = 3
-
 // FrameSizeFor returns cell width×height for a longest-side step.
 // side is clamped into [MinFrameSize, MaxFrameSize] and snapped down to FrameStep.
 func FrameSizeFor(side int) (w, h int) {
@@ -76,27 +73,6 @@ func FrameSteps() []int {
 func OuterFor(side int) (w, h int) {
 	fw, fh := FrameSizeFor(side)
 	return fw + 2*FramePadX, fh + 2*FramePadY
-}
-
-// FrameOuterWidth is the preferred (max) padded body width.
-func FrameOuterWidth() int {
-	w, _ := OuterFor(MaxFrameSize)
-	return w
-}
-
-// FrameOuterHeight is the preferred (max) padded body height.
-func FrameOuterHeight() int {
-	_, h := OuterFor(MaxFrameSize)
-	return h
-}
-
-// FrameOuterSize is the larger outer edge at max frame.
-func FrameOuterSize() int {
-	w, h := FrameOuterWidth(), FrameOuterHeight()
-	if h > w {
-		return h
-	}
-	return w
 }
 
 // MinListWidth is the smallest list column that stays usable beside the sprite.

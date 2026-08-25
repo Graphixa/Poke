@@ -4,17 +4,15 @@ import "github.com/Graphixa/Pokedex/internal/domain"
 
 // Exported accessors for model/layout tests.
 
-func (m Model) Query() string      { return m.queryValue() }
-func (m Model) CanQuitWithQ() bool { return m.canQuitWithQ() }
-func (m Model) HelpVisible() bool  { return m.showHelp }
-func (m Model) DialogVisible() bool { return m.showDialog }
-func (m Model) Quitting() bool     { return m.quitting }
-func (m Model) ActiveBrowseView() BrowseView { return m.browseView }
+func (m Model) Query() string                      { return m.queryValue() }
+func (m Model) CanQuitWithQ() bool                 { return m.canQuitWithQ() }
+func (m Model) HelpVisible() bool                  { return m.showHelp }
+func (m Model) DialogVisible() bool                { return m.showDialog }
+func (m Model) Quitting() bool                     { return m.quitting }
+func (m Model) ActiveBrowseView() BrowseView       { return m.browseView }
 func (m Model) ActiveDialogSection() DialogSection { return m.dialogSection }
-func (m Model) DialogOffset() int  { return m.dialogVP.YOffset() }
-func (m Model) SelectionGen() int  { return m.selectionGen }
-func (m Model) Width() int         { return m.width }
-func (m Model) Height() int        { return m.height }
+func (m Model) DialogOffset() int                  { return m.dialogVP.YOffset() }
+func (m Model) SelectionGen() int                  { return m.selectionGen }
 
 func (m Model) SelectedID() (int, bool) {
 	sel, ok := m.selected()

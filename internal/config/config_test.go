@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 func TestDefault(t *testing.T) {
@@ -19,7 +17,7 @@ func TestDefault(t *testing.T) {
 	if cfg.Network.Timeout.Duration != 10*time.Second {
 		t.Fatalf("network timeout = %v", cfg.Network.Timeout.Duration)
 	}
-	if cfg.Network.MaxConcurrency != 4 || cfg.Data.Language != "en" {
+	if cfg.Network.MaxConcurrency != 4 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 	if err := cfg.Validate(); err != nil {
@@ -43,21 +41,6 @@ func TestLoadOverlaysDefaultsAndIgnoresUnknownFields(t *testing.T) {
 	}
 	if cfg.Network.Timeout.Duration != 10*time.Second {
 		t.Fatalf("unspecified timeout was not preserved: %v", cfg.Network.Timeout.Duration)
-	}
-}
-
-func TestLoadMigratesLegacySpriteGates(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	data := []byte("tui:\n  min_width_for_sprite: 100\n  min_height_for_sprite: 50\n")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.TUI.MinWidthForSprite != sprite.MinTerminalWidth() || cfg.TUI.MinHeightForSprite != sprite.MinTerminalHeight() {
-		t.Fatalf("legacy gates not migrated: %+v want %dx%d", cfg.TUI, sprite.MinTerminalWidth(), sprite.MinTerminalHeight())
 	}
 }
 

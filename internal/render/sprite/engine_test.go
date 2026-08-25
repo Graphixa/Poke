@@ -196,7 +196,7 @@ func TestEnginePlaceholder(t *testing.T) {
 
 func TestPlaceholderRenderer(t *testing.T) {
 	opts := sprite.RenderOptions{
-		Width: 24, Height: 8, PreserveAR: true,
+		Width: 24, Height: 8,
 		BackgroundColor: color.RGBA{A: 255},
 		Source:          sprite.SourcePixel,
 		Label:           "Test",
@@ -216,14 +216,14 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || color != sprite.ColorTrueColor || ver != sprite.AlgorithmVersion {
 		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s", hash, src, mode, w, h, color, ver)
 	}
-	if sprite.BucketSize(21) != sprite.MinFrameSize {
-		t.Fatalf("bucket 21 = %d want %d", sprite.BucketSize(21), sprite.MinFrameSize)
+	if sprite.ClampFrameSide(21) != sprite.MinFrameSize {
+		t.Fatalf("clamp 21 = %d want %d", sprite.ClampFrameSide(21), sprite.MinFrameSize)
 	}
-	if sprite.BucketSize(45) != sprite.MaxFrameSize {
-		t.Fatalf("bucket 45 = %d want %d", sprite.BucketSize(45), sprite.MaxFrameSize)
+	if sprite.ClampFrameSide(45) != sprite.MaxFrameSize {
+		t.Fatalf("clamp 45 = %d want %d", sprite.ClampFrameSide(45), sprite.MaxFrameSize)
 	}
-	if sprite.BucketSize(30) != 28 && sprite.BucketSize(30) != 32 {
-		t.Fatalf("bucket 30 = %d", sprite.BucketSize(30))
+	if sprite.ClampFrameSide(30) != 28 && sprite.ClampFrameSide(30) != 32 {
+		t.Fatalf("clamp 30 = %d", sprite.ClampFrameSide(30))
 	}
 }
 

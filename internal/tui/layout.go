@@ -9,8 +9,6 @@ const (
 	// Rows reserved outside the sprite body — must match sprite.BrowseChromeRows
 	// (footer + frame borders + header/gap + divider/switcher).
 	spriteChromeRows = sprite.BrowseChromeRows
-	minSummaryWidth  = 88
-	minSummaryHeight = 25
 	minFooterWidth   = 76
 	minFooterHeight  = 22
 	minTwoPaneWidth  = 52
@@ -20,19 +18,14 @@ const (
 )
 
 // layoutThresholds holds size gates; zero fields mean defaults.
-// MinSpriteWidth/Height are retained for config wiring but ShowSprite is
-// decided by whether a padded frame fits the body (see layoutFor).
 type layoutThresholds struct {
-	MinSpriteWidth  int
-	MinSpriteHeight int
-	DisableSprite   bool
+	DisableSprite bool
 }
 
 // LayoutFlags describe which regions are visible for the current terminal size.
 type LayoutFlags struct {
 	Width, Height int
 	ShowSprite    bool
-	ShowSummary   bool
 	VerboseFooter bool
 	OnePane       bool
 	TooSmall      bool
@@ -49,7 +42,6 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	if width <= 0 || height <= 0 {
 		f.ShowSprite = !th.DisableSprite
 		f.SpriteSize = sprite.MaxFrameSize
-		f.ShowSummary = true
 		f.VerboseFooter = true
 		f.RightWidth = sprite.RightPanelWidth(120, sprite.MaxFrameSize)
 		f.LeftWidth = 120 - f.RightWidth - 1
@@ -90,7 +82,6 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 		f.RightWidth = width - f.LeftWidth - 1
 	}
 
-	f.ShowSummary = !f.OnePane && !f.TooSmall && width >= minSummaryWidth && height >= minSummaryHeight
 	f.VerboseFooter = !f.TooSmall && width >= minFooterWidth && height >= minFooterHeight
 	return f
 }
@@ -113,12 +104,4 @@ func (f LayoutFlags) rightWidth() int {
 		return 48
 	}
 	return sprite.RightPanelWidth(f.Width, f.SpriteSize)
-}
-
-// spriteFrameSize returns cell width×height for the chosen step when shown.
-func (f LayoutFlags) spriteFrameSize() (w, h int) {
-	if !f.ShowSprite || f.SpriteSize < sprite.MinFrameSize {
-		return 0, 0
-	}
-	return sprite.FrameSizeFor(f.SpriteSize)
 }

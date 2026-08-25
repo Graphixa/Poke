@@ -31,7 +31,6 @@ type Runtime struct {
 	Rand           IntnRand
 	Stdout         io.Writer
 	Stderr         io.Writer
-	Chafa          cli.ChafaHandler
 	// DebugLogPath enables file diagnostics when non-nil after CLI parse.
 	// Prefer wiring via cli persistent --debug; this field is for tests.
 	DebugLogPath string
@@ -69,8 +68,7 @@ func Execute(ctx context.Context, runtime Runtime) error {
 	searchHandler := runtime.Search
 	randomHandler := runtime.Random
 	themeHandler := runtime.Theme
-	chafaHandler := runtime.Chafa
-	if handler == nil || searchHandler == nil || randomHandler == nil || themeHandler == nil || chafaHandler == nil {
+	if handler == nil || searchHandler == nil || randomHandler == nil || themeHandler == nil {
 		appHandler := &Handler{
 			Services: services,
 			Stdout:   runtime.Stdout,
@@ -93,9 +91,6 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		if themeHandler == nil {
 			themeHandler = appHandler
 		}
-		if chafaHandler == nil {
-			chafaHandler = appHandler
-		}
 	}
 
 	// Apply configured theme before any TUI runs.
@@ -113,7 +108,6 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		Random:         randomHandler,
 		Cache:          cacheCmds,
 		Theme:          themeHandler,
-		Chafa:          chafaHandler,
 		Stdout:         runtime.Stdout,
 		Stderr:         runtime.Stderr,
 		OnDebug: func(path string) error {

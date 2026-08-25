@@ -35,7 +35,6 @@ type BrowseRequest struct {
 	Target   string
 	Selected *domain.SpeciesSummary
 	Prefill  string
-	Random   bool
 }
 
 func (h *Handler) RunRoot(ctx context.Context, request cli.RootRequest) error {
@@ -93,7 +92,7 @@ func (h *Handler) Random(ctx context.Context, mode cli.InlineMode) error {
 	if mode != cli.InlineNone {
 		return h.printInline(ctx, sum, mode)
 	}
-	browse := BrowseRequest{Selected: &sum, Random: true, Target: sum.Slug}
+	browse := BrowseRequest{Selected: &sum, Target: sum.Slug}
 	if h.Browse != nil {
 		return h.Browse(ctx, browse)
 	}

@@ -14,7 +14,7 @@ type runModel struct {
 }
 
 func (m runModel) Init() tea.Cmd {
-	return tea.Batch(m.Model.Init(), tickSummary())
+	return m.Model.Init()
 }
 
 func (m runModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

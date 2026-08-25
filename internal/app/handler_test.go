@@ -56,7 +56,6 @@ func (s *stubAPI) GetMove(context.Context, int) (domain.Move, error) {
 
 func testCfg() config.Config {
 	cfg := config.Default()
-	cfg.Cache.RefreshOnStart = false
 	cfg.Cache.AutoRefresh = false
 	cfg.Network.MaxConcurrency = 2
 	return cfg

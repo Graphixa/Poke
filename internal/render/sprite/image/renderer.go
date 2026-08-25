@@ -173,7 +173,7 @@ func (r *Renderer) RenderPNG(pngData []byte, w, h int) (sprite.Frame, error) {
 		return sprite.Frame{}, fmt.Errorf("image: unsupported format %q", format)
 	}
 	return r.Render(context.Background(), img, sprite.RenderOptions{
-		Width: w, Height: h, PreserveAR: true, Source: sprite.SourcePixel,
+		Width: w, Height: h, Source: sprite.SourcePixel,
 	})
 }
 

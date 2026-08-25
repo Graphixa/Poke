@@ -31,33 +31,15 @@ const (
 	SourceArtwork SpriteSource = "artwork"
 )
 
-// BackgroundMode controls transparent pixel handling.
-type BackgroundMode string
-
-const (
-	BackgroundTheme BackgroundMode = "theme"
-	BackgroundClear BackgroundMode = "clear"
-)
-
-// DitherMode controls optional dithering (off by default for pixel sprites).
-type DitherMode string
-
-const (
-	DitherNone DitherMode = "none"
-)
-
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
 const AlgorithmVersion = "v6"
 
 // RenderOptions control a single sprite conversion.
 type RenderOptions struct {
-	Width      int
-	Height     int
-	PreserveAR bool
-	Animated   bool
-	ColorMode  ColorMode
-	Background BackgroundMode
+	Width     int
+	Height    int
+	ColorMode ColorMode
 	// BackgroundColor is used when Background is theme (or for letterboxing).
 	BackgroundColor color.RGBA
 	// AlphaThreshold treats samples below this alpha as transparent (0–255).
@@ -75,9 +57,7 @@ func DefaultRenderOptions() RenderOptions {
 	return RenderOptions{
 		Width:          FrameWidth,
 		Height:         FrameHeight,
-		PreserveAR:     true,
 		ColorMode:      ColorAuto,
-		Background:     BackgroundTheme,
 		AlphaThreshold: 16,
 		Source:         SourcePixel,
 	}

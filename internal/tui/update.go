@@ -109,10 +109,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case summaryTickMsg:
-		m.advanceSummaryScroll()
-		return m, tickSummary()
-
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}

@@ -104,7 +104,7 @@ func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index
 
 // ShouldBackgroundRefresh reports whether a stale index should refresh in the background.
 func (s *Service) ShouldBackgroundRefresh(stale bool) bool {
-	return stale && (s.cfg.Cache.RefreshOnStart || s.cfg.Cache.AutoRefresh)
+	return stale && s.cfg.Cache.AutoRefresh
 }
 
 // BackgroundRefresh starts at most one in-flight Refresh. It does not block the caller.

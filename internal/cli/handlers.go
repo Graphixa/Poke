@@ -16,13 +16,6 @@ func (f SearchHandlerFunc) Search(ctx context.Context, query string) error {
 	return f(ctx, query)
 }
 
-// ChafaHandlerFunc adapts a function to ChafaHandler.
-type ChafaHandlerFunc func(context.Context) error
-
-func (f ChafaHandlerFunc) TestChafaSprites(ctx context.Context) error {
-	return f(ctx)
-}
-
 // RandomHandler runs poke random [--info|--stats|--evolution].
 type RandomHandler interface {
 	Random(context.Context, InlineMode) error

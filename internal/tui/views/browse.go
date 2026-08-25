@@ -480,15 +480,6 @@ func max(a, b int) int {
 	return b
 }
 
-// FormatHeight / FormatWeight keep existing helpers used by tui.view.
-func FormatHeight(dm int) string {
-	return fmt.Sprintf("%.1f m", float64(dm)/10)
-}
-
-func FormatWeight(hg int) string {
-	return fmt.Sprintf("%.1f kg", float64(hg)/10)
-}
-
 func fallbackCombine(title string, leftW, rightW, height int, leftContent, rightContent string) string {
 	if leftW < 4 {
 		leftW = 4

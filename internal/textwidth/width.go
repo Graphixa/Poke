@@ -2,7 +2,6 @@ package textwidth
 
 import (
 	"charm.land/lipgloss/v2"
-	"github.com/mattn/go-runewidth"
 )
 
 // Width returns the terminal display width of s, ignoring ANSI escape sequences.
@@ -24,20 +23,6 @@ func Truncate(s string, width int) string {
 	}
 	// lipgloss MaxWidth truncates visually without splitting escape sequences.
 	return lipgloss.NewStyle().MaxWidth(width-1).Render(s) + "…"
-}
-
-// TruncatePlain shortens plain (ANSI-free) text using rune widths.
-func TruncatePlain(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if runewidth.StringWidth(s) <= width {
-		return s
-	}
-	if width == 1 {
-		return "…"
-	}
-	return runewidth.Truncate(s, width, "…")
 }
 
 // PadRight pads s with spaces to width display columns (ANSI-aware).

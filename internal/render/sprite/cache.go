@@ -5,36 +5,6 @@ import (
 	"strings"
 )
 
-// SizeBuckets are preferred longest-side steps for cache snapping.
-var SizeBuckets = FrameSteps()
-
-// BucketSize snaps n to the nearest SizeBucket (minimum first bucket).
-func BucketSize(n int) int {
-	if n < 1 {
-		return SizeBuckets[0]
-	}
-	best := SizeBuckets[0]
-	bestDist := abs(n - best)
-	for _, b := range SizeBuckets[1:] {
-		d := abs(n - b)
-		if d < bestDist {
-			best, bestDist = b, d
-		}
-	}
-	return best
-}
-
-// BucketFloor returns the largest SizeBucket that is ≤ n, or 0 if none fit.
-func BucketFloor(n int) int {
-	best := 0
-	for _, b := range SizeBuckets {
-		if b <= n && b > best {
-			best = b
-		}
-	}
-	return best
-}
-
 func abs(x int) int {
 	if x < 0 {
 		return -x
@@ -79,9 +49,4 @@ func ParseCacheKey(key string) (hash string, source SpriteSource, mode string, w
 		return "", "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid cache key %q", key)
 	}
 	return hash, source, mode, w, h, color, version, nil
-}
-
-// ArtefactFilename returns the on-disk name for a cache key.
-func ArtefactFilename(key string) string {
-	return key + ".ansi"
 }

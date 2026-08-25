@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 const (
@@ -40,25 +38,17 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 
 type Config struct {
 	Cache   Cache   `yaml:"cache"`
-	Data    Data    `yaml:"data"`
 	Render  Render  `yaml:"render"`
 	TUI     TUI     `yaml:"tui"`
 	Theme   Theme   `yaml:"theme"`
-	CLI     CLI     `yaml:"cli"`
 	Network Network `yaml:"network"`
 }
 
 type Cache struct {
-	AutoRefresh    bool     `yaml:"auto_refresh"`
-	IndexTTL       Duration `yaml:"index_ttl"`
-	DetailTTL      Duration `yaml:"detail_ttl"`
-	MoveTTL        Duration `yaml:"move_ttl"`
-	RefreshOnStart bool     `yaml:"refresh_on_start"`
-}
-
-type Data struct {
-	Language     string `yaml:"language"`
-	VersionGroup string `yaml:"version_group"`
+	AutoRefresh bool     `yaml:"auto_refresh"`
+	IndexTTL    Duration `yaml:"index_ttl"`
+	DetailTTL   Duration `yaml:"detail_ttl"`
+	MoveTTL     Duration `yaml:"move_ttl"`
 }
 
 type Render struct {
@@ -69,33 +59,15 @@ type Render struct {
 	SpriteSource string `yaml:"sprite_source"`
 	// Color selects colour encoding: auto | truecolor | 256 | mono
 	Color string `yaml:"color"`
-	// Dithering is reserved; v1 only supports "none".
-	Dithering string `yaml:"dithering"`
-	// Animate is reserved; v1 only supports "auto"/"off" (animation not required).
-	Animate string `yaml:"animate"`
-	// Sprite selects which PokeAPI sprite field to use (v1: front_default).
-	Sprite string `yaml:"sprite"`
-
-	// Deprecated fields retained for older config files (ignored at runtime).
-	Images              string `yaml:"images"`
-	Halfblock           bool   `yaml:"halfblock"`
-	PlaceholderFallback bool   `yaml:"placeholder_fallback"`
 }
 
 type TUI struct {
-	ShowSprite         bool   `yaml:"show_sprite"`
-	MinWidthForSprite  int    `yaml:"min_width_for_sprite"`
-	MinHeightForSprite int    `yaml:"min_height_for_sprite"`
-	FooterHelp         string `yaml:"footer_help"`
+	ShowSprite bool `yaml:"show_sprite"`
 }
 
 // Theme selects the TUI colour palette (FontGet-compatible YAML themes).
 type Theme struct {
 	Name string `yaml:"name"`
-}
-
-type CLI struct {
-	DefaultMode string `yaml:"default_mode"`
 }
 
 type Network struct {
@@ -108,31 +80,18 @@ type Network struct {
 func Default() Config {
 	return Config{
 		Cache: Cache{
-			AutoRefresh:    true,
-			IndexTTL:       Duration{24 * time.Hour},
-			DetailTTL:      Duration{7 * 24 * time.Hour},
-			MoveTTL:        Duration{30 * 24 * time.Hour},
-			RefreshOnStart: true,
+			AutoRefresh: true,
+			IndexTTL:    Duration{24 * time.Hour},
+			DetailTTL:   Duration{7 * 24 * time.Hour},
+			MoveTTL:     Duration{30 * 24 * time.Hour},
 		},
-		Data: Data{Language: "en", VersionGroup: "latest"},
 		Render: Render{
-			SpriteMode:          "auto",
-			SpriteSource:        "pixel",
-			Color:               "auto",
-			Dithering:           "none",
-			Animate:             "auto",
-			Halfblock:           true,
-			PlaceholderFallback: true,
-			Sprite:              "front_default",
+			SpriteMode:   "auto",
+			SpriteSource: "pixel",
+			Color:        "auto",
 		},
-		TUI: TUI{
-			ShowSprite:         true,
-			MinWidthForSprite:  sprite.MinTerminalWidth(),
-			MinHeightForSprite: sprite.MinTerminalHeight(),
-			FooterHelp:         "compact",
-		},
+		TUI:   TUI{ShowSprite: true},
 		Theme: Theme{Name: "catppuccin"},
-		CLI:   CLI{DefaultMode: "browse"},
 		Network: Network{
 			Timeout:        Duration{10 * time.Second},
 			Retries:        3,
@@ -153,17 +112,9 @@ func (c Config) Validate() error {
 	positiveDuration("cache.detail_ttl", c.Cache.DetailTTL.Duration)
 	positiveDuration("cache.move_ttl", c.Cache.MoveTTL.Duration)
 	positiveDuration("network.timeout", c.Network.Timeout.Duration)
-	if c.Data.Language != "en" {
-		problems = append(problems, `data.language must be "en" in v1`)
-	}
-	if c.Data.VersionGroup == "" {
-		problems = append(problems, "data.version_group must not be empty")
-	}
 	switch c.Render.SpriteMode {
 	case "", "auto", "off":
 		// Allowed.
-	case "image", "chafa", "halfblock", "braille", "ascii":
-		// Deprecated; EffectiveSpriteMode remaps to auto (or off via legacy).
 	default:
 		problems = append(problems, `render.sprite_mode must be one of "auto", "off"`)
 	}
@@ -176,29 +127,6 @@ func (c Config) Validate() error {
 	case "", "auto", "truecolor", "256", "mono":
 	default:
 		problems = append(problems, `render.color must be one of "auto", "truecolor", "256", "mono"`)
-	}
-	switch c.Render.Dithering {
-	case "", "none":
-	default:
-		problems = append(problems, `render.dithering must be "none" in v1`)
-	}
-	switch c.Render.Animate {
-	case "", "auto", "on", "off":
-	default:
-		problems = append(problems, `render.animate must be one of "auto", "on", "off"`)
-	}
-	// render.images is deprecated and ignored (native protocol is auto-detected).
-	if c.Render.Sprite != "front_default" {
-		problems = append(problems, `render.sprite must be "front_default" in v1`)
-	}
-	if c.TUI.MinWidthForSprite <= 0 || c.TUI.MinHeightForSprite <= 0 {
-		problems = append(problems, "tui sprite dimensions must be greater than zero")
-	}
-	if c.TUI.FooterHelp != "compact" {
-		problems = append(problems, `tui.footer_help must be "compact"`)
-	}
-	if c.CLI.DefaultMode != "browse" {
-		problems = append(problems, `cli.default_mode must be "browse"`)
 	}
 	if c.Network.Retries < 0 {
 		problems = append(problems, "network.retries must not be negative")
@@ -216,22 +144,12 @@ func (c Config) Validate() error {
 }
 
 // EffectiveSpriteMode returns auto or off. Native image vs chafa is chosen by
-// capability detection, not config. Deprecated mode names remap to auto.
+// capability detection, not config.
 func (c Config) EffectiveSpriteMode() string {
-	mode := c.Render.SpriteMode
-	switch mode {
-	case "off":
+	if c.Render.SpriteMode == "off" {
 		return "off"
-	case "":
-		// Legacy configs without sprite_mode.
-		if !c.Render.Halfblock && (c.Render.Images == "off" || c.Render.Images == "") {
-			return "off"
-		}
-		return "auto"
-	default:
-		// auto, image, chafa, and old text modes all mean "use the auto chain".
-		return "auto"
 	}
+	return "auto"
 }
 
 type Paths struct {
@@ -283,29 +201,10 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
-	migrateLegacySpriteGates(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate config: %w", err)
 	}
 	return cfg, nil
-}
-
-// migrateLegacySpriteGates lowers outdated sprite gates that hid art on common
-// terminal sizes (e.g. Windows Terminal ~120×30) after the fixed-frame redesign.
-func migrateLegacySpriteGates(cfg *Config) {
-	if cfg == nil {
-		return
-	}
-	w, h := cfg.TUI.MinWidthForSprite, cfg.TUI.MinHeightForSprite
-	legacy := (w == 110 && h == 52) ||
-		(w == 100 && h == 50) ||
-		(w == 80 && h == 28) ||
-		(w == 71 && h == 30) ||
-		(w == 71 && h == 28)
-	if legacy {
-		cfg.TUI.MinWidthForSprite = sprite.MinTerminalWidth()
-		cfg.TUI.MinHeightForSprite = sprite.MinTerminalHeight()
-	}
 }
 
 // Initialize atomically creates a default config and never replaces an

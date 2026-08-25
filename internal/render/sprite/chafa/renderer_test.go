@@ -21,7 +21,6 @@ func TestChafaRenderer(t *testing.T) {
 	frame, err := (spritechafa.Renderer{}).Render(context.Background(), img, sprite.RenderOptions{
 		Width:           sprite.FrameWidth,
 		Height:          sprite.FrameHeight,
-		PreserveAR:      true,
 		ColorMode:       sprite.ColorTrueColor,
 		BackgroundColor: color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255},
 		AlphaThreshold:  16,
