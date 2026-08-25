@@ -10,7 +10,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/usererr"
 )
 
-func (m Model) detailContentLines() []string {
+func (m Model) browseViewLines() []string {
 	sel, ok := m.selected()
 	if !ok {
 		return []string{"No Pokémon selected."}
@@ -26,10 +26,12 @@ func (m Model) detailContentLines() []string {
 		return []string{"Loading…"}
 	}
 
-	switch m.activeTab {
-	case TabStats:
-		return formatStatsLines(r.Pokemon)
-	case TabEvolution:
+	switch m.browseView {
+	case BrowseSummary:
+		return formatBrowseSummaryLines(r.Pokemon, r.Species)
+	case BrowseStats:
+		return formatStatsBars(r.Pokemon)
+	case BrowseEvolution:
 		if r.loadingEvolution {
 			return []string{"Loading evolution…"}
 		}
@@ -39,19 +41,123 @@ func (m Model) detailContentLines() []string {
 		if !r.HasEvolution {
 			return []string{"Loading evolution…"}
 		}
-		return formatEvolutionLines(r.Evolution)
-	case TabLocations:
-		if r.loadingEncounters {
-			return []string{"Loading locations…"}
+		return formatBrowseEvolutionLines(r.Evolution)
+	default:
+		return nil
+	}
+}
+
+func (m Model) detailContentLines() []string {
+	// Kept for dialog / tests that still call through the viewport path.
+	return m.dialogContentLines()
+}
+
+func formatStatsLines(p domain.Pokemon) []string {
+	return formatStatsBars(p)
+}
+
+func formatStatsBars(p domain.Pokemon) []string {
+	bar := func(label string, v int) string {
+		const maxStat = 255
+		filled := v * 12 / maxStat
+		if filled > 12 {
+			filled = 12
 		}
-		if r.EncountersErr != nil {
-			return []string{usererr.Message(r.EncountersErr)}
+		if filled < 0 {
+			filled = 0
 		}
-		if !r.HasEncounters {
-			return []string{"Loading locations…"}
+		return fmt.Sprintf("%-8s %s  %3d", label, strings.Repeat("█", filled)+strings.Repeat("░", 12-filled), v)
+	}
+	return []string{
+		bar("HP", p.Stats.HP),
+		bar("Attack", p.Stats.Attack),
+		bar("Defense", p.Stats.Defense),
+		bar("Sp.Atk", p.Stats.SpecialAttack),
+		bar("Sp.Def", p.Stats.SpecialDefense),
+		bar("Speed", p.Stats.Speed),
+		"─────────────────────",
+		fmt.Sprintf("%-8s              %3d", "Total", p.Stats.Total()),
+	}
+}
+
+func formatBrowseSummaryLines(p domain.Pokemon, s domain.Species) []string {
+	abilities, hidden := splitAbilityNames(p.Abilities)
+	ability := strings.Join(abilities, " / ")
+	if ability == "" {
+		ability = "—"
+	}
+	hiddenLabel := hidden
+	if hiddenLabel == "" {
+		hiddenLabel = "—"
+	}
+	lines := []string{
+		fmt.Sprintf("Height  %-12s  Weight  %s", formatHeight(p.HeightDecimeter), formatWeight(p.WeightHectogram)),
+		fmt.Sprintf("Ability %-12s  Hidden  %s", ability, hiddenLabel),
+		"",
+	}
+	if summary := latestSummary(s); summary != "" {
+		lines = append(lines, wrapWords(summary, 48)...)
+		lines = append(lines, "")
+	}
+	gen := output.TitleFromSlug(s.Generation)
+	if gen == "" {
+		gen = "—"
+	}
+	lines = append(lines, gen)
+	return lines
+}
+
+func splitAbilityNames(abilities []domain.AbilitySlot) (normal []string, hidden string) {
+	for _, a := range abilities {
+		name := output.TitleFromSlug(a.Name)
+		if a.IsHidden {
+			hidden = name
+			continue
 		}
-		return formatEncounterLines(r.Encounters)
-	case TabMoves:
+		normal = append(normal, name)
+	}
+	return normal, hidden
+}
+
+func formatHeight(dm int) string {
+	return fmt.Sprintf("%.1f m", float64(dm)/10)
+}
+
+func formatWeight(hg int) string {
+	return fmt.Sprintf("%.1f kg", float64(hg)/10)
+}
+
+func formatBrowseEvolutionLines(tree domain.EvolutionTree) []string {
+	lines := formatEvolutionLines(tree)
+	// Drop the verbose "Trigger source" line for the glance view.
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Trigger source:") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func (m Model) dialogContentLines() []string {
+	sel, ok := m.selected()
+	if !ok {
+		return []string{"No Pokémon selected."}
+	}
+	r := m.resources[sel.ID]
+	if r == nil || (!r.HasCore && r.loadingCore) {
+		return []string{"Loading…"}
+	}
+	if r != nil && r.CoreErr != nil && !r.HasCore {
+		return []string{usererr.Message(r.CoreErr)}
+	}
+	if r == nil || !r.HasCore {
+		return []string{"Loading…"}
+	}
+
+	switch m.dialogSection {
+	case DialogMoves:
 		if r.loadingMoves {
 			return []string{"Loading moves…"}
 		}
@@ -62,26 +168,91 @@ func (m Model) detailContentLines() []string {
 			return []string{"Loading moves…"}
 		}
 		return formatMoveLines(r.Moves)
-	case TabFlavour:
+	case DialogLocations:
+		if r.loadingEncounters {
+			return []string{"Loading locations…"}
+		}
+		if r.EncountersErr != nil {
+			return []string{usererr.Message(r.EncountersErr)}
+		}
+		if !r.HasEncounters {
+			return []string{"Loading locations…"}
+		}
+		return formatEncounterLines(r.Encounters)
+	case DialogAbilities:
+		return formatAbilityDialogLines(r.Pokemon)
+	case DialogFlavour:
 		return formatFlavourLines(r.Species)
-	case TabInfo:
-		return formatInfoLines(r.Species)
+	case DialogBreeding:
+		return formatBreedingLines(r.Species)
+	case DialogTraining:
+		return formatTrainingLines(r.Species)
+	case DialogForms:
+		return formatFormsLines(r.Species)
+	case DialogMeta:
+		return formatMetaLines(r.Pokemon, r.Species)
 	default:
 		return nil
 	}
 }
 
-func formatStatsLines(p domain.Pokemon) []string {
-	return []string{
-		fmt.Sprintf("HP               %3d", p.Stats.HP),
-		fmt.Sprintf("Attack           %3d", p.Stats.Attack),
-		fmt.Sprintf("Defense          %3d", p.Stats.Defense),
-		fmt.Sprintf("Special Attack   %3d", p.Stats.SpecialAttack),
-		fmt.Sprintf("Special Defense  %3d", p.Stats.SpecialDefense),
-		fmt.Sprintf("Speed            %3d", p.Stats.Speed),
-		"",
-		fmt.Sprintf("Total            %3d", p.Stats.Total()),
+func formatAbilityDialogLines(p domain.Pokemon) []string {
+	if len(p.Abilities) == 0 {
+		return []string{"No abilities."}
 	}
+	var lines []string
+	for _, a := range p.Abilities {
+		name := output.TitleFromSlug(a.Name)
+		if a.IsHidden {
+			lines = append(lines, fmt.Sprintf("Slot %d  %s  (hidden)", a.Slot, name))
+		} else {
+			lines = append(lines, fmt.Sprintf("Slot %d  %s", a.Slot, name))
+		}
+	}
+	return lines
+}
+
+func formatBreedingLines(s domain.Species) []string {
+	return []string{
+		fmt.Sprintf("Gender rate:  %s", formatGenderRate(s.GenderRate)),
+		fmt.Sprintf("Legendary:    %s", yesNo(s.IsLegendary)),
+		fmt.Sprintf("Mythical:     %s", yesNo(s.IsMythical)),
+	}
+}
+
+func formatTrainingLines(s domain.Species) []string {
+	return []string{
+		fmt.Sprintf("Growth rate:    %s", dash(output.TitleFromSlug(s.GrowthRate))),
+		fmt.Sprintf("Capture rate:   %d", s.CaptureRate),
+		fmt.Sprintf("Base happiness: %d", s.BaseHappiness),
+	}
+}
+
+func formatFormsLines(s domain.Species) []string {
+	if len(s.Varieties) == 0 {
+		return []string{"No alternate forms listed."}
+	}
+	var lines []string
+	for _, v := range s.Varieties {
+		name := output.TitleFromSlug(v.Slug)
+		if v.IsDefault {
+			lines = append(lines, name+"  (default)")
+		} else {
+			lines = append(lines, name)
+		}
+	}
+	return lines
+}
+
+func formatMetaLines(p domain.Pokemon, s domain.Species) []string {
+	lines := []string{
+		fmt.Sprintf("Height:   %s", formatHeight(p.HeightDecimeter)),
+		fmt.Sprintf("Weight:   %s", formatWeight(p.WeightHectogram)),
+		fmt.Sprintf("Base Exp: %d", p.BaseExperience),
+		"",
+	}
+	lines = append(lines, formatInfoLines(s)...)
+	return lines
 }
 
 func formatEvolutionLines(tree domain.EvolutionTree) []string {

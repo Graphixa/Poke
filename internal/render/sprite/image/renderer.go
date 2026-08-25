@@ -131,6 +131,12 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		return sprite.Frame{}, fmt.Errorf("image: nil source")
 	}
 
+	threshold := opts.AlphaThreshold
+	if threshold == 0 {
+		threshold = 16
+	}
+	src = sprite.CropToContentSquare(src, threshold, 1)
+
 	restore := bypassDetection(r.proto)
 	defer restore()
 

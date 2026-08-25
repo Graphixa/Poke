@@ -45,6 +45,77 @@ func Prepare(src image.Image, bg color.RGBA, alphaThreshold uint8) *image.RGBA {
 	return dst
 }
 
+// ContentBounds returns the tight rectangle of pixels with alpha ≥ threshold.
+// If nothing is opaque, it returns src.Bounds().
+func ContentBounds(src image.Image, alphaThreshold uint8) image.Rectangle {
+	b := src.Bounds()
+	minX, minY := b.Max.X, b.Max.Y
+	maxX, maxY := b.Min.X, b.Min.Y
+	found := false
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			_, _, _, a := src.At(x, y).RGBA()
+			if uint8(a>>8) < alphaThreshold {
+				continue
+			}
+			found = true
+			if x < minX {
+				minX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if x+1 > maxX {
+				maxX = x + 1
+			}
+			if y+1 > maxY {
+				maxY = y + 1
+			}
+		}
+	}
+	if !found {
+		return b
+	}
+	return image.Rect(minX, minY, maxX, maxY)
+}
+
+// CropToContentSquare trims transparent margins, then returns a 1:1 crop centred
+// on the opaque subject. pad adds a few pixels of margin before squaring.
+// Transparent pixels outside the subject stay transparent (Prepare composites later).
+func CropToContentSquare(src image.Image, alphaThreshold uint8, pad int) *image.RGBA {
+	if src == nil {
+		return image.NewRGBA(image.Rect(0, 0, 1, 1))
+	}
+	if pad < 0 {
+		pad = 0
+	}
+	b := src.Bounds()
+	content := ContentBounds(src, alphaThreshold)
+	content = content.Inset(-pad).Intersect(b)
+	if content.Empty() {
+		content = b
+	}
+
+	side := content.Dx()
+	if content.Dy() > side {
+		side = content.Dy()
+	}
+	if side < 1 {
+		side = 1
+	}
+
+	// Centre a side×side square on the content box, clamped to source bounds
+	// when possible; if the source is smaller on one axis, the result still
+	// stays 1:1 and missing pixels remain transparent.
+	cx := (content.Min.X + content.Max.X) / 2
+	cy := (content.Min.Y + content.Max.Y) / 2
+	sq := image.Rect(cx-side/2, cy-side/2, cx-side/2+side, cy-side/2+side)
+
+	dst := image.NewRGBA(image.Rect(0, 0, side, side))
+	draw.Draw(dst, dst.Bounds(), src, sq.Min, draw.Src)
+	return dst
+}
+
 func blendOver(dst, src color.RGBA) color.RGBA {
 	as := float64(src.A) / 255
 	ad := 1 - as

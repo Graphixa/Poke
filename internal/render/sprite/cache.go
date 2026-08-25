@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// SizeBuckets are preferred render widths/heights. Requests snap to the
-// nearest bucket to limit cache growth on resize.
-var SizeBuckets = []int{16, 20, 24, 28, 32, 36, 40}
+// SizeBuckets are preferred render widths/heights. Browse uses a fixed
+// MaxFrameSize square; the bucket list exists for cache snapping helpers.
+var SizeBuckets = []int{MaxFrameSize}
 
 // BucketSize snaps n to the nearest SizeBucket (minimum first bucket).
 func BucketSize(n int) int {
@@ -47,7 +47,7 @@ func abs(x int) int {
 //
 //	<hash>-<source>-<mode>-<w>x<h>-<color>-<version>
 //
-// Example: 004abc-pixel-chafa-24x24-truecolor-v2
+// Example: 004abc-pixel-chafa-32x32-truecolor-v4
 func CacheKey(contentHash string, source SpriteSource, mode string, w, h int, color ColorMode) string {
 	if source == "" {
 		source = SourcePixel

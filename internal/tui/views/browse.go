@@ -14,7 +14,6 @@ import (
 )
 
 // FrameRenderer is injected to avoid an import cycle with package tui.
-// Production wires tui.RenderCombinedFrame / CalculatePanelLayout / FillTerminalArea.
 type FrameRenderer struct {
 	Calculate func(termW, termH, headerH, footerH, margin, sep int) (leftW, rightW, panelH int)
 	Combine   func(title string, leftW, rightW, height int, left, right string) string
@@ -64,7 +63,7 @@ type BrowseData struct {
 	Width, Height int
 
 	Query      string
-	SearchView string // pre-rendered bubbles/textinput row; falls back to Query
+	SearchView string
 	Rows       []components.ListRow
 	ListOff    int
 	ListRows   int
@@ -73,46 +72,42 @@ type BrowseData struct {
 	HasSelected bool
 
 	ShowSprite    bool
-	ShowSummary   bool
-	ShortTabs     bool
 	VerboseFooter bool
 	OnePane       bool
 	TooSmall      bool
-	ShowListPane  bool // one-pane: list while filtering
+	ShowListPane  bool
 
-	ActiveTab int
-	TabLabels []string
+	BrowseView int
+	ViewLabels []string
+	BodySize   int
+	ViewLines  []string
 
-	Info components.MainInfo
-
-	DetailTitle string
-	DetailLines []string
-	DetailOff   int
+	HeaderTypes   string
+	HeaderGenus   string
+	HeaderLoading bool
+	HeaderErr     string
 
 	ShowHelp bool
-	HelpBody string // bubbles/help full view when ShowHelp
-	ShowInfo bool
+	HelpBody string
+
+	ShowDialog    bool
+	DialogSection int
+	DialogLabels  []string
+	DialogLines   []string
+	DialogOff     int
 
 	SpriteANSI string
-	SpriteSide int
 
-	// SummaryOff is the auto-scroll line offset within the summary block.
-	SummaryOff int
-	// IdentityHeight is the fixed height of the (info+summary)|sprite band.
-	IdentityHeight int
-
-	// Frame overrides DefaultFrame when set.
 	Frame *FrameRenderer
 }
 
-// Browse renders the wireframe layout from tui-example.md using FontGet-style
-// shared outer border with title in the top edge.
+// Browse renders the sprite-first layout from tui-layout-concept.md.
 func Browse(d BrowseData) string {
 	if d.Width <= 0 {
 		d.Width = 120
 	}
 	if d.Height <= 0 {
-		d.Height = 36
+		d.Height = 50
 	}
 	fr := DefaultFrame
 	if d.Frame != nil {
@@ -122,21 +117,26 @@ func Browse(d BrowseData) string {
 	if d.ShowHelp {
 		return components.HelpOverlay(d.HelpBody, d.Width, d.Height)
 	}
-	if d.ShowInfo {
-		title := "Pokémon Info"
-		if d.HasSelected {
-			title = fmt.Sprintf("%s %s", d.Selected.DisplayName, output.FormatDex(d.Selected.ID))
-		}
-		return components.InfoModal(title, d.DetailLines, d.Width, d.Height)
-	}
 	if d.TooSmall {
 		return components.TooSmall(d.Width, d.Height)
 	}
 
+	base := renderBrowseBase(d, fr)
+	if d.ShowDialog {
+		title := "Details"
+		if d.HasSelected {
+			title = fmt.Sprintf("%s %s", d.Selected.DisplayName, output.FormatDex(d.Selected.ID))
+		}
+		return components.OverlayDialog(base, title, d.DialogSection, d.DialogLabels, d.DialogLines, d.DialogOff, d.Width, d.Height)
+	}
+	return base
+}
+
+func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 	footer := components.Footer(d.VerboseFooter, d.Width)
 	footerH := 1
 	margin := 0
-	title := "Pokedex — Browse Mode"
+	title := "Pokedex"
 
 	if d.OnePane {
 		bodyH := d.Height - footerH
@@ -157,7 +157,6 @@ func Browse(d BrowseData) string {
 	}
 
 	leftW, rightW, panelH := fr.Calculate(d.Width, d.Height, 0, footerH, margin, 1)
-	// Inner content width accounts for the shared frame's left/right border chars.
 	leftContentW := leftW - 1
 	rightContentW := rightW - 1
 	if leftContentW < 10 {
@@ -184,7 +183,7 @@ func Browse(d BrowseData) string {
 func renderLeft(d BrowseData, width, height int) string {
 	search := renderSearch(d, width)
 	sep := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", max(1, width)))
-	listH := height - 2 // search + divider
+	listH := height - 2
 	if listH < 3 {
 		listH = 3
 	}
@@ -205,39 +204,17 @@ func renderSearch(d BrowseData, width int) string {
 	return components.Search(d.Query, width)
 }
 
-// SpriteSideFor returns the largest square sprite frame that fits in the right
-// pane; 0 when even the minimum frame cannot fit.
-func SpriteSideFor(rightWidth, _ int) int {
-	budget := rightWidth - sprite.SeparatorWidth - sprite.MinInfoWidthBesideSprite
-	if budget > sprite.FrameWidth {
-		budget = sprite.FrameWidth
-	}
-	return sprite.BucketFloor(budget)
-}
-
 func renderRight(d BrowseData, width, height int) string {
 	if !d.HasSelected {
 		return lipgloss.NewStyle().Width(width).Height(height).Render("Select a Pokémon")
 	}
 
-	identity := renderIdentityBand(d, width)
-	tabs := components.Tabs(d.ActiveTab, d.TabLabels, width)
+	header := renderHeader(d, width)
+	body := renderViewBody(d, width)
 	divider := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", max(1, width)))
+	switcher := components.ViewSwitcher(d.BrowseView, d.ViewLabels, width)
 
-	used := lipgloss.Height(identity) + lipgloss.Height(tabs) + 2 // dividers
-	detailH := height - used
-	if detailH < 4 {
-		detailH = 4
-	}
-	card := components.DetailCardTitled(d.DetailTitle, d.DetailLines, d.DetailOff, width, detailH)
-
-	col := lipgloss.JoinVertical(lipgloss.Left,
-		identity,
-		divider,
-		tabs,
-		divider,
-		card,
-	)
+	col := lipgloss.JoinVertical(lipgloss.Left, header, "", body, divider, switcher)
 	lines := strings.Split(col, "\n")
 	if len(lines) > height {
 		col = strings.Join(lines[:height], "\n")
@@ -245,77 +222,140 @@ func renderRight(d BrowseData, width, height int) string {
 	return col
 }
 
-// renderIdentityBand matches the wireframe: main info + summary stacked on the
-// left, unbordered sprite on the right, separated by " │ ".
-func renderIdentityBand(d BrowseData, width int) string {
-	side := 0
-	frameH := 0
-	var art string
-	if d.ShowSprite {
-		side = d.SpriteSide
-		if side <= 0 {
-			side = SpriteSideFor(width, 0)
+func renderHeader(d BrowseData, width int) string {
+	name := d.Selected.DisplayName
+	dex := output.FormatDex(d.Selected.ID)
+	title := boldName(name) + strings.Repeat(" ", max(1, width-lipgloss.Width(name)-lipgloss.Width(dex))) + dex
+	if lipgloss.Width(title) > width {
+		title = components.Header(name, d.Selected.ID, width)
+	} else {
+		// Rebuild with proper padding via Header helper.
+		title = components.Header(name, d.Selected.ID, width)
+	}
+	sub := d.HeaderTypes
+	if d.HeaderGenus != "" {
+		if sub != "" {
+			sub += " · "
 		}
-		if side >= sprite.MinFrameSize {
-			frameH = side
-			if d.SpriteANSI != "" {
-				art = components.SpritePanel(d.SpriteANSI, side, frameH)
-			} else if d.HasSelected {
-				art = components.SpritePlaceholder(d.Selected.DisplayName, side, frameH)
-			}
-		} else {
-			side = 0
-			art = ""
-		}
+		sub += d.HeaderGenus
 	}
-
-	bandH := d.IdentityHeight
-	if bandH <= 0 {
-		bandH = frameH
-		if bandH < identityMinBand {
-			bandH = identityMinBand
-		}
+	if d.HeaderLoading {
+		sub = style.StatusLoading("Loading…")
 	}
-	if art != "" && bandH < frameH {
-		bandH = frameH
+	if d.HeaderErr != "" {
+		sub = style.StatusError(d.HeaderErr)
 	}
-
-	sepW := sprite.SeparatorWidth
-	infoW := width
-	if art != "" {
-		infoW = width - side - sepW
-		if infoW < sprite.MinInfoWidthBesideSprite {
-			art = ""
-			side = 0
-			infoW = width
-		}
+	if sub == "" {
+		sub = "—"
 	}
-
-	core := d.Info
-	core.ShowSummary = false // summary is rendered below as its own block
-	header := components.Header(d.Selected.DisplayName, d.Selected.ID, infoW)
-	info := components.InfoBlock(core, infoW)
-	text := lipgloss.JoinVertical(lipgloss.Left, header, info)
-
-	if d.Info.ShowSummary {
-		remain := bandH - lipgloss.Height(text) - 1 // blank gap before Summary
-		if remain < 3 {
-			remain = 3
-		}
-		summary := components.SummaryColumn(d.Info.Summary, infoW, remain, d.SummaryOff)
-		text = lipgloss.JoinVertical(lipgloss.Left, text, "", summary)
-	}
-
-	text = lipgloss.NewStyle().Width(infoW).Height(bandH).MaxHeight(bandH).Render(text)
-	if art == "" {
-		return text
-	}
-	sep := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(" │ ")
-	art = lipgloss.NewStyle().Width(side).Height(bandH).MaxHeight(bandH).Render(art)
-	return lipgloss.JoinHorizontal(lipgloss.Top, text, sep, art)
+	sub = lipgloss.NewStyle().MaxWidth(width).Render(sub)
+	return lipgloss.JoinVertical(lipgloss.Left, title, sub)
 }
 
-const identityMinBand = 8
+func boldName(name string) string {
+	return lipgloss.NewStyle().Bold(true).Foreground(style.PrimaryColor()).Render(name)
+}
+
+func renderViewBody(d BrowseData, width int) string {
+	artW, artH := sprite.FrameWidth, sprite.FrameHeight
+	outerW, outerH := sprite.FrameOuterWidth(), sprite.FrameOuterHeight()
+	if outerW > width {
+		outerW = width
+		artW = outerW - 2*sprite.FramePad
+		if artW < 1 {
+			artW = outerW
+		}
+		artH = artW / sprite.CellAspectY
+		if artH < 1 {
+			artH = 1
+		}
+		outerH = artH + 2*sprite.FramePad
+	}
+
+	var inner string
+	switch d.BrowseView {
+	case 0: // Sprite
+		if d.ShowSprite && d.SpriteANSI != "" {
+			inner = components.SpritePanel(d.SpriteANSI, artW, artH)
+		} else if d.ShowSprite {
+			inner = components.SpritePlaceholder(d.Selected.DisplayName, artW, artH)
+		} else {
+			inner = components.SpriteSizeCue(artW, artH)
+		}
+	default:
+		inner = renderTextBody(d.ViewLines, artW, artH)
+	}
+
+	body := padFrame(inner, artW, artH, outerW, outerH)
+	if lipgloss.Width(body) < width {
+		return lipgloss.PlaceHorizontal(width, lipgloss.Center, body)
+	}
+	return body
+}
+
+func padFrame(inner string, artW, artH, outerW, outerH int) string {
+	if outerW <= artW && outerH <= artH {
+		return inner
+	}
+	padX := (outerW - artW) / 2
+	padY := (outerH - artH) / 2
+	if padX < 0 {
+		padX = 0
+	}
+	if padY < 0 {
+		padY = 0
+	}
+	blank := strings.Repeat(" ", outerW)
+	innerLines := strings.Split(inner, "\n")
+	out := make([]string, 0, outerH)
+	for i := 0; i < padY; i++ {
+		out = append(out, blank)
+	}
+	sidePad := strings.Repeat(" ", padX)
+	for i := 0; i < artH; i++ {
+		line := ""
+		if i < len(innerLines) {
+			line = innerLines[i]
+		}
+		for lipgloss.Width(line) < artW {
+			line += " "
+		}
+		if lipgloss.Width(line) > artW {
+			line = lipgloss.NewStyle().MaxWidth(artW).Render(line)
+		}
+		out = append(out, sidePad+line+strings.Repeat(" ", max(0, outerW-padX-lipgloss.Width(line))))
+	}
+	for len(out) < outerH {
+		out = append(out, blank)
+	}
+	if len(out) > outerH {
+		out = out[:outerH]
+	}
+	return strings.Join(out, "\n")
+}
+
+func renderTextBody(lines []string, width, height int) string {
+	out := make([]string, 0, height)
+	for i := 0; i < height; i++ {
+		if i < len(lines) {
+			out = append(out, padLine(lines[i], width))
+		} else {
+			out = append(out, strings.Repeat(" ", width))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func padLine(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w < width {
+		return s + strings.Repeat(" ", width-w)
+	}
+	if w > width {
+		return lipgloss.NewStyle().MaxWidth(width).Render(s)
+	}
+	return s
+}
 
 func visibleRows(rows []components.ListRow, off, count int) []components.ListRow {
 	if off < 0 {
@@ -331,13 +371,13 @@ func visibleRows(rows []components.ListRow, off, count int) []components.ListRow
 	return rows[off:end]
 }
 
-func abbreviate(types []string, max int) string {
+func abbreviate(types []string, maxW int) string {
 	joined := output.JoinTypes(types)
-	if max <= 0 || len(joined) <= max {
+	if maxW <= 0 || len(joined) <= maxW {
 		return joined
 	}
 	if len(types) < 2 {
-		return truncate(joined, max)
+		return truncate(joined, maxW)
 	}
 	first := output.TitleFromSlug(types[0])
 	second := output.TitleFromSlug(types[1])
@@ -345,8 +385,8 @@ func abbreviate(types []string, max int) string {
 		second = string([]rune(second)[:4])
 	}
 	out := first + "/" + second
-	if len(out) > max {
-		return truncate(out, max)
+	if len(out) > maxW {
+		return truncate(out, maxW)
 	}
 	return out
 }
@@ -369,12 +409,11 @@ func max(a, b int) int {
 	return b
 }
 
-// FormatHeight formats decimeters as meters.
+// FormatHeight / FormatWeight keep existing helpers used by tui.view.
 func FormatHeight(dm int) string {
 	return fmt.Sprintf("%.1f m", float64(dm)/10)
 }
 
-// FormatWeight formats hectograms as kilograms.
 func FormatWeight(hg int) string {
 	return fmt.Sprintf("%.1f kg", float64(hg)/10)
 }

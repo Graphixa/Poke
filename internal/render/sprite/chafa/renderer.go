@@ -12,12 +12,9 @@ import (
 	chafago "github.com/ploMP4/chafa-go"
 )
 
-// Samples per cell for early resize. Chafa's internal grain is 8×8; using a
-// 4×8 grid keeps octant/sextant detail while avoiding full-resolution work.
-const (
-	samplesPerCellX = 4
-	samplesPerCellY = 8
-)
+// Samples per cell for early resize. Chafa's internal grain is 8×8; an 8×8
+// isotropic grid keeps octant/sextant detail while preserving 1:1 subject crops.
+const samplesPerCell = 8
 
 // Renderer produces Chafa mosaic (sextant/octant) ANSI frames for the TUI.
 type Renderer struct{}
@@ -59,10 +56,14 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 		threshold = 16
 	}
 
-	prepared := sprite.Prepare(src, bg, threshold)
-	targetPxW := w * samplesPerCellX
-	targetPxH := h * samplesPerCellY
-	scaled := sprite.Resize(prepared, targetPxW, targetPxH, opts.Source, opts.PreserveAR, bg)
+	// Trim transparent PNG margins and lock a 1:1 subject crop, then shrink
+	// uniformly into a square sample grid (no distort).
+	cropped := sprite.CropToContentSquare(src, threshold, 1)
+	prepared := sprite.Prepare(cropped, bg, threshold)
+	// Sample isotropically. opts.Width×Height should already be cell-aspect
+	// corrected (e.g. 32×16) so Stretch into that grid is visually square.
+	sampleSide := max(w, h) * samplesPerCell
+	scaled := sprite.Resize(prepared, sampleSide, sampleSide, opts.Source, true, bg)
 
 	if err := ctx.Err(); err != nil {
 		return sprite.Frame{}, err
@@ -73,12 +74,14 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 		return sprite.Frame{}, fmt.Errorf("chafa: %w", err)
 	}
 
+	// Stretch fills the cell grid. With Height = Width/CellAspectY and ~1:2
+	// cell pixels, the canvas pixel box is square — no vertical stretch.
 	ansi := uiimage.GenerateANSIBlockOpts(data, uiimage.RenderOpts{
 		Width:      w,
 		Height:     h,
 		Mode:       canvasMode(opts.ColorMode),
 		Quality:    uiimage.QualityMosaicFast,
-		Stretch:    true, // fill the fixed TUI frame after our AR-preserving resize
+		Stretch:    true,
 		Background: bg,
 	})
 	if strings.TrimSpace(ansi) == "" {
@@ -94,4 +97,11 @@ func canvasMode(mode sprite.ColorMode) chafago.CanvasMode {
 	default:
 		return chafago.CHAFA_CANVAS_MODE_TRUECOLOR
 	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

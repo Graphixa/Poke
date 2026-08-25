@@ -49,38 +49,3 @@ func (r *resourceCache) clearSprite() {
 func (r *resourceCache) coreReady() bool {
 	return r != nil && r.HasCore
 }
-
-func (r *resourceCache) tabLoading(tab Tab) bool {
-	if r == nil {
-		return false
-	}
-	switch tab {
-	case TabEvolution:
-		return r.loadingEvolution
-	case TabLocations:
-		return r.loadingEncounters
-	case TabMoves:
-		return r.loadingMoves
-	default:
-		return false
-	}
-}
-
-func (r *resourceCache) tabError(tab Tab) error {
-	if r == nil {
-		return nil
-	}
-	switch tab {
-	case TabEvolution:
-		return r.EvolutionErr
-	case TabLocations:
-		return r.EncountersErr
-	case TabMoves:
-		return r.MovesErr
-	default:
-		if r.CoreErr != nil {
-			return r.CoreErr
-		}
-		return nil
-	}
-}

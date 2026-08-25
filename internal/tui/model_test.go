@@ -216,11 +216,11 @@ func TestSearchFilterAndQuitEligibility(t *testing.T) {
 	}
 }
 
-func TestSelectionTabsScrollHelp(t *testing.T) {
+func TestSelectionViewsDialogHelp(t *testing.T) {
 	details := &fakeDetails{}
 	pikachu := domain.SpeciesSummary{ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Types: []string{"electric"}}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details, Selected: &pikachu})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52})
 	var model tea.Model = m
 	drainCmds(t, &model, m.Init())
 	m = model.(tui.Model)
@@ -230,21 +230,35 @@ func TestSelectionTabsScrollHelp(t *testing.T) {
 	}
 
 	m = apply(t, m, key("tab"))
-	if m.ActiveTab() != tui.TabEvolution {
-		t.Fatalf("tab = %v", m.ActiveTab())
+	if m.ActiveBrowseView() != tui.BrowseSummary {
+		t.Fatalf("view = %v want Summary", m.ActiveBrowseView())
+	}
+	m = apply(t, m, key("tab"), key("tab")) // Stats -> Evolution
+	if m.ActiveBrowseView() != tui.BrowseEvolution {
+		t.Fatalf("view = %v want Evolution", m.ActiveBrowseView())
 	}
 	if details.evoCalls.Load() != 1 {
 		t.Fatalf("evolution loads = %d", details.evoCalls.Load())
 	}
-	m = apply(t, m, key("tab"))       // locations
-	m = apply(t, m, key("shift+tab")) // back to evolution
+	m = apply(t, m, key("shift+tab")) // back to Stats
 	if details.evoCalls.Load() != 1 {
 		t.Fatalf("evolution refetched: %d", details.evoCalls.Load())
 	}
 
+	m = apply(t, m, key("enter"))
+	if !m.DialogVisible() {
+		t.Fatal("enter should open dialog")
+	}
+	if m.ActiveDialogSection() != tui.DialogMoves {
+		t.Fatalf("section = %v", m.ActiveDialogSection())
+	}
 	m = apply(t, m, key("pgdown"), key("home"))
-	if m.DetailOffset() != 0 {
-		t.Fatalf("home offset = %d", m.DetailOffset())
+	if m.DialogOffset() != 0 {
+		t.Fatalf("home offset = %d", m.DialogOffset())
+	}
+	m = apply(t, m, key("esc"))
+	if m.DialogVisible() {
+		t.Fatal("esc should close dialog")
 	}
 
 	m = apply(t, m, key("?"))
@@ -288,17 +302,24 @@ func TestAsyncRaceSuppression(t *testing.T) {
 func TestLazyLoadNoRefetch(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52})
 	var model tea.Model = m
 	drainCmds(t, &model, m.Init())
 	m = model.(tui.Model)
 
-	m = apply(t, m, key("tab"), key("tab"), key("tab")) // Stats->Evo->Loc->Moves
-	if details.moveCalls.Load() != 1 || details.encCalls.Load() != 1 || details.evoCalls.Load() != 1 {
-		t.Fatalf("loads evo=%d enc=%d move=%d", details.evoCalls.Load(), details.encCalls.Load(), details.moveCalls.Load())
+	m = apply(t, m, key("tab"), key("tab"), key("tab")) // Summary -> Stats -> Evolution
+	if details.evoCalls.Load() != 1 {
+		t.Fatalf("evolution loads = %d", details.evoCalls.Load())
 	}
-	// Cycle back through the same tabs — cached, no refetch.
-	for i := 0; i < 6; i++ {
+	m = apply(t, m, key("enter")) // dialog opens on Moves
+	if details.moveCalls.Load() != 1 {
+		t.Fatalf("moves loads = %d", details.moveCalls.Load())
+	}
+	m = apply(t, m, key("tab")) // Locations
+	if details.encCalls.Load() != 1 {
+		t.Fatalf("encounters loads = %d", details.encCalls.Load())
+	}
+	for i := 0; i < 8; i++ {
 		m = apply(t, m, key("tab"))
 	}
 	if details.moveCalls.Load() != 1 || details.encCalls.Load() != 1 || details.evoCalls.Load() != 1 {
@@ -309,7 +330,7 @@ func TestLazyLoadNoRefetch(t *testing.T) {
 func TestUnboundKeys(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40}, key("enter"), key("r"), key("/"))
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52}, key("r"), key("/"))
 	if m.Query() != "" {
 		t.Fatalf("unbound keys mutated query: %q", m.Query())
 	}
@@ -340,7 +361,7 @@ func TestCtrlCAlwaysQuits(t *testing.T) {
 func TestLoadErrorSurface(t *testing.T) {
 	details := &fakeDetails{loadErr: errors.New("offline")}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52})
 	var model tea.Model = m
 	drainCmds(t, &model, m.Init())
 	m = model.(tui.Model)

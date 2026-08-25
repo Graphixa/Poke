@@ -77,8 +77,10 @@ func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) 
 		return RenderResult{UsePlaceholder: true}
 	}
 	fw, fh := e.frameSize()
+	// cells is a longest-side hint from the TUI; browse always uses the fixed
+	// visual 1:1 frame (width × height/CellAspectY), never a square cell grid.
 	if cells >= MinFrameSize {
-		fw, fh = cells, cells
+		fw, fh = FrameWidth, FrameHeight
 	}
 	label := displayName(pokemon)
 
@@ -227,7 +229,7 @@ func (e *Engine) frameSize() (w, h int) {
 	if h < 1 {
 		h = FrameHeight
 	}
-	return BucketSize(w), BucketSize(h)
+	return w, h
 }
 
 func effectiveColor(mode ColorMode, caps Capabilities) ColorMode {

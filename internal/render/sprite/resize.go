@@ -71,6 +71,51 @@ func resizeFit(src *image.RGBA, tw, th int, source SpriteSource, bg color.RGBA) 
 	return dst
 }
 
+// ResizeCover scales src so it covers tw×th, then centre-crops (minimal letterbox).
+func ResizeCover(src *image.RGBA, tw, th int, source SpriteSource, bg color.RGBA) *image.RGBA {
+	if tw < 1 {
+		tw = 1
+	}
+	if th < 1 {
+		th = 1
+	}
+	if bg.A == 0 {
+		bg = DefaultBackground
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, tw, th))
+	draw.Draw(dst, dst.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
+
+	sb := src.Bounds()
+	sw, sh := sb.Dx(), sb.Dy()
+	if sw <= 0 || sh <= 0 {
+		return dst
+	}
+
+	// Scale to cover.
+	hIfWidthLimited := sh * tw / sw
+	wIfHeightLimited := sw * th / sh
+	var dw, dh int
+	if hIfWidthLimited >= th {
+		dw, dh = tw, hIfWidthLimited
+	} else {
+		dw, dh = wIfHeightLimited, th
+	}
+	if dw < 1 {
+		dw = 1
+	}
+	if dh < 1 {
+		dh = 1
+	}
+	scaled := image.NewRGBA(image.Rect(0, 0, dw, dh))
+	scaler := scalerFor(source)
+	scaler.Scale(scaled, scaled.Bounds(), src, sb, xdraw.Src, nil)
+
+	ox := (dw - tw) / 2
+	oy := (dh - th) / 2
+	draw.Draw(dst, dst.Bounds(), scaled, image.Pt(ox, oy), draw.Src)
+	return dst
+}
+
 func scalerFor(source SpriteSource) xdraw.Interpolator {
 	if source == SourceArtwork {
 		return xdraw.CatmullRom // high-quality downsampling (Lanczos-class)

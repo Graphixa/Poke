@@ -35,7 +35,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.HasCore = true
 		r.CoreErr = nil
 		m.clearSpriteArt(r)
-		return m, tea.Batch(m.ensureTabLoadLocked(), m.ensureSpriteLoad())
+		return m, tea.Batch(m.ensureBrowseLazyLoad(), m.ensureSpriteLoad())
 
 	case evolutionMsg:
 		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
@@ -65,6 +65,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.Encounters = msg.rows
 		r.HasEncounters = true
 		r.EncountersErr = nil
+		if m.showDialog {
+			m.syncDialogViewport()
+		}
 		return m, nil
 
 	case movesMsg:
@@ -80,6 +83,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.Moves = msg.rows
 		r.HasMoves = true
 		r.MovesErr = nil
+		if m.showDialog {
+			m.syncDialogViewport()
+		}
 		return m, nil
 
 	case spriteMsg:
@@ -125,11 +131,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.showInfo {
-		if key.Matches(msg, m.keys.Clear, m.keys.Info) {
-			m.showInfo = false
-		}
-		return m, nil
+	if m.showDialog {
+		return m.handleDialogKey(msg)
 	}
 
 	if key.Matches(msg, m.keys.Unbound) {
@@ -141,10 +144,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if key.Matches(msg, m.keys.Enter) {
+		return m.openDialog()
+	}
+
 	if key.Matches(msg, m.keys.Info) {
 		if m.queryValue() == "" && m.hasSelectedCore() {
-			m.showInfo = true
-			return m, nil
+			return m.openDialog()
 		}
 		return m.updateSearch(msg)
 	}
@@ -164,44 +170,79 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if key.Matches(msg, m.keys.Up) {
 		m.moveCursor(-1)
-		m.summaryVP.GotoTop()
 		return m, m.syncSelectionLoads()
 	}
 	if key.Matches(msg, m.keys.Down) {
 		m.moveCursor(1)
-		m.summaryVP.GotoTop()
 		return m, m.syncSelectionLoads()
 	}
 	if key.Matches(msg, m.keys.TabNext) {
-		m.activeTab = m.activeTab.Next()
-		m.detailVP.GotoTop()
-		return m, m.ensureTabLoadLocked()
+		m.browseView = m.browseView.Next()
+		return m, m.ensureBrowseLazyLoad()
 	}
 	if key.Matches(msg, m.keys.TabPrev) {
-		m.activeTab = m.activeTab.Prev()
-		m.detailVP.GotoTop()
-		return m, m.ensureTabLoadLocked()
-	}
-	if key.Matches(msg, m.keys.PageUp) {
-		m.scrollDetail(-m.detailPageSize())
-		return m, nil
-	}
-	if key.Matches(msg, m.keys.PageDown) {
-		m.scrollDetail(m.detailPageSize())
-		return m, nil
-	}
-	if key.Matches(msg, m.keys.Home) {
-		m.syncDetailViewport()
-		m.detailVP.GotoTop()
-		return m, nil
-	}
-	if key.Matches(msg, m.keys.End) {
-		m.syncDetailViewport()
-		m.detailVP.GotoBottom()
-		return m, nil
+		m.browseView = m.browseView.Prev()
+		return m, m.ensureBrowseLazyLoad()
 	}
 
 	return m.updateSearch(msg)
+}
+
+func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Clear, m.keys.Quit) {
+		m.showDialog = false
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.TabNext) {
+		m.dialogSection = m.dialogSection.Next()
+		m.dialogVP.GotoTop()
+		m.syncDialogViewport()
+		return m, m.ensureDialogLazyLoad()
+	}
+	if key.Matches(msg, m.keys.TabPrev) {
+		m.dialogSection = m.dialogSection.Prev()
+		m.dialogVP.GotoTop()
+		m.syncDialogViewport()
+		return m, m.ensureDialogLazyLoad()
+	}
+	if key.Matches(msg, m.keys.Up) {
+		m.scrollDialog(-1)
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.Down) {
+		m.scrollDialog(1)
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.PageUp) {
+		m.scrollDialog(-m.dialogPageSize())
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.PageDown) {
+		m.scrollDialog(m.dialogPageSize())
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.Home) {
+		m.syncDialogViewport()
+		m.dialogVP.GotoTop()
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.End) {
+		m.syncDialogViewport()
+		m.dialogVP.GotoBottom()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) openDialog() (tea.Model, tea.Cmd) {
+	if !m.hasSelectedCore() {
+		return m, nil
+	}
+	m.showDialog = true
+	m.dialogSection = DialogMoves
+	m.dialogVP.GotoTop()
+	m.syncDialogViewport()
+	return m, m.ensureDialogLazyLoad()
 }
 
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -210,7 +251,7 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.search, cmd = m.search.Update(msg)
 	if m.search.Value() != prev {
 		m.refilter()
-		m.detailVP.GotoTop()
+		m.dialogVP.GotoTop()
 		return m, tea.Batch(cmd, m.syncSelectionLoads())
 	}
 	return m, cmd
@@ -230,9 +271,6 @@ func (m *Model) isSelectedID(id int) bool {
 	return ok && sel.ID == id
 }
 
-// syncSelectionLoads bumps the request generation only when the selected
-// species changes, so filter keystrokes that keep the same row do not cancel
-// in-flight loads.
 func (m *Model) syncSelectionLoads() tea.Cmd {
 	sel, ok := m.selected()
 	id := 0
@@ -244,7 +282,6 @@ func (m *Model) syncSelectionLoads() tea.Cmd {
 	}
 	m.trackedID = id
 	m.bumpSelection()
-	m.summaryVP.GotoTop()
 	return m.ensureSelectionLoads()
 }
 
@@ -259,7 +296,7 @@ func (m *Model) ensureSelectionLoads() tea.Cmd {
 		r.loadingCore = true
 		cmds = append(cmds, loadCoreCmd(m.ctx, m.details, m.selectionGen, sel.ID))
 	}
-	if cmd := m.ensureTabLoadLocked(); cmd != nil {
+	if cmd := m.ensureBrowseLazyLoad(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
 	if cmd := m.ensureSpriteLoad(); cmd != nil {
@@ -268,42 +305,68 @@ func (m *Model) ensureSelectionLoads() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// ensureTabLoadLocked starts a lazy tab fetch when needed; no-ops if cached/in-flight.
-func (m *Model) ensureTabLoadLocked() tea.Cmd {
+func (m *Model) ensureBrowseLazyLoad() tea.Cmd {
+	if m.browseView != BrowseEvolution {
+		return nil
+	}
+	return m.ensureEvolutionLoad()
+}
+
+func (m *Model) ensureDialogLazyLoad() tea.Cmd {
+	if !m.showDialog {
+		return nil
+	}
+	switch m.dialogSection {
+	case DialogMoves:
+		return m.ensureMovesLoad()
+	case DialogLocations:
+		return m.ensureEncountersLoad()
+	default:
+		return nil
+	}
+}
+
+func (m *Model) ensureEvolutionLoad() tea.Cmd {
 	sel, ok := m.selected()
 	if !ok {
 		return nil
 	}
 	r := m.ensureResource(sel.ID)
-	if !r.HasCore {
+	if !r.HasCore || r.HasEvolution || r.loadingEvolution {
 		return nil
 	}
-	switch m.activeTab {
-	case TabEvolution:
-		if r.HasEvolution || r.loadingEvolution {
-			return nil
-		}
-		r.loadingEvolution = true
-		return loadEvolutionCmd(m.ctx, m.details, m.selectionGen, sel.ID, r.Species)
-	case TabLocations:
-		if r.HasEncounters || r.loadingEncounters {
-			return nil
-		}
-		r.loadingEncounters = true
-		pokemonID := r.Pokemon.ID
-		if pokemonID == 0 {
-			pokemonID = r.Species.DefaultPokemonID
-		}
-		return loadEncountersCmd(m.ctx, m.details, m.selectionGen, sel.ID, pokemonID)
-	case TabMoves:
-		if r.HasMoves || r.loadingMoves {
-			return nil
-		}
-		r.loadingMoves = true
-		return loadMovesCmd(m.ctx, m.details, m.selectionGen, sel.ID, r.Pokemon)
-	default:
+	r.loadingEvolution = true
+	return loadEvolutionCmd(m.ctx, m.details, m.selectionGen, sel.ID, r.Species)
+}
+
+func (m *Model) ensureMovesLoad() tea.Cmd {
+	sel, ok := m.selected()
+	if !ok {
 		return nil
 	}
+	r := m.ensureResource(sel.ID)
+	if !r.HasCore || r.HasMoves || r.loadingMoves {
+		return nil
+	}
+	r.loadingMoves = true
+	return loadMovesCmd(m.ctx, m.details, m.selectionGen, sel.ID, r.Pokemon)
+}
+
+func (m *Model) ensureEncountersLoad() tea.Cmd {
+	sel, ok := m.selected()
+	if !ok {
+		return nil
+	}
+	r := m.ensureResource(sel.ID)
+	if !r.HasCore || r.HasEncounters || r.loadingEncounters {
+		return nil
+	}
+	r.loadingEncounters = true
+	pokemonID := r.Pokemon.ID
+	if pokemonID == 0 {
+		pokemonID = r.Species.DefaultPokemonID
+	}
+	return loadEncountersCmd(m.ctx, m.details, m.selectionGen, sel.ID, pokemonID)
 }
 
 func (m *Model) cancelSprite() {
@@ -343,7 +406,6 @@ func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 		return nil
 	}
 	side := m.currentSpriteSide()
-	// Reload when the sprite becomes visible or its frame size changes.
 	if !prevShow || prevSide != side {
 		if sel, ok := m.selected(); ok {
 			m.clearSpriteArt(m.resources[sel.ID])
@@ -387,23 +449,12 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 	return loadSpriteCmd(ctx, m.sprites, reqID, m.selectionGen, sel.ID, cells, r.Pokemon)
 }
 
-func (m *Model) detailPageSize() int {
-	h := 8
-	if m.height > 20 {
-		h = m.height / 4
-	}
-	if h < 3 {
-		h = 3
-	}
-	return h
-}
-
-func (m *Model) scrollDetail(delta int) {
-	m.syncDetailViewport()
+func (m *Model) scrollDialog(delta int) {
+	m.syncDialogViewport()
 	if delta > 0 {
-		m.detailVP.ScrollDown(delta)
+		m.dialogVP.ScrollDown(delta)
 	} else if delta < 0 {
-		m.detailVP.ScrollUp(-delta)
+		m.dialogVP.ScrollUp(-delta)
 	}
 }
 

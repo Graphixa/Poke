@@ -48,7 +48,7 @@ const (
 
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
-const AlgorithmVersion = "v2"
+const AlgorithmVersion = "v5"
 
 // RenderOptions control a single sprite conversion.
 type RenderOptions struct {

@@ -1,29 +1,47 @@
 package sprite
 
-// Preferred (maximum) sprite frame size in terminal cells. Browse may use a
-// smaller bucketed frame when the terminal cannot fit this size.
+// Browse sprite frame sizing (terminal cells).
+//
+// Terminal cells are typically ~1:2 (width:height in pixels). A visually square
+// sprite therefore uses fewer rows than columns:
+//
+//	FrameWidth  = MaxFrameSize
+//	FrameHeight = MaxFrameSize / CellAspectY
+//
+// Tunable: change MaxFrameSize to grow/shrink the art; FramePad is empty margin
+// on each edge. The image is shrunk uniformly to fit — never stretched.
 const (
-	FrameWidth  = 40
-	FrameHeight = 40
-	// MinFrameSize is the smallest square frame browse will show.
-	MinFrameSize = 16
+	// MaxFrameSize is the longest side of the sprite in cells (usually width).
+	MaxFrameSize = 28
+	// CellAspectY is how many cell-heights equal one cell-width in visual space
+	// (common monospace ≈ 2). Height = MaxFrameSize / CellAspectY.
+	CellAspectY = 2
+	// FramePad is padding (cells) on each edge of the frame.
+	FramePad = 2
+
+	FrameWidth   = MaxFrameSize
+	FrameHeight  = MaxFrameSize / CellAspectY // visual 1:1 with CellAspectY
+	MinFrameSize = MaxFrameSize
 )
 
-// MinInfoWidthBesideSprite is the minimum identity-column width required
-// beside the sprite (after the " │ " separator) before the sprite may show.
-const MinInfoWidthBesideSprite = 16
-
-// SeparatorWidth is the display width of " │ " between info and sprite.
+// SeparatorWidth is reserved for optional chrome near the sprite region.
 const SeparatorWidth = 3
 
-// MinRightWidthForSprite is the minimum right-pane content width needed to
-// show the smallest sprite frame beside identity info.
-const MinRightWidthForSprite = MinFrameSize + SeparatorWidth + MinInfoWidthBesideSprite
+// FrameOuterWidth is the body reservation width including horizontal pad.
+func FrameOuterWidth() int {
+	return FrameWidth + 2*FramePad
+}
 
-// MinRightWidthForFrame is the right-pane width needed for a square frame of size n.
-func MinRightWidthForFrame(n int) int {
-	if n < MinFrameSize {
-		n = MinFrameSize
+// FrameOuterHeight is the body reservation height including vertical pad.
+func FrameOuterHeight() int {
+	return FrameHeight + 2*FramePad
+}
+
+// FrameOuterSize is the larger outer edge (used for square budget checks).
+func FrameOuterSize() int {
+	w, h := FrameOuterWidth(), FrameOuterHeight()
+	if h > w {
+		return h
 	}
-	return n + SeparatorWidth + MinInfoWidthBesideSprite
+	return w
 }

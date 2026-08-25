@@ -23,7 +23,7 @@ type Options struct {
 	Prefill  string
 	Context  context.Context
 	// MinWidthForSprite / MinHeightForSprite gate when the sprite panel may appear.
-	// Zero uses package defaults (80×28). Frame size scales down to fit.
+	// Zero uses package defaults (~100×50). Frame is a fixed MaxFrameSize square when shown.
 	MinWidthForSprite  int
 	MinHeightForSprite int
 	// DisableSprite forces the sprite panel off regardless of terminal size.
@@ -50,9 +50,9 @@ type Model struct {
 	cursor   int
 	listOff  int
 
-	activeTab Tab
-	detailVP  viewport.Model
-	summaryVP viewport.Model
+	browseView    BrowseView
+	dialogSection DialogSection
+	dialogVP      viewport.Model
 
 	selectionGen int
 	trackedID    int
@@ -61,8 +61,8 @@ type Model struct {
 	spriteCancel context.CancelFunc
 	spriteReqID  int
 
-	showHelp bool
-	showInfo bool
+	showHelp   bool
+	showDialog bool
 
 	quitting bool
 }
@@ -83,13 +83,13 @@ func NewModel(opts Options) Model {
 			MinSpriteHeight: opts.MinHeightForSprite,
 			DisableSprite:   opts.DisableSprite,
 		},
-		resources: make(map[int]*resourceCache),
-		activeTab: TabStats,
-		keys:      defaultKeyMap(),
-		help:      newHelpModel(),
-		search:    newSearchInput(),
-		detailVP:  newContentViewport(),
-		summaryVP: newContentViewport(),
+		resources:     make(map[int]*resourceCache),
+		browseView:    BrowseSprite,
+		dialogSection: DialogMoves,
+		keys:          defaultKeyMap(),
+		help:          newHelpModel(),
+		search:        newSearchInput(),
+		dialogVP:      newContentViewport(),
 	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)
@@ -125,7 +125,6 @@ func newSearchInput() textinput.Model {
 	s.Focused.Text = lipgloss.NewStyle().Foreground(lipgloss.Color(p.Components))
 	s.Blurred.Text = s.Focused.Text
 	ti.SetStyles(s)
-	// Home/End scroll the detail card; keep them out of the textinput keymap.
 	ti.KeyMap.LineStart.SetEnabled(false)
 	ti.KeyMap.LineEnd.SetEnabled(false)
 	return ti
@@ -150,7 +149,6 @@ func newHelpModel() help.Model {
 func newContentViewport() viewport.Model {
 	vp := viewport.New()
 	vp.MouseWheelEnabled = false
-	// Browse owns ↑/↓ and PgUp/PgDn; never feed keys into the viewport Update.
 	vp.KeyMap.PageDown.SetEnabled(false)
 	vp.KeyMap.PageUp.SetEnabled(false)
 	vp.KeyMap.HalfPageUp.SetEnabled(false)
@@ -227,7 +225,6 @@ func (m *Model) selectSpeciesID(id int) {
 			return
 		}
 	}
-	// Selected species may be outside the current filter; clear filter to show it.
 	if m.index != nil {
 		m.search.SetValue("")
 		m.filtered = m.index.Search("")
@@ -264,7 +261,6 @@ func (m *Model) listVisibleRows() int {
 	if h <= 0 {
 		h = 30
 	}
-	// Frame chrome + search + divider; sprite no longer lives in the list column.
 	rows := h - 6
 	if lay.OnePane {
 		rows = h - 5
@@ -286,7 +282,8 @@ func (m *Model) moveCursor(delta int) {
 	if m.cursor >= len(m.filtered) {
 		m.cursor = len(m.filtered) - 1
 	}
-	m.detailVP.GotoTop()
+	m.browseView = BrowseSprite
+	m.dialogVP.GotoTop()
 	m.ensureListVisible()
 }
 
@@ -296,7 +293,7 @@ func (m *Model) clearQuery() {
 	}
 	m.search.SetValue("")
 	m.refilter()
-	m.detailVP.GotoTop()
+	m.dialogVP.GotoTop()
 }
 
 func (m *Model) canQuitWithQ() bool {
@@ -305,7 +302,9 @@ func (m *Model) canQuitWithQ() bool {
 
 func (m *Model) bumpSelection() {
 	m.selectionGen++
-	m.detailVP.GotoTop()
+	m.browseView = BrowseSprite
+	m.showDialog = false
+	m.dialogVP.GotoTop()
 	m.cancelSprite()
 	if m.sprites != nil {
 		m.sprites.ClearNative()
@@ -324,10 +323,18 @@ func (m *Model) ensureResource(id int) *resourceCache {
 	return r
 }
 
-func (m *Model) syncDetailViewport() {
-	lines := m.detailContentLines()
-	m.detailVP.SetContentLines(lines)
-	if m.detailVP.Height() < 1 {
-		m.detailVP.SetHeight(m.detailPageSize())
+func (m *Model) syncDialogViewport() {
+	lines := m.dialogContentLines()
+	m.dialogVP.SetContentLines(lines)
+	if m.dialogVP.Height() < 1 {
+		m.dialogVP.SetHeight(m.dialogPageSize())
 	}
+}
+
+func (m *Model) dialogPageSize() int {
+	h := m.height - 8
+	if h < 6 {
+		h = 6
+	}
+	return h
 }

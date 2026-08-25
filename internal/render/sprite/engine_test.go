@@ -216,8 +216,11 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || color != sprite.ColorTrueColor || ver != sprite.AlgorithmVersion {
 		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s", hash, src, mode, w, h, color, ver)
 	}
-	if sprite.BucketSize(23) != 24 && sprite.BucketSize(23) != 20 {
-		t.Fatalf("bucket 23 = %d", sprite.BucketSize(23))
+	if sprite.BucketSize(23) != 32 {
+		t.Fatalf("bucket 23 = %d want 32", sprite.BucketSize(23))
+	}
+	if sprite.BucketSize(45) != 32 {
+		t.Fatalf("bucket 45 = %d want 32", sprite.BucketSize(45))
 	}
 }
 

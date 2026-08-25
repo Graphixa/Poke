@@ -54,7 +54,7 @@ func TestLoadMigratesLegacySpriteGates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.TUI.MinWidthForSprite != 80 || cfg.TUI.MinHeightForSprite != 28 {
+	if cfg.TUI.MinWidthForSprite != 100 || cfg.TUI.MinHeightForSprite != 50 {
 		t.Fatalf("legacy gates not migrated: %+v", cfg.TUI)
 	}
 }
