@@ -79,8 +79,12 @@ type BrowseData struct {
 
 	BrowseView int
 	ViewLabels []string
-	BodySize   int
+	BodySize   int // sprite longest-side step when BrowseView is Sprite
 	ViewLines  []string
+
+	// Panel column widths (list-first). Zero falls back to Calculate 1/3–2/3.
+	LeftWidth  int
+	RightWidth int
 
 	HeaderTypes   string
 	HeaderGenus   string
@@ -157,6 +161,13 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 	}
 
 	leftW, rightW, panelH := fr.Calculate(d.Width, d.Height, 0, footerH, margin, 1)
+	if d.LeftWidth > 0 && d.RightWidth > 0 {
+		leftW, rightW = d.LeftWidth, d.RightWidth
+		panelH = d.Height - footerH
+		if panelH < 10 {
+			panelH = 10
+		}
+	}
 	leftContentW := leftW - 1
 	rightContentW := rightW - 1
 	if leftContentW < 10 {
@@ -210,12 +221,20 @@ func renderRight(d BrowseData, width, height int) string {
 	}
 
 	header := renderHeader(d, width)
-	body := renderViewBody(d, width)
 	divider := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", max(1, width)))
 	switcher := components.ViewSwitcher(d.BrowseView, d.ViewLabels, width)
 
-	// Bottom-anchor divider + switcher: leftover pane rows go between body and divider.
-	used := countLines(header) + 1 + countLines(body) + countLines(divider) + countLines(switcher)
+	headerBlock := countLines(header) + 1 // trailing gap under header
+	footBlock := countLines(divider) + countLines(switcher)
+	bodyAvail := height - headerBlock - footBlock
+	if bodyAvail < 3 {
+		bodyAvail = 3
+	}
+
+	body := renderViewBody(d, width, bodyAvail)
+
+	// Bottom-anchor divider + switcher for sprite (fixed body); text views already fill.
+	used := headerBlock + countLines(body) + footBlock
 	spacerN := height - used
 	if spacerN < 0 {
 		spacerN = 0
@@ -224,7 +243,7 @@ func renderRight(d BrowseData, width, height int) string {
 	var b strings.Builder
 	b.WriteString(header)
 	b.WriteByte('\n')
-	b.WriteByte('\n') // gap under header
+	b.WriteByte('\n')
 	b.WriteString(body)
 	b.WriteByte('\n')
 	for i := 0; i < spacerN; i++ {
@@ -283,7 +302,16 @@ func boldName(name string) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(style.PrimaryColor()).Render(name)
 }
 
-func renderViewBody(d BrowseData, width int) string {
+func renderViewBody(d BrowseData, width, maxH int) string {
+	// Text views use the full right pane — not the sprite's art box.
+	if d.BrowseView != 0 {
+		h := maxH
+		if h < 1 {
+			h = 1
+		}
+		return renderTextBody(d.ViewLines, width, h)
+	}
+
 	side := d.BodySize
 	if side < sprite.MinFrameSize {
 		side = sprite.MinFrameSize
@@ -292,7 +320,7 @@ func renderViewBody(d BrowseData, width int) string {
 	outerW, outerH := sprite.OuterFor(side)
 	if outerW > width {
 		outerW = width
-		artW = outerW - 2*sprite.FramePad
+		artW = outerW - 2*sprite.FramePadX
 		if artW < 1 {
 			artW = outerW
 		}
@@ -300,21 +328,33 @@ func renderViewBody(d BrowseData, width int) string {
 		if artH < 1 {
 			artH = 1
 		}
-		outerH = artH + 2*sprite.FramePad
+		outerH = artH + 2*sprite.FramePadY
+	}
+	if outerH > maxH && maxH > 0 {
+		// Prefer keeping pad; shrink art if the pane is shorter than the outer box.
+		artH = maxH - 2*sprite.FramePadY
+		if artH < 1 {
+			artH = maxH
+			outerH = maxH
+		} else {
+			outerH = maxH
+			artW = artH * sprite.CellAspectY
+			if artW+2*sprite.FramePadX > outerW {
+				artW = outerW - 2*sprite.FramePadX
+			}
+			if artW < 1 {
+				artW = 1
+			}
+		}
 	}
 
 	var inner string
-	switch d.BrowseView {
-	case 0: // Sprite
-		if d.ShowSprite && d.SpriteANSI != "" {
-			inner = components.SpritePanel(d.SpriteANSI, artW, artH)
-		} else if d.ShowSprite {
-			inner = components.SpritePlaceholder(d.Selected.DisplayName, artW, artH)
-		} else {
-			inner = components.SpriteSizeCue(artW, artH)
-		}
-	default:
-		inner = renderTextBody(d.ViewLines, artW, artH)
+	if d.ShowSprite && d.SpriteANSI != "" {
+		inner = components.SpritePanel(d.SpriteANSI, artW, artH)
+	} else if d.ShowSprite {
+		inner = components.SpritePlaceholder(d.Selected.DisplayName, artW, artH)
+	} else {
+		inner = components.SpriteSizeCue(artW, artH)
 	}
 
 	body := padFrame(inner, artW, artH, outerW, outerH)

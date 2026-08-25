@@ -42,7 +42,7 @@ func (m Model) browseData() views.BrowseData {
 
 	query := m.queryValue()
 	search := m.search
-	searchW := m.width/3 - 4
+	searchW := lay.leftWidth() - 4
 	if searchW < 10 {
 		searchW = 10
 	}
@@ -69,6 +69,8 @@ func (m Model) browseData() views.BrowseData {
 		BrowseView:    int(m.browseView),
 		ViewLabels:    AllBrowseViewLabels(),
 		BodySize:      bodySide,
+		LeftWidth:     lay.leftWidth(),
+		RightWidth:    lay.rightWidth(),
 		ViewLines:     m.browseViewLines(),
 		ShowHelp:      m.showHelp,
 		HelpBody:      m.help.FullHelpView(m.keys.FullHelp()),

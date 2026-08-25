@@ -14,7 +14,7 @@ import (
 )
 
 func TestLayoutBreakpoints(t *testing.T) {
-	// Sprite scales in steps 24/28/32 when terminal clears frame-derived mins.
+	// List ~58% / detail ~42%; aspect-corrected pad; chrome=8.
 	cases := []struct {
 		w, h            int
 		sprite, summary bool
@@ -23,15 +23,13 @@ func TestLayoutBreakpoints(t *testing.T) {
 		tooSmall        bool
 		spriteSize      int
 	}{
-		{120, 52, true, true, true, false, false, 32},
-		{120, 30, true, true, true, false, false, 32}, // hBudget=20 → 32
-		{120, 28, true, true, true, false, false, 28}, // hBudget=18 → 28
-		{120, 26, true, true, true, false, false, 24}, // min height gate + min step
-		{120, 25, false, true, true, false, false, 0}, // below MinTerminalHeight
-		{80, 28, true, false, true, false, false, 28},
-		{54, 26, true, false, false, false, false, 24},
-		{53, 40, false, false, false, false, false, 0}, // below MinTerminalWidth
-		{88, 40, true, true, true, false, false, 32},
+		{120, 52, true, true, true, false, false, 40},
+		{120, 34, true, true, true, false, false, 40},
+		{120, 22, true, false, true, false, false, 20}, // min body; below summary height gate
+		{120, 21, false, false, false, false, false, 0},
+		{71, 26, true, false, false, false, false, 24},
+		{70, 40, true, false, false, false, false, 24},
+		{88, 40, true, true, true, false, false, 24},
 		{51, 40, false, false, false, true, false, 0},
 		{80, 17, false, false, false, true, false, 0},
 		{39, 20, false, false, false, true, true, 0},
@@ -49,6 +47,51 @@ func TestLayoutBreakpoints(t *testing.T) {
 		if f.SpriteSize != tc.spriteSize {
 			t.Fatalf("%dx%d SpriteSize=%d want %d", tc.w, tc.h, f.SpriteSize, tc.spriteSize)
 		}
+	}
+}
+
+func TestListFirstColumns(t *testing.T) {
+	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	f := m.LayoutFlags()
+	if !f.ShowSprite {
+		t.Fatal("expected sprite")
+	}
+	// Detail ~42%, list ~58%.
+	if f.RightWidth >= f.LeftWidth {
+		t.Fatalf("list-first failed: left=%d right=%d", f.LeftWidth, f.RightWidth)
+	}
+	if f.LeftWidth < sprite.MinListWidth {
+		t.Fatalf("list too narrow: %d", f.LeftWidth)
+	}
+	share := f.RightWidth * 100 / 120
+	if share < 38 || share > 46 {
+		t.Fatalf("right share %d%% (w=%d) want ~42%%", share, f.RightWidth)
+	}
+	listShare := f.LeftWidth * 100 / 120
+	if listShare < 54 || listShare > 62 {
+		t.Fatalf("list share %d%% (w=%d) want ~58%%", listShare, f.LeftWidth)
+	}
+
+	m = apply(t, m, tea.WindowSizeMsg{Width: 180, Height: 40})
+	f = m.LayoutFlags()
+	want := (180 * sprite.RightPanelSharePercent) / 100
+	if f.RightWidth < want-2 || f.RightWidth > want+2 {
+		t.Fatalf("wide right=%d want ~%d (42%%)", f.RightWidth, want)
+	}
+}
+
+func TestSpriteShowsWhenBodyFits(t *testing.T) {
+	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 22})
+	f := m.LayoutFlags()
+	if !f.ShowSprite || f.SpriteSize < sprite.MinFrameSize {
+		t.Fatalf("expected sprite at 120x22, got show=%v size=%d", f.ShowSprite, f.SpriteSize)
+	}
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 21})
+	f = m.LayoutFlags()
+	if f.ShowSprite {
+		t.Fatal("expected sprite hidden when body shorter than min outer")
 	}
 }
 
@@ -74,6 +117,7 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		BrowseView:  0,
 		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
 		BodySize:    sprite.MaxFrameSize,
+		LeftWidth:   70, RightWidth: 49,
 		HeaderTypes: "Fire",
 		HeaderGenus: "Lizard Pokémon",
 		SpriteANSI:  "[sprite]",
@@ -102,7 +146,8 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		BrowseView: 1,
 		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
 		BodySize:   sprite.MaxFrameSize,
-		ViewLines:  []string{"Height  0.6 m", "Ability Blaze"},
+		LeftWidth:  70, RightWidth: 49,
+		ViewLines:   []string{"Height  0.6 m", "Ability Blaze"},
 		HeaderTypes: "Fire",
 	})
 	if strings.Contains(out2, "Search Pokémon…") {
@@ -125,7 +170,8 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		BrowseView:  0,
 		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
 		BodySize:    sprite.MaxFrameSize,
-		ShowDialog:  true,
+		LeftWidth:   70, RightWidth: 49,
+		ShowDialog:    true,
 		DialogSection: 0,
 		DialogLabels:  []string{"Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
 		DialogLines:   []string{"Lv 1  Scratch"},
@@ -144,19 +190,17 @@ func TestBrowseSwitcherBottomAnchored(t *testing.T) {
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 52,
 		Rows: rows, HasSelected: true,
-		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
-		ShowSprite: true, VerboseFooter: true,
-		BrowseView: 0,
-		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:   sprite.MinFrameSize,
+		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
+		ShowSprite:  true, VerboseFooter: true,
+		BrowseView:  0,
+		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
+		BodySize:    sprite.MinFrameSize,
+		LeftWidth:   70, RightWidth: 49,
 		HeaderTypes: "Fire",
 		SpriteANSI:  "X",
 	})
-	// Strip ANSI for line math.
 	plain := stripANSI(out)
 	lines := strings.Split(plain, "\n")
-	// Find the combined frame bottom (╰) — switcher should be the last content
-	// line inside the right pane, immediately above the frame bottom / footer.
 	var switcherIdx, frameBottomIdx int
 	for i, line := range lines {
 		if strings.Contains(line, "[ Sprite ]") {
@@ -171,6 +215,32 @@ func TestBrowseSwitcherBottomAnchored(t *testing.T) {
 	}
 	if frameBottomIdx-switcherIdx > 2 {
 		t.Fatalf("switcher not near bottom: switcher=%d bottom=%d\n%s", switcherIdx, frameBottomIdx, plain)
+	}
+}
+
+func TestSummaryUsesFullPaneWidth(t *testing.T) {
+	rows := []components.ListRow{
+		{Summary: domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"}, Selected: true},
+	}
+	long := strings.Repeat("flavour ", 20)
+	out := views.Browse(views.BrowseData{
+		Width: 120, Height: 40,
+		Rows: rows, HasSelected: true,
+		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
+		ShowSprite: true, VerboseFooter: true,
+		BrowseView: 1,
+		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		BodySize:   sprite.MinFrameSize,
+		LeftWidth:  70, RightWidth: 49,
+		ViewLines:  []string{long},
+	})
+	plain := stripANSI(out)
+	if !strings.Contains(plain, "flavour") {
+		t.Fatal("summary body missing")
+	}
+	// Text view should not be clipped to the tiny sprite art width (~24).
+	if strings.Count(plain, "flavour") < 3 {
+		t.Fatalf("expected wrapped full-width summary, got:\n%s", plain)
 	}
 }
 

@@ -216,8 +216,8 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || color != sprite.ColorTrueColor || ver != sprite.AlgorithmVersion {
 		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s", hash, src, mode, w, h, color, ver)
 	}
-	if sprite.BucketSize(23) != sprite.MinFrameSize {
-		t.Fatalf("bucket 23 = %d want %d", sprite.BucketSize(23), sprite.MinFrameSize)
+	if sprite.BucketSize(21) != sprite.MinFrameSize {
+		t.Fatalf("bucket 21 = %d want %d", sprite.BucketSize(21), sprite.MinFrameSize)
 	}
 	if sprite.BucketSize(45) != sprite.MaxFrameSize {
 		t.Fatalf("bucket 45 = %d want %d", sprite.BucketSize(45), sprite.MaxFrameSize)

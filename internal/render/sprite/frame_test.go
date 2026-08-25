@@ -37,3 +37,20 @@ func TestFrameSizeForAspect(t *testing.T) {
 		t.Fatalf("clamp got %dx%d", w, h)
 	}
 }
+
+func TestOuterForVisualSquare(t *testing.T) {
+	// Pad is aspect-corrected: outer box should stay visually square like the art.
+	for _, side := range sprite.FrameSteps() {
+		ow, oh := sprite.OuterFor(side)
+		if ow != oh*sprite.CellAspectY {
+			t.Fatalf("side %d outer %dx%d not visually square (want w=h*%d)", side, ow, oh, sprite.CellAspectY)
+		}
+		if ow-side != 2*sprite.FramePadX {
+			t.Fatalf("side %d horizontal pad want %d got %d", side, 2*sprite.FramePadX, ow-side)
+		}
+		artH := side / sprite.CellAspectY
+		if oh-artH != 2*sprite.FramePadY {
+			t.Fatalf("side %d vertical pad want %d got %d", side, 2*sprite.FramePadY, oh-artH)
+		}
+	}
+}

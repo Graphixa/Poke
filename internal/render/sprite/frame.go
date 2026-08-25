@@ -12,16 +12,20 @@ package sprite
 // MaxFrameSize. The image is shrunk uniformly to fit — never stretched.
 const (
 	// MinFrameSize is the smallest longest-side (cells) browse will show.
-	MinFrameSize = 24
+	MinFrameSize = 20
 	// MaxFrameSize is the largest longest-side (cells) browse will show.
-	MaxFrameSize = 32
+	MaxFrameSize = 40
 	// FrameStep is the discrete increment between min and max.
 	FrameStep = 4
 	// CellAspectY is how many cell-heights equal one cell-width in visual space
 	// (common monospace ≈ 2). Height = side / CellAspectY.
 	CellAspectY = 2
-	// FramePad is padding (cells) on each edge of the frame.
-	FramePad = 2
+	// FramePad is visual padding on each edge, in cell-width units. Horizontal
+	// pad uses FramePad columns; vertical pad uses FramePad/CellAspectY rows so
+	// margins look equal around a 1:1 sprite.
+	FramePad  = 4
+	FramePadX = FramePad
+	FramePadY = FramePad / CellAspectY
 
 	// FrameWidth / FrameHeight are the preferred (max) frame dimensions.
 	FrameWidth  = MaxFrameSize
@@ -46,7 +50,6 @@ func ClampFrameSide(side int) int {
 	if side > MaxFrameSize {
 		return MaxFrameSize
 	}
-	// Snap down to FrameStep grid aligned to MinFrameSize.
 	off := side - MinFrameSize
 	side = MinFrameSize + (off/FrameStep)*FrameStep
 	if side < MinFrameSize {
@@ -61,17 +64,18 @@ func FrameSteps() []int {
 	if n < 1 {
 		return []int{MinFrameSize}
 	}
-	out := make([]int, 0, n)
+	steps := make([]int, 0, n)
 	for s := MinFrameSize; s <= MaxFrameSize; s += FrameStep {
-		out = append(out, s)
+		steps = append(steps, s)
 	}
-	return out
+	return steps
 }
 
 // OuterFor returns padded outer width×height for a longest-side step.
+// Padding is aspect-corrected so visual margins match on ~1:2 cells.
 func OuterFor(side int) (w, h int) {
 	fw, fh := FrameSizeFor(side)
-	return fw + 2*FramePad, fh + 2*FramePad
+	return fw + 2*FramePadX, fh + 2*FramePadY
 }
 
 // FrameOuterWidth is the preferred (max) padded body width.
@@ -95,26 +99,37 @@ func FrameOuterSize() int {
 	return w
 }
 
+// MinListWidth is the smallest list column that stays usable beside the sprite.
+const MinListWidth = 32
+
+// MinRightHeaderWidth is enough for name / types · genus without the sprite.
+const MinRightHeaderWidth = 36
+
+// RightPanelSharePercent is the preferred share of terminal width for the
+// detail/sprite pane (~42%). The list keeps the remaining ~58%.
+const RightPanelSharePercent = 42
+
+// BrowseChromeRows is terminal rows outside the sprite body: footer (1) +
+// combined-frame borders (2) + name/types header + gap (3) + divider +
+// switcher (2). Keep in sync with layout spriteChromeRows.
+const BrowseChromeRows = 8
+
 // MinTerminalWidth is the smallest terminal width that can host the padded
-// *minimum* sprite frame beside a usable list column (~1/3).
+// *minimum* sprite frame beside a usable list column.
 func MinTerminalWidth() int {
 	needRight, _ := OuterFor(MinFrameSize)
-	needRight += 2
-	// left ≈ width/3, right ≈ 2*width/3; require right >= needRight.
-	w := (needRight*3 + 1) / 2
-	const minLeft = 24
-	if w < needRight+minLeft {
-		w = needRight + minLeft
+	if needRight < MinRightHeaderWidth {
+		needRight = MinRightHeaderWidth
 	}
-	return w
+	needRight += 2                      // frame borders / gutter
+	return needRight + MinListWidth + 1 // + sep
 }
 
 // MinTerminalHeight is the smallest terminal height that can host the padded
-// *minimum* sprite frame plus browse chrome (header / divider / switcher / footer).
+// *minimum* sprite frame plus browse chrome.
 func MinTerminalHeight() int {
-	const chromeRows = 10
 	_, outerH := OuterFor(MinFrameSize)
-	return outerH + chromeRows
+	return outerH + BrowseChromeRows
 }
 
 // LargestFrameFitting returns the largest step whose padded outer box fits in
@@ -128,4 +143,33 @@ func LargestFrameFitting(maxOuterW, maxOuterH int) int {
 		}
 	}
 	return best
+}
+
+// RightPanelWidth picks the right column width: about RightPanelSharePercent of
+// the terminal, and never narrower than the padded sprite (list gets the rest).
+func RightPanelWidth(termW, spriteSide int) int {
+	if termW < 20 {
+		return termW / 2
+	}
+	maxRight := termW - MinListWidth - 1
+	if maxRight < MinRightHeaderWidth {
+		maxRight = termW / 2
+	}
+	r := (termW * RightPanelSharePercent) / 100
+	if r < MinRightHeaderWidth {
+		r = MinRightHeaderWidth
+	}
+	if spriteSide >= MinFrameSize {
+		ow, _ := OuterFor(spriteSide)
+		if ow+2 > r {
+			r = ow + 2
+		}
+	}
+	if r > maxRight {
+		r = maxRight
+	}
+	if r < 20 {
+		r = 20
+	}
+	return r
 }

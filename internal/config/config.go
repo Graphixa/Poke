@@ -299,7 +299,9 @@ func migrateLegacySpriteGates(cfg *Config) {
 	w, h := cfg.TUI.MinWidthForSprite, cfg.TUI.MinHeightForSprite
 	legacy := (w == 110 && h == 52) ||
 		(w == 100 && h == 50) ||
-		(w == 80 && h == 28)
+		(w == 80 && h == 28) ||
+		(w == 71 && h == 30) ||
+		(w == 71 && h == 28)
 	if legacy {
 		cfg.TUI.MinWidthForSprite = sprite.MinTerminalWidth()
 		cfg.TUI.MinHeightForSprite = sprite.MinTerminalHeight()
