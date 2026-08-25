@@ -77,10 +77,9 @@ func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) 
 		return RenderResult{UsePlaceholder: true}
 	}
 	fw, fh := e.frameSize()
-	// cells is a longest-side hint from the TUI; browse always uses the fixed
-	// visual 1:1 frame (width × height/CellAspectY), never a square cell grid.
+	// cells is the longest-side step from the TUI (min..max); map to visual 1:1.
 	if cells >= MinFrameSize {
-		fw, fh = FrameWidth, FrameHeight
+		fw, fh = FrameSizeFor(cells)
 	}
 	label := displayName(pokemon)
 

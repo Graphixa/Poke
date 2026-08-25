@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 const (
@@ -125,8 +127,8 @@ func Default() Config {
 		},
 		TUI: TUI{
 			ShowSprite:         true,
-			MinWidthForSprite:  100,
-			MinHeightForSprite: 50,
+			MinWidthForSprite:  sprite.MinTerminalWidth(),
+			MinHeightForSprite: sprite.MinTerminalHeight(),
 			FooterHelp:         "compact",
 		},
 		Theme: Theme{Name: "catppuccin"},
@@ -288,17 +290,19 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// migrateLegacySpriteGates raises older sprite gates to the sprite-first ~100×50
-// contract (never show below a 40×40 frame when the panel is enabled).
+// migrateLegacySpriteGates lowers outdated sprite gates that hid art on common
+// terminal sizes (e.g. Windows Terminal ~120×30) after the fixed-frame redesign.
 func migrateLegacySpriteGates(cfg *Config) {
 	if cfg == nil {
 		return
 	}
 	w, h := cfg.TUI.MinWidthForSprite, cfg.TUI.MinHeightForSprite
-	legacy := (w == 110 && h == 52) || (w == 80 && h == 28)
+	legacy := (w == 110 && h == 52) ||
+		(w == 100 && h == 50) ||
+		(w == 80 && h == 28)
 	if legacy {
-		cfg.TUI.MinWidthForSprite = 100
-		cfg.TUI.MinHeightForSprite = 50
+		cfg.TUI.MinWidthForSprite = sprite.MinTerminalWidth()
+		cfg.TUI.MinHeightForSprite = sprite.MinTerminalHeight()
 	}
 }
 

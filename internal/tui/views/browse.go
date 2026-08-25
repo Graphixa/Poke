@@ -214,12 +214,39 @@ func renderRight(d BrowseData, width, height int) string {
 	divider := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", max(1, width)))
 	switcher := components.ViewSwitcher(d.BrowseView, d.ViewLabels, width)
 
-	col := lipgloss.JoinVertical(lipgloss.Left, header, "", body, divider, switcher)
+	// Bottom-anchor divider + switcher: leftover pane rows go between body and divider.
+	used := countLines(header) + 1 + countLines(body) + countLines(divider) + countLines(switcher)
+	spacerN := height - used
+	if spacerN < 0 {
+		spacerN = 0
+	}
+
+	var b strings.Builder
+	b.WriteString(header)
+	b.WriteByte('\n')
+	b.WriteByte('\n') // gap under header
+	b.WriteString(body)
+	b.WriteByte('\n')
+	for i := 0; i < spacerN; i++ {
+		b.WriteString(strings.Repeat(" ", width))
+		b.WriteByte('\n')
+	}
+	b.WriteString(divider)
+	b.WriteByte('\n')
+	b.WriteString(switcher)
+	col := b.String()
 	lines := strings.Split(col, "\n")
 	if len(lines) > height {
 		col = strings.Join(lines[:height], "\n")
 	}
 	return col
+}
+
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
 }
 
 func renderHeader(d BrowseData, width int) string {
@@ -257,8 +284,12 @@ func boldName(name string) string {
 }
 
 func renderViewBody(d BrowseData, width int) string {
-	artW, artH := sprite.FrameWidth, sprite.FrameHeight
-	outerW, outerH := sprite.FrameOuterWidth(), sprite.FrameOuterHeight()
+	side := d.BodySize
+	if side < sprite.MinFrameSize {
+		side = sprite.MinFrameSize
+	}
+	artW, artH := sprite.FrameSizeFor(side)
+	outerW, outerH := sprite.OuterFor(side)
 	if outerW > width {
 		outerW = width
 		artW = outerW - 2*sprite.FramePad

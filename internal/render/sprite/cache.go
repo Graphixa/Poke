@@ -5,9 +5,8 @@ import (
 	"strings"
 )
 
-// SizeBuckets are preferred render widths/heights. Browse uses a fixed
-// MaxFrameSize square; the bucket list exists for cache snapping helpers.
-var SizeBuckets = []int{MaxFrameSize}
+// SizeBuckets are preferred longest-side steps for cache snapping.
+var SizeBuckets = FrameSteps()
 
 // BucketSize snaps n to the nearest SizeBucket (minimum first bucket).
 func BucketSize(n int) int {

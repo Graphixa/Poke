@@ -23,7 +23,8 @@ type Options struct {
 	Prefill  string
 	Context  context.Context
 	// MinWidthForSprite / MinHeightForSprite gate when the sprite panel may appear.
-	// Zero uses package defaults (~100×50). Frame is a fixed MaxFrameSize square when shown.
+	// Zero uses package defaults (frame-derived mins). Sprite longest-side scales
+	// between MinFrameSize and MaxFrameSize when the terminal allows.
 	MinWidthForSprite  int
 	MinHeightForSprite int
 	// DisableSprite forces the sprite panel off regardless of terminal size.

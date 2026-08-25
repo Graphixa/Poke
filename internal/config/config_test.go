@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 func TestDefault(t *testing.T) {
@@ -46,7 +48,7 @@ func TestLoadOverlaysDefaultsAndIgnoresUnknownFields(t *testing.T) {
 
 func TestLoadMigratesLegacySpriteGates(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	data := []byte("tui:\n  min_width_for_sprite: 110\n  min_height_for_sprite: 52\n")
+	data := []byte("tui:\n  min_width_for_sprite: 100\n  min_height_for_sprite: 50\n")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -54,8 +56,8 @@ func TestLoadMigratesLegacySpriteGates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.TUI.MinWidthForSprite != 100 || cfg.TUI.MinHeightForSprite != 50 {
-		t.Fatalf("legacy gates not migrated: %+v", cfg.TUI)
+	if cfg.TUI.MinWidthForSprite != sprite.MinTerminalWidth() || cfg.TUI.MinHeightForSprite != sprite.MinTerminalHeight() {
+		t.Fatalf("legacy gates not migrated: %+v want %dx%d", cfg.TUI, sprite.MinTerminalWidth(), sprite.MinTerminalHeight())
 	}
 }
 

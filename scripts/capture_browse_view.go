@@ -86,8 +86,8 @@ func main() {
 		Selected:           selected,
 		Prefill:            "c",
 		Context:            ctx,
-		MinWidthForSprite:  100,
-		MinHeightForSprite: 50,
+		MinWidthForSprite:  sprite.MinTerminalWidth(),
+		MinHeightForSprite: sprite.MinTerminalHeight(),
 	})
 
 	var model tea.Model = m

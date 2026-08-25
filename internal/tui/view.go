@@ -48,9 +48,9 @@ func (m Model) browseData() views.BrowseData {
 	}
 	search.SetWidth(searchW)
 
-	bodyW := sprite.FrameOuterWidth()
-	if !lay.ShowSprite {
-		bodyW = sprite.MaxFrameSize
+	bodySide := lay.SpriteSize
+	if bodySide < sprite.MinFrameSize {
+		bodySide = sprite.MinFrameSize
 	}
 
 	data := views.BrowseData{
@@ -68,7 +68,7 @@ func (m Model) browseData() views.BrowseData {
 		ShowListPane:  query != "",
 		BrowseView:    int(m.browseView),
 		ViewLabels:    AllBrowseViewLabels(),
-		BodySize:      bodyW,
+		BodySize:      bodySide,
 		ViewLines:     m.browseViewLines(),
 		ShowHelp:      m.showHelp,
 		HelpBody:      m.help.FullHelpView(m.keys.FullHelp()),

@@ -40,12 +40,12 @@ func centreSwitcher(active int, labels []string, width int) string {
 // SpriteSizeCue tells the user the terminal is too small for the fixed sprite frame.
 func SpriteSizeCue(width, height int) string {
 	if width < 1 {
-		width = sprite.MaxFrameSize
+		width = sprite.MinFrameSize
 	}
 	if height < 1 {
-		height = sprite.MaxFrameSize
+		height = sprite.MinFrameSize / sprite.CellAspectY
 	}
-	msg := fmt.Sprintf("Widen / taller terminal\nfor %d×%d sprite", sprite.FrameWidth, sprite.FrameHeight)
+	msg := fmt.Sprintf("Widen / taller terminal\nfor %d×%d sprite", sprite.MinFrameSize, sprite.MinFrameSize/sprite.CellAspectY)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, mutedSty().Render(msg))
 }
 

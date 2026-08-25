@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -388,8 +389,10 @@ func (m *Model) clearSpriteArt(r *resourceCache) {
 
 func (m *Model) currentSpriteSide() int {
 	lay := m.layout()
-	w, _ := lay.spriteFrameSize()
-	return w
+	if !lay.ShowSprite || lay.SpriteSize < sprite.MinFrameSize {
+		return 0
+	}
+	return lay.SpriteSize
 }
 
 func (m *Model) currentSpriteCells() int {

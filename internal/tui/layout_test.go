@@ -14,7 +14,7 @@ import (
 )
 
 func TestLayoutBreakpoints(t *testing.T) {
-	// Fixed MaxFrameSize×(MaxFrameSize/2) art (+ pad) when terminal clears sprite gates.
+	// Sprite scales in steps 24/28/32 when terminal clears frame-derived mins.
 	cases := []struct {
 		w, h            int
 		sprite, summary bool
@@ -24,20 +24,14 @@ func TestLayoutBreakpoints(t *testing.T) {
 		spriteSize      int
 	}{
 		{120, 52, true, true, true, false, false, 32},
-		{120, 50, true, true, true, false, false, 32},
-		{140, 56, true, true, true, false, false, 32},
-		{120, 40, true, true, true, false, false, 32}, // height gate default 40
-		{120, 30, false, true, true, false, false, 0},
-		{109, 52, true, true, true, false, false, 32},
-		{100, 50, true, true, true, false, false, 32},
-		{100, 40, true, true, true, false, false, 32},
-		{99, 52, false, true, true, false, false, 0}, // width < 100
-		{88, 40, false, true, true, false, false, 0},
-		{88, 24, false, false, true, false, false, 0},
-		{80, 28, false, false, true, false, false, 0},
-		{79, 40, false, false, true, false, false, 0},
-		{75, 40, false, false, false, false, false, 0},
-		{63, 40, false, false, false, false, false, 0},
+		{120, 30, true, true, true, false, false, 32}, // hBudget=20 → 32
+		{120, 28, true, true, true, false, false, 28}, // hBudget=18 → 28
+		{120, 26, true, true, true, false, false, 24}, // min height gate + min step
+		{120, 25, false, true, true, false, false, 0}, // below MinTerminalHeight
+		{80, 28, true, false, true, false, false, 28},
+		{54, 26, true, false, false, false, false, 24},
+		{53, 40, false, false, false, false, false, 0}, // below MinTerminalWidth
+		{88, 40, true, true, true, false, false, 32},
 		{51, 40, false, false, false, true, false, 0},
 		{80, 17, false, false, false, true, false, 0},
 		{39, 20, false, false, false, true, true, 0},
@@ -79,7 +73,7 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		ShowSprite:  true, VerboseFooter: true,
 		BrowseView:  0,
 		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:    sprite.FrameOuterWidth(),
+		BodySize:    sprite.MaxFrameSize,
 		HeaderTypes: "Fire",
 		HeaderGenus: "Lizard Pokémon",
 		SpriteANSI:  "[sprite]",
@@ -107,7 +101,7 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		ShowSprite: true, VerboseFooter: true,
 		BrowseView: 1,
 		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:   sprite.FrameOuterWidth(),
+		BodySize:   sprite.MaxFrameSize,
 		ViewLines:  []string{"Height  0.6 m", "Ability Blaze"},
 		HeaderTypes: "Fire",
 	})
@@ -130,7 +124,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		ShowSprite:  true, VerboseFooter: true,
 		BrowseView:  0,
 		ViewLabels:  []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:    sprite.FrameOuterWidth(),
+		BodySize:    sprite.MaxFrameSize,
 		ShowDialog:  true,
 		DialogSection: 0,
 		DialogLabels:  []string{"Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
@@ -141,4 +135,61 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
+}
+
+func TestBrowseSwitcherBottomAnchored(t *testing.T) {
+	rows := []components.ListRow{
+		{Summary: domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}}, Selected: true},
+	}
+	out := views.Browse(views.BrowseData{
+		Width: 120, Height: 52,
+		Rows: rows, HasSelected: true,
+		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
+		ShowSprite: true, VerboseFooter: true,
+		BrowseView: 0,
+		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		BodySize:   sprite.MinFrameSize,
+		HeaderTypes: "Fire",
+		SpriteANSI:  "X",
+	})
+	// Strip ANSI for line math.
+	plain := stripANSI(out)
+	lines := strings.Split(plain, "\n")
+	// Find the combined frame bottom (╰) — switcher should be the last content
+	// line inside the right pane, immediately above the frame bottom / footer.
+	var switcherIdx, frameBottomIdx int
+	for i, line := range lines {
+		if strings.Contains(line, "[ Sprite ]") {
+			switcherIdx = i
+		}
+		if strings.Contains(line, "╰") {
+			frameBottomIdx = i
+		}
+	}
+	if switcherIdx == 0 || frameBottomIdx == 0 {
+		t.Fatalf("missing switcher or frame bottom:\n%s", plain)
+	}
+	if frameBottomIdx-switcherIdx > 2 {
+		t.Fatalf("switcher not near bottom: switcher=%d bottom=%d\n%s", switcherIdx, frameBottomIdx, plain)
+	}
+}
+
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEsc := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == 0x1b {
+			inEsc = true
+			continue
+		}
+		if inEsc {
+			if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+				inEsc = false
+			}
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }

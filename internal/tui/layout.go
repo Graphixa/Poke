@@ -3,11 +3,11 @@ package tui
 import "github.com/Graphixa/Pokedex/internal/render/sprite"
 
 // Default responsive breakpoints. Sprite mins are overridden by config when set
-// on the model (see layoutThresholds).
+// on the model (see layoutThresholds). Zero config falls back to frame-derived
+// MinTerminalWidth/Height so sprites show on normal terminal sizes.
 const (
-	defaultMinSpriteWidth  = 100
-	defaultMinSpriteHeight = 40
-	// Rows reserved outside the sprite body (frame, header, divider, switcher, footer).
+	// Rows reserved outside the sprite body for header, gap, divider, switcher,
+	// and terminal footer when budgeting the scalable frame.
 	spriteChromeRows = 10
 	minSummaryWidth  = 88
 	minSummaryHeight = 25
@@ -29,10 +29,10 @@ type layoutThresholds struct {
 func (t layoutThresholds) spriteMin() (w, h int) {
 	w, h = t.MinSpriteWidth, t.MinSpriteHeight
 	if w <= 0 {
-		w = defaultMinSpriteWidth
+		w = sprite.MinTerminalWidth()
 	}
 	if h <= 0 {
-		h = defaultMinSpriteHeight
+		h = sprite.MinTerminalHeight()
 	}
 	return w, h
 }
@@ -45,7 +45,7 @@ type LayoutFlags struct {
 	VerboseFooter bool
 	OnePane       bool
 	TooSmall      bool
-	// SpriteSize is MaxFrameSize (longest side) when the sprite panel is shown.
+	// SpriteSize is the chosen longest-side step when the sprite panel is shown.
 	SpriteSize int
 }
 
@@ -53,7 +53,7 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	f := LayoutFlags{Width: width, Height: height}
 	if width <= 0 || height <= 0 {
 		f.ShowSprite = !th.DisableSprite
-		f.SpriteSize = sprite.FrameWidth
+		f.SpriteSize = sprite.MaxFrameSize
 		f.ShowSummary = true
 		f.VerboseFooter = true
 		return f
@@ -72,14 +72,11 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	return f
 }
 
-// maxSpriteFrame returns MaxFrameSize when the padded visual frame fits, else 0.
+// maxSpriteFrame returns the largest discrete longest-side step that fits, or 0.
 func maxSpriteFrame(termH, rightW int) int {
 	hBudget := termH - spriteChromeRows
 	wBudget := rightW - 2
-	if hBudget >= sprite.FrameOuterHeight() && wBudget >= sprite.FrameOuterWidth() {
-		return sprite.MaxFrameSize
-	}
-	return 0
+	return sprite.LargestFrameFitting(wBudget, hBudget)
 }
 
 func (f LayoutFlags) leftWidth() int {
@@ -103,10 +100,10 @@ func (f LayoutFlags) rightWidth() int {
 	return f.Width - f.leftWidth()
 }
 
-// spriteFrameSize returns cell width×height when the sprite is shown.
+// spriteFrameSize returns cell width×height for the chosen step when shown.
 func (f LayoutFlags) spriteFrameSize() (w, h int) {
 	if !f.ShowSprite || f.SpriteSize < sprite.MinFrameSize {
 		return 0, 0
 	}
-	return sprite.FrameWidth, sprite.FrameHeight
+	return sprite.FrameSizeFor(f.SpriteSize)
 }
