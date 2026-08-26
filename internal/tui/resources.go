@@ -27,6 +27,7 @@ type resourceCache struct {
 	SpriteCells       int
 	HasSprite         bool
 	SpritePlaceholder bool
+	SpriteNative      bool
 	loadingSprite     bool
 
 	loadingCore bool
@@ -40,6 +41,7 @@ func (r *resourceCache) clearSprite() {
 	r.SpriteCells = 0
 	r.HasSprite = false
 	r.SpritePlaceholder = false
+	r.SpriteNative = false
 	r.loadingSprite = false
 }
 

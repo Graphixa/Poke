@@ -100,7 +100,8 @@ type BrowseData struct {
 	DialogLines   []string
 	DialogOff     int
 
-	SpriteANSI string
+	SpriteANSI   string
+	SpriteNative bool
 
 	WarmHint string
 
@@ -342,22 +343,149 @@ func renderViewBody(d BrowseData, width, maxH int) string {
 	}
 
 	var inner string
-	if d.ShowSprite && d.SpriteANSI != "" {
-		inner = components.SpritePanel(d.SpriteANSI, artW, artH)
+	if d.ShowSprite && d.SpriteNative {
+		// Blank cell reservation only — graphics are painted via tea.Raw.
+		inner = components.SpritePanel("", artW, artH, true)
+	} else if d.ShowSprite && d.SpriteANSI != "" {
+		inner = components.SpritePanel(d.SpriteANSI, artW, artH, false)
 	} else if d.ShowSprite {
 		inner = components.SpritePlaceholder(d.Selected.DisplayName, artW, artH)
 	} else {
 		inner = components.SpriteSizeCue(artW, artH)
 	}
 
-	body := padFrame(inner, artW, artH, outerW, outerH)
+	body := padFrame(inner, artW, artH, outerW, outerH, d.SpriteNative)
+	if d.SpriteNative {
+		return centerNativeBlock(body, width, outerW)
+	}
 	if lipgloss.Width(body) < width {
 		return lipgloss.PlaceHorizontal(width, lipgloss.Center, body)
 	}
 	return body
 }
 
-func padFrame(inner string, artW, artH, outerW, outerH int) string {
+// centerNativeBlock left-pads a reserved native sprite box without measuring
+// escape sequences (lipgloss width/PlaceHorizontal can corrupt DCS payloads).
+func centerNativeBlock(body string, paneW, outerW int) string {
+	if outerW >= paneW || paneW < 1 {
+		return body
+	}
+	left := (paneW - outerW) / 2
+	if left < 1 {
+		return body
+	}
+	pad := strings.Repeat(" ", left)
+	lines := strings.Split(body, "\n")
+	for i := range lines {
+		lines[i] = pad + lines[i]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// spriteArtGeometry mirrors renderViewBody sizing for the browse sprite box.
+func spriteArtGeometry(d BrowseData, width, maxH int) (artW, artH, outerW, outerH, padX, padY, centerLeft int) {
+	side := d.BodySize
+	if side < sprite.MinFrameSize {
+		side = sprite.MinFrameSize
+	}
+	artW, artH = sprite.FrameSizeFor(side)
+	outerW, outerH = sprite.OuterFor(side)
+	if outerW > width {
+		outerW = width
+		artW = outerW - 2*sprite.FramePadX
+		if artW < 1 {
+			artW = outerW
+		}
+		artH = artW / sprite.CellAspectY
+		if artH < 1 {
+			artH = 1
+		}
+		outerH = artH + 2*sprite.FramePadY
+	}
+	if outerH > maxH && maxH > 0 {
+		artH = maxH - 2*sprite.FramePadY
+		if artH < 1 {
+			artH = maxH
+			outerH = maxH
+		} else {
+			outerH = maxH
+			artW = artH * sprite.CellAspectY
+			if artW+2*sprite.FramePadX > outerW {
+				artW = outerW - 2*sprite.FramePadX
+			}
+			if artW < 1 {
+				artW = 1
+			}
+		}
+	}
+	padX = (outerW - artW) / 2
+	padY = (outerH - artH) / 2
+	if padX < 0 {
+		padX = 0
+	}
+	if padY < 0 {
+		padY = 0
+	}
+	if outerW < width {
+		centerLeft = (width - outerW) / 2
+		if centerLeft < 0 {
+			centerLeft = 0
+		}
+	}
+	return artW, artH, outerW, outerH, padX, padY, centerLeft
+}
+
+// SpriteArtOrigin returns the 1-indexed terminal CUP row/col of the sprite art
+// box for native overlay painting. ok is false when the sprite is not shown.
+func SpriteArtOrigin(d BrowseData) (row, col int, ok bool) {
+	if !d.ShowSprite || !d.SpriteNative {
+		return 0, 0, false
+	}
+	if d.TooSmall || d.OnePane || d.ShowHelp || d.ShowDialog || d.BrowseView != 0 {
+		return 0, 0, false
+	}
+	if d.Width < 1 || d.Height < 1 {
+		return 0, 0, false
+	}
+
+	footerH := 1
+	panelH := d.Height - footerH
+	if panelH < 10 {
+		panelH = 10
+	}
+	leftW, rightW := d.LeftWidth, d.RightWidth
+	if leftW < 1 || rightW < 1 {
+		return 0, 0, false
+	}
+	rightContentW := rightW - 1
+	if rightContentW < 10 {
+		rightContentW = 10
+	}
+	innerH := panelH - 2
+	if innerH < 5 {
+		innerH = 5
+	}
+
+	// Header is always two lines (title + types/genus) plus one gap line.
+	headerBlock := 3
+	bodyAvail := innerH - headerBlock
+	if bodyAvail < 3 {
+		bodyAvail = 3
+	}
+	_, _, _, _, padX, padY, centerLeft := spriteArtGeometry(d, rightContentW, bodyAvail)
+
+	// Combined frame: row 1 = top border; content rows start at 2.
+	// Right pane content starts at column leftW+2 (after left border, left
+	// content, and the centre separator).
+	row = 2 + headerBlock + padY
+	col = leftW + 2 + centerLeft + padX
+	if row < 1 || col < 1 {
+		return 0, 0, false
+	}
+	return row, col, true
+}
+
+func padFrame(inner string, artW, artH, outerW, outerH int, native bool) string {
 	if outerW <= artW && outerH <= artH {
 		return inner
 	}
@@ -370,6 +498,9 @@ func padFrame(inner string, artW, artH, outerW, outerH int) string {
 		padY = 0
 	}
 	blank := strings.Repeat(" ", outerW)
+	if native {
+		return padNativeFrame(inner, artW, artH, outerW, outerH, padX, padY, blank)
+	}
 	innerLines := strings.Split(inner, "\n")
 	out := make([]string, 0, outerH)
 	for i := 0; i < padY; i++ {
@@ -388,6 +519,42 @@ func padFrame(inner string, artW, artH, outerW, outerH int) string {
 			line = lipgloss.NewStyle().MaxWidth(artW).Render(line)
 		}
 		out = append(out, sidePad+line+strings.Repeat(" ", max(0, outerW-padX-lipgloss.Width(line))))
+	}
+	for len(out) < outerH {
+		out = append(out, blank)
+	}
+	if len(out) > outerH {
+		out = out[:outerH]
+	}
+	return strings.Join(out, "\n")
+}
+
+// padNativeFrame pads around a native sprite block without MaxWidth-clipping
+// the graphics sequence embedded on the first art line.
+func padNativeFrame(inner string, artW, artH, outerW, outerH, padX, padY int, blank string) string {
+	innerLines := strings.Split(inner, "\n")
+	out := make([]string, 0, outerH)
+	for i := 0; i < padY; i++ {
+		out = append(out, blank)
+	}
+	sidePad := strings.Repeat(" ", padX)
+	rightPad := strings.Repeat(" ", max(0, outerW-padX-artW))
+	for i := 0; i < artH; i++ {
+		line := ""
+		if i < len(innerLines) {
+			line = innerLines[i]
+		}
+		if i == 0 {
+			// First line may start with an opaque escape sequence + artW spaces.
+			// Do not measure or clip the sequence; keep side padding around the reserved box.
+			out = append(out, sidePad+line+rightPad)
+			continue
+		}
+		// Remaining reservation lines are plain spaces of artW.
+		if lipgloss.Width(line) < artW {
+			line += strings.Repeat(" ", artW-lipgloss.Width(line))
+		}
+		out = append(out, sidePad+line+rightPad)
 	}
 	for len(out) < outerH {
 		out = append(out, blank)

@@ -1,5 +1,5 @@
 // Package image renders sprites via native terminal graphics when available.
-// Protocol details (Kitty, iTerm2, …) stay inside this package.
+// Protocol details (Kitty, iTerm2, Sixel, …) stay inside this package.
 package image
 
 import (
@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	termimg "github.com/blacktop/go-termimg"
+	"github.com/mattn/go-sixel"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -24,6 +25,14 @@ const (
 	protocolNone  protocol = ""
 	protocolKitty protocol = "kitty"
 	protocolITerm protocol = "iterm"
+	protocolSixel protocol = "sixel"
+)
+
+// Approximate monospace cell size used when converting cell dims → pixels
+// for sixel encoding (CSI font-size query is out of scope).
+const (
+	sixelCellPxW = 8
+	sixelCellPxH = 16
 )
 
 // Renderer displays sprites as real images when the terminal supports it.
@@ -33,14 +42,23 @@ type Renderer struct {
 	failed bool
 }
 
-// New creates an Image renderer that auto-detects Kitty/iTerm support from the
-// environment. There is no user-facing protocol override.
+// New creates an Image renderer that auto-detects Kitty/iTerm/Sixel support from
+// the environment. There is no user-facing protocol override.
 func New() *Renderer {
 	return &Renderer{proto: detectProtocol()}
 }
 
 // Name returns the logical renderer class.
 func (r *Renderer) Name() string { return "image" }
+
+// ProtocolName returns the active native protocol tag (kitty|iterm|sixel), or
+// empty when none. Used for in-memory cache keys.
+func (r *Renderer) ProtocolName() string {
+	if r == nil {
+		return ""
+	}
+	return string(r.proto)
+}
 
 // Supported reports whether native image output is available this session.
 func (r *Renderer) Supported(caps sprite.Capabilities) bool {
@@ -84,6 +102,9 @@ func detectProtocol() protocol {
 	if envITerm() {
 		return protocolITerm
 	}
+	if envSixel() {
+		return protocolSixel
+	}
 	return protocolNone
 }
 
@@ -112,6 +133,30 @@ func envITerm() bool {
 	return os.Getenv("TERM_PROGRAM") == "iTerm.app"
 }
 
+// envSixel reports hosts known to support Sixel graphics.
+// Kitty / Ghostty / iTerm are excluded (handled earlier in detectProtocol).
+func envSixel() bool {
+	if os.Getenv("WT_SESSION") != "" {
+		return true
+	}
+	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	switch termProgram {
+	case "windowsterminal":
+		return true
+	case "mintty":
+		return true
+	}
+	// Some hosts expose WT without TERM_PROGRAM (or only WT_PROFILE_ID).
+	if os.Getenv("WT_PROFILE_ID") != "" {
+		return true
+	}
+	termName := strings.ToLower(os.Getenv("TERM"))
+	if strings.Contains(termName, "sixel") {
+		return true
+	}
+	return false
+}
+
 // Render encodes the image with the selected native protocol.
 func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.RenderOptions) (sprite.Frame, error) {
 	if err := ctx.Err(); err != nil {
@@ -136,6 +181,20 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		threshold = 16
 	}
 	src = sprite.CropToContentSquare(src, threshold, 1)
+
+	// go-termimg's Sixel path double-wraps mattn/go-sixel's already-complete DCS
+	// sequence (ESC Pq + ESC P0;0;8q…ST), which Windows Terminal rejects.
+	// Encode with go-sixel directly instead.
+	if r.proto == protocolSixel {
+		out, err := encodeSixel(src, w, h, opts)
+		if err != nil {
+			return sprite.Frame{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return sprite.Frame{}, err
+		}
+		return sprite.Frame{Text: out, Backend: "image", Native: true}, nil
+	}
 
 	restore := bypassDetection(r.proto)
 	defer restore()
@@ -163,6 +222,52 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 	return sprite.Frame{Text: out, Backend: "image", Native: true}, nil
 }
 
+// encodeSixel builds a single valid DECSIXEL DCS via mattn/go-sixel.
+func encodeSixel(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderOptions) (string, error) {
+	bg := opts.BackgroundColor
+	if bg.A == 0 {
+		bg = sprite.DefaultBackground
+	}
+	threshold := opts.AlphaThreshold
+	if threshold == 0 {
+		threshold = 16
+	}
+	prepared := sprite.Prepare(src, bg, threshold)
+	pxW := cellsW * sixelCellPxW
+	pxH := cellsH * sixelCellPxH
+	source := opts.Source
+	if source == "" {
+		source = sprite.SourcePixel
+	}
+	resized := sprite.Resize(prepared, pxW, pxH, source, true, bg)
+
+	var buf bytes.Buffer
+	enc := sixel.NewEncoder(&buf)
+	enc.Colors = 256
+	if err := enc.Encode(resized); err != nil {
+		return "", fmt.Errorf("image: sixel encode: %w", err)
+	}
+	out := buf.String()
+	if out == "" {
+		return "", fmt.Errorf("image: empty sixel render")
+	}
+	// Sanity: exactly one DCS introducer (go-termimg used to emit two).
+	if countESCPrefix(out, 'P') != 1 {
+		return "", fmt.Errorf("image: malformed sixel sequence")
+	}
+	return out, nil
+}
+
+func countESCPrefix(s string, second byte) int {
+	n := 0
+	for i := 0; i+1 < len(s); i++ {
+		if s[i] == 0x1b && s[i+1] == second {
+			n++
+		}
+	}
+	return n
+}
+
 // RenderPNG is a convenience used by the engine when PNG bytes are already loaded.
 func (r *Renderer) RenderPNG(pngData []byte, w, h int) (sprite.Frame, error) {
 	img, format, err := stdimage.Decode(bytes.NewReader(pngData))
@@ -185,6 +290,8 @@ func bypassDetection(proto protocol) (restore func()) {
 		val = "kitty"
 	case protocolITerm:
 		val = "iterm2"
+	case protocolSixel:
+		val = "sixel"
 	}
 	_ = os.Setenv("TERMIMG_BYPASS_DETECTION", val)
 	termimg.ClearFeatureCache()
@@ -198,10 +305,16 @@ func bypassDetection(proto protocol) (restore func()) {
 	}
 }
 
-// ClearBestEffort deletes prior native placements. Safe no-op otherwise.
+// ClearBestEffort deletes prior native placements for Kitty/iTerm.
+// Sixel is a no-op: Bubble Tea alt-screen redraw replaces the frame, and
+// sixel precise-clear can wipe the whole UI.
 func ClearBestEffort() {
+	proto := detectProtocol()
+	if proto == protocolNone || proto == protocolSixel {
+		return
+	}
 	defer func() { _ = recover() }()
-	restore := bypassDetection(protocolKitty)
+	restore := bypassDetection(proto)
 	defer restore()
 	_ = termimg.ClearAll()
 }

@@ -84,6 +84,7 @@ type Model struct {
 	spriteCancel      context.CancelFunc
 	spriteReqID       int
 	spriteLoadSpecies int
+	nativePaintPending bool
 
 	warmer        SpriteWarmer
 	dossierWarmer DossierWarmer

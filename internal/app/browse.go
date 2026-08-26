@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"os"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
+	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
@@ -28,12 +30,12 @@ type tuiSprites struct {
 	*sprite.Engine
 }
 
-func (t tuiSprites) Render(ctx context.Context, pokemon domain.Pokemon, cells int) (string, bool) {
+func (t tuiSprites) Render(ctx context.Context, pokemon domain.Pokemon, cells int) (string, bool, bool) {
 	if t.Engine == nil {
-		return "", true
+		return "", true, false
 	}
 	res := t.Engine.Render(ctx, pokemon, cells)
-	return res.ANSI, res.UsePlaceholder
+	return res.ANSI, res.UsePlaceholder, res.Native
 }
 
 func (t tuiSprites) ClearNative() {
@@ -73,6 +75,8 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 
 	img := spriteimage.New()
 	caps := sprite.DetectCapabilities(img.Available())
+	debuglog.Renderf("sprite caps native=%v protocol=%q term_program=%q wt_session=%v",
+		caps.NativeImage, img.ProtocolName(), os.Getenv("TERM_PROGRAM"), os.Getenv("WT_SESSION") != "")
 	colorMode := sprite.ColorMode(svc.Config.Render.Color)
 	if colorMode == "" || colorMode == sprite.ColorAuto {
 		if caps.TrueColor {

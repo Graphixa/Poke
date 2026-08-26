@@ -2,6 +2,8 @@ package sprite
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"sync"
@@ -62,6 +64,13 @@ type RenderResult struct {
 	UsePlaceholder bool
 	CacheKey       string
 	Backend        string
+	// Native is true when ANSI embeds Kitty/iTerm/Sixel graphics sequences.
+	Native bool
+}
+
+// protocolNamer is implemented by the image renderer to tag native cache keys.
+type protocolNamer interface {
+	ProtocolName() string
 }
 
 // ClearNative clears prior native image placements (best-effort).
@@ -146,12 +155,21 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 			tier = AssetTierHD
 		}
 		if img == nil || tier != lastTier {
-			res := e.Source.Resolve(ctx, pokemon, tier)
+			var (
+				res      SourceResult
+				usedTier AssetTier
+			)
+			if rend.Name() == "image" {
+				res, usedTier = e.resolveNativeAsset(ctx, pokemon, pokemonID)
+			} else {
+				res = e.Source.Resolve(ctx, pokemon, tier)
+				usedTier = tier
+			}
 			if res.UsePlaceholder || len(res.PNG) == 0 {
 				if rend.Name() == "image" {
-					if e.OnNativeFail != nil {
-						e.OnNativeFail()
-					}
+					// Missing sprite bytes are not a protocol failure — keep
+					// native enabled and fall through to chafa for this Pokémon.
+					debuglog.Renderf("image asset miss pokemon=%d; falling back without disabling native", pokemonID)
 					continue
 				}
 				return e.placeholderResult(opts.Label, opts.Width, opts.Height)
@@ -160,18 +178,26 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 			if err != nil {
 				debuglog.Renderf("sprite decode fail pokemon=%d err=%v", pokemonID, err)
 				if rend.Name() == "image" {
+					debuglog.Renderf("image decode miss pokemon=%d; falling back without disabling native", pokemonID)
 					continue
 				}
 				return e.placeholderResult(opts.Label, opts.Width, opts.Height)
 			}
 			img = decoded
 			hash = res.ContentHash
-			lastTier = tier
+			lastTier = usedTier
 			opts.ContentHash = hash
 		}
 
 		key := ""
-		if rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "" {
+		switch {
+		case rend.Name() == "image" && opts.ContentHash != "":
+			key = nativeCacheKey(opts.ContentHash, rend, opts.Width, opts.Height)
+			if cached, ok := e.memory().Get(key); ok {
+				debuglog.Renderf("%s mem cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
+				return RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true}
+			}
+		case rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "":
 			color := effectiveColor(opts.ColorMode, e.Caps)
 			key = CacheKey(opts.ContentHash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
 			if cached, ok := e.memory().Get(key); ok {
@@ -191,7 +217,9 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		frame, err := rend.Render(ctx, img, opts)
 		if err != nil || frame.IsEmpty() {
 			debuglog.Renderf("%s render fail pokemon=%d err=%v; falling back", rend.Name(), pokemonID, err)
-			if rend.Name() == "image" && e.OnNativeFail != nil {
+			// Selection changes cancel in-flight encodes — that is not a protocol
+			// failure. Only disable native for real backend errors.
+			if rend.Name() == "image" && e.OnNativeFail != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 				e.OnNativeFail()
 			}
 			continue
@@ -199,17 +227,22 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		if err := ctx.Err(); err != nil {
 			return RenderResult{UsePlaceholder: true}
 		}
-		if key != "" && !frame.Native {
-			e.memory().Put(key, frame.Text)
-			if e.Artefacts != nil {
-				_ = e.Artefacts.StoreHalfblock(ctx, key, frame.Text)
+		if key != "" {
+			if frame.Native {
+				// Mem-only: never persist native graphics sequences to halfblock/.
+				e.memory().Put(key, frame.Text)
+			} else {
+				e.memory().Put(key, frame.Text)
+				if e.Artefacts != nil {
+					_ = e.Artefacts.StoreHalfblock(ctx, key, frame.Text)
+				}
 			}
 		}
 		debuglog.Renderf("%s render pokemon=%d frame=%dx%d key=%s", rend.Name(), pokemonID, opts.Width, opts.Height, key)
 		if frame.Backend == "placeholder" {
 			return RenderResult{ANSI: frame.Text, UsePlaceholder: true, Backend: "placeholder"}
 		}
-		return RenderResult{ANSI: frame.Text, CacheKey: key, Backend: frame.Backend}
+		return RenderResult{ANSI: frame.Text, CacheKey: key, Backend: frame.Backend, Native: frame.Native}
 	}
 	return e.placeholderResult(opts.Label, opts.Width, opts.Height)
 }
@@ -301,4 +334,37 @@ func displayName(p domain.Pokemon) string {
 		return p.Slug
 	}
 	return "???"
+}
+
+// resolveNativeAsset prefers HD when enabled, then pixel. Browse often has no
+// sprite URLs until the dossier loads; named pixel files from warm still work.
+func (e *Engine) resolveNativeAsset(ctx context.Context, pokemon domain.Pokemon, pokemonID int) (SourceResult, AssetTier) {
+	tiers := []AssetTier{AssetTierPixel}
+	if !e.HDOff {
+		tiers = []AssetTier{AssetTierHD, AssetTierPixel}
+	}
+	var last SourceResult
+	for _, tier := range tiers {
+		res := e.Source.Resolve(ctx, pokemon, tier)
+		if !res.UsePlaceholder && len(res.PNG) > 0 {
+			if tier == AssetTierPixel && !e.HDOff {
+				debuglog.Renderf("image using pixel asset pokemon=%d (hd unavailable)", pokemonID)
+			}
+			return res, tier
+		}
+		last = res
+		debuglog.Renderf("image asset tier miss pokemon=%d tier=%d", pokemonID, int(tier))
+	}
+	return last, AssetTierPixel
+}
+
+// nativeCacheKey builds an in-memory-only key for Kitty/iTerm/Sixel frames.
+func nativeCacheKey(contentHash string, rend Renderer, w, h int) string {
+	tag := "image"
+	if namer, ok := rend.(protocolNamer); ok {
+		if p := namer.ProtocolName(); p != "" {
+			tag = "image-" + p
+		}
+	}
+	return fmt.Sprintf("%s-%s-%dx%d", contentHash, tag, w, h)
 }

@@ -49,6 +49,20 @@ func SpriteMsgForTest(reqID, gen, speciesID, cells int, ansi string, placeholder
 	}
 }
 
+// SpriteMsgNativeForTest marks a sprite message as native graphics.
+func SpriteMsgNativeForTest(msg spriteMsg) spriteMsg {
+	msg.native = true
+	return msg
+}
+
+// WarmProgressMsgForTest builds a warm-progress update for overlay debounce tests.
+func WarmProgressMsgForTest(done, total int) warmProgressMsg {
+	return warmProgressMsg{Done: done, Total: total, Message: "warming"}
+}
+
+// NativePaintPendingForTest reports whether a native overlay tick is queued.
+func (m Model) NativePaintPendingForTest() bool { return m.nativePaintPending }
+
 // SpriteReqID exposes the current sprite request id for tests.
 func (m Model) SpriteReqID() int { return m.spriteReqID }
 

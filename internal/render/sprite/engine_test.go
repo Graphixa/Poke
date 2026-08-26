@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -256,5 +257,136 @@ func TestValidatePNG(t *testing.T) {
 	}
 	if err := sprite.ValidatePNG([]byte("xyz")); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// namedMemStore adds NamedPNGStore on top of memStore.
+type namedMemStore struct {
+	*memStore
+	named map[string][]byte
+}
+
+func newNamedMemStore() *namedMemStore {
+	return &namedMemStore{memStore: newMemStore(), named: make(map[string][]byte)}
+}
+
+func namedKey(id int, slug, kind string) string {
+	return fmt.Sprintf("%d/%s/%s", id, slug, kind)
+}
+
+func (m *namedMemStore) NamedSprite(_ context.Context, id int, slug, kind string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data, ok := m.named[namedKey(id, slug, kind)]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return append([]byte(nil), data...), nil
+}
+
+func (m *namedMemStore) StoreNamedSprite(_ context.Context, id int, slug, kind, _ string, data []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.named[namedKey(id, slug, kind)] = append([]byte(nil), data...)
+	return nil
+}
+
+type stubNativeRenderer struct {
+	renders int
+	err     error
+}
+
+func (s *stubNativeRenderer) Name() string { return "image" }
+func (s *stubNativeRenderer) ProtocolName() string { return "sixel" }
+func (s *stubNativeRenderer) Supported(caps sprite.Capabilities) bool {
+	return caps.NativeImage
+}
+func (s *stubNativeRenderer) Render(_ context.Context, _ image.Image, _ sprite.RenderOptions) (sprite.Frame, error) {
+	s.renders++
+	if s.err != nil {
+		return sprite.Frame{}, s.err
+	}
+	return sprite.Frame{Text: "NATIVE", Backend: "image", Native: true}, nil
+}
+
+func TestEngineNativeCancelDoesNotDisable(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{err: context.Canceled}
+	disabled := false
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			native,
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:    store,
+		Caps:         sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+		Preference:   sprite.ModeAuto,
+		Color:        sprite.ColorTrueColor,
+		SourceKind:   sprite.SourcePixel,
+		Background:   color.RGBA{A: 255},
+		OnNativeFail: func() { disabled = true },
+	}
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	_ = engine.Render(context.Background(), poke, 24)
+	if disabled {
+		t.Fatal("context.Canceled must not disable native for the session")
+	}
+}
+
+func TestEngineNativeUsesPixelWhenHDMissingWithoutDisabling(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	disabled := false
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			native,
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:    store,
+		Caps:         sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+		Preference:   sprite.ModeAuto,
+		Color:        sprite.ColorTrueColor,
+		SourceKind:   sprite.SourcePixel,
+		Background:   color.RGBA{A: 255},
+		HDOff:        false,
+		OnNativeFail: func() { disabled = true },
+	}
+	// Browse selection: id/slug only — no sprite URLs, no artwork on disk.
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	res := engine.Render(context.Background(), poke, 24)
+	if res.UsePlaceholder || !res.Native || res.Backend != "image" || res.ANSI != "NATIVE" {
+		t.Fatalf("want native image result, got %+v", res)
+	}
+	if native.renders != 1 {
+		t.Fatalf("native renders=%d", native.renders)
+	}
+	if disabled {
+		t.Fatal("OnNativeFail must not run on HD asset miss when pixel is available")
+	}
+	// Second Pokémon with no assets at all: fall through to chafa/placeholder
+	// without disabling native for the session.
+	res2 := engine.Render(context.Background(), domain.Pokemon{ID: 999, Slug: "missing", DisplayName: "Missing"}, 24)
+	if disabled {
+		t.Fatal("OnNativeFail must not run on total asset miss")
+	}
+	if res2.Backend == "image" && res2.Native {
+		t.Fatal("missing asset should not claim native success")
+	}
+	// Native still works afterward.
+	res3 := engine.Render(context.Background(), poke, 24)
+	if !res3.Native || res3.Backend != "image" {
+		t.Fatalf("native should remain available, got %+v", res3)
 	}
 }

@@ -22,6 +22,7 @@ type spriteMsg struct {
 	cells       int
 	ansi        string
 	placeholder bool
+	native      bool
 }
 
 func loadDossierCmd(ctx context.Context, src DetailSource, gen, speciesID int) tea.Cmd {
@@ -41,7 +42,7 @@ func loadSpriteCmd(ctx context.Context, src SpriteRenderer, reqID, gen, speciesI
 		}
 	}
 	return func() tea.Msg {
-		ansi, placeholder := src.Render(ctx, pokemon, cells)
+		ansi, placeholder, native := src.Render(ctx, pokemon, cells)
 		return spriteMsg{
 			reqID:       reqID,
 			gen:         gen,
@@ -49,6 +50,7 @@ func loadSpriteCmd(ctx context.Context, src SpriteRenderer, reqID, gen, speciesI
 			cells:       cells,
 			ansi:        ansi,
 			placeholder: placeholder || ansi == "",
+			native:      native && !placeholder && ansi != "",
 		}
 	}
 }

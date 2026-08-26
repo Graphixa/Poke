@@ -21,7 +21,7 @@ type DetailSource interface {
 // SpriteRenderer produces terminal sprite art for a Pokémon panel.
 // Implementations must be safe to call from Bubble Tea commands and honour ctx.
 type SpriteRenderer interface {
-	Render(ctx context.Context, pokemon domain.Pokemon, cells int) (ansi string, usePlaceholder bool)
-	// ClearNative clears prior native graphics placements (Kitty/iTerm). May be a no-op.
+	Render(ctx context.Context, pokemon domain.Pokemon, cells int) (ansi string, usePlaceholder, native bool)
+	// ClearNative clears prior native graphics placements (Kitty/iTerm/Sixel). May be a no-op.
 	ClearNative()
 }

@@ -93,7 +93,12 @@ func (m Model) browseData() views.BrowseData {
 				data.HeaderGenus = r.Species.Genus
 			}
 			if r.HasSprite && !r.SpritePlaceholder && r.SpriteANSI != "" {
-				data.SpriteANSI = r.SpriteANSI
+				if r.SpriteNative {
+					// Sequence stays in the resource cache; View only reserves cells.
+					data.SpriteNative = true
+				} else {
+					data.SpriteANSI = r.SpriteANSI
+				}
 			}
 		}
 	}

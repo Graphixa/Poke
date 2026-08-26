@@ -119,14 +119,19 @@ func SpritePlaceholder(name string, width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, label)
 }
 
-// SpritePanel renders precomputed ANSI sprite art as an unbordered frame.
-// ansi is clipped/padded to width×height cells.
-func SpritePanel(ansi string, width, height int) string {
+// SpritePanel renders precomputed sprite art as an unbordered frame.
+// For cell-art (chafa), ansi is clipped/padded to width×height cells.
+// For native graphics (Kitty/iTerm/Sixel), the escape sequence is kept atomic
+// and prefixed onto a width×height space reservation so layout still sees a box.
+func SpritePanel(ansi string, width, height int, native bool) string {
 	if width < 1 {
 		width = sprite.FrameWidth
 	}
 	if height < 1 {
 		height = sprite.FrameHeight
+	}
+	if native {
+		return nativeSpritePanel(ansi, width, height)
 	}
 	lines := strings.Split(ansi, "\n")
 	if len(lines) > height {
@@ -145,6 +150,19 @@ func SpritePanel(ansi string, width, height int) string {
 				lines[i] += strings.Repeat(" ", width-lipgloss.Width(lines[i]))
 			}
 		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// nativeSpritePanel reserves a WxH cell box without measuring or clipping the
+// graphics sequence (MaxWidth would corrupt DCS/Kitty payloads).
+func nativeSpritePanel(seq string, width, height int) string {
+	lines := make([]string, height)
+	for i := range lines {
+		lines[i] = strings.Repeat(" ", width)
+	}
+	if seq != "" {
+		lines[0] = seq + lines[0]
 	}
 	return strings.Join(lines, "\n")
 }

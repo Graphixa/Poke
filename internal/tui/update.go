@@ -11,7 +11,25 @@ import (
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Raw overlay writes land here after the cell frame flush; do not re-paint
+	// or we loop forever. viewEquals then skips the next renderer flush.
+	if _, ok := msg.(tea.RawMsg); ok {
+		return m, nil
+	}
+	next, cmd := m.update(msg)
+	n := next.(Model)
+	if _, ok := msg.(nativeOverlayMsg); ok {
+		return n, cmd
+	}
+	n, overlay := n.scheduleNativeOverlay()
+	return n, tea.Batch(cmd, overlay)
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case nativeOverlayMsg:
+		return m.emitNativeOverlay()
+
 	case tea.WindowSizeMsg:
 		prevShow := m.layout().ShowSprite
 		prevSide := m.currentSpriteSide()
@@ -83,9 +101,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.placeholder || msg.ansi == "" {
 			r.SpriteANSI = ""
 			r.SpritePlaceholder = true
+			r.SpriteNative = false
 		} else {
 			r.SpriteANSI = msg.ansi
 			r.SpritePlaceholder = false
+			r.SpriteNative = msg.native
 		}
 		return m, nil
 
@@ -404,6 +424,7 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 	r.HasSprite = false
 	r.SpriteANSI = ""
 	r.SpritePlaceholder = false
+	r.SpriteNative = false
 
 	pokemon := r.Pokemon
 	if pokemon.ID == 0 {

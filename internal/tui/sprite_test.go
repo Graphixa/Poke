@@ -19,7 +19,7 @@ type fakeSprites struct {
 	started chan struct{}
 }
 
-func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (string, bool) {
+func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (string, bool, bool) {
 	f.calls.Add(1)
 	if f.started != nil {
 		select {
@@ -30,14 +30,14 @@ func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (stri
 	if f.block != nil {
 		select {
 		case <-ctx.Done():
-			return "", true
+			return "", true, false
 		case <-f.block:
 		}
 	}
 	if f.ansi == "" {
-		return "SPRITE", false
+		return "SPRITE", false, false
 	}
-	return f.ansi, false
+	return f.ansi, false, false
 }
 
 func (f *fakeSprites) ClearNative() {}
