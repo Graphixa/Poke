@@ -50,15 +50,11 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 		Details: details,
 		Sprites: sprites,
 	})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-
-	core := tui.CoreMsgForTest(m.SelectionGen(), 4, domain.Pokemon{
-		ID: 4, DisplayName: "Charmander",
-		Sprites: domain.Sprites{FrontDefault: "https://example/c.png"},
-	}, domain.Species{ID: 4, DisplayName: "Charmander"}, nil)
-	updated, cmd := m.Update(core)
-	m = updated.(tui.Model)
+	if cmd == nil {
+		cmd = m.EnsureSelectionLoadsForTest()
+	}
 	if cmd == nil {
 		t.Fatal("expected sprite load cmd")
 	}
@@ -119,15 +115,11 @@ func TestSpriteCancelOnSelectionChange(t *testing.T) {
 		Details: details,
 		Sprites: sprites,
 	})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-
-	core := tui.CoreMsgForTest(m.SelectionGen(), 4, domain.Pokemon{
-		ID: 4, DisplayName: "Charmander",
-		Sprites: domain.Sprites{FrontDefault: "https://example/c.png"},
-	}, domain.Species{ID: 4}, nil)
-	updated, cmd := m.Update(core)
-	m = updated.(tui.Model)
+	if cmd == nil {
+		cmd = m.EnsureSelectionLoadsForTest()
+	}
 	if cmd == nil {
 		t.Fatal("expected sprite cmd")
 	}
@@ -155,6 +147,56 @@ func TestSpriteCancelOnSelectionChange(t *testing.T) {
 	m = updated.(tui.Model)
 	if m.HasSpriteANSI() {
 		t.Fatal("cancelled/stale sprite must not apply")
+	}
+}
+
+func TestStaleDossierClearsLoadingSoReselectRetries(t *testing.T) {
+	details := &fakeDetails{blockLoad: make(chan struct{})}
+	m := tui.NewModel(tui.Options{
+		Index:    fixtureIndex(),
+		Details:  details,
+		Selected: &domain.SpeciesSummary{ID: 4, Slug: "charmander", DisplayName: "Charmander"},
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	updated, cmd := m.Update(key("enter"))
+	m = updated.(tui.Model)
+	if cmd == nil {
+		cmd = m.EnsureDossierLoadForTest()
+	}
+	if cmd == nil {
+		t.Fatal("expected dossier load cmd")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+
+	// Close dialog and move away before load finishes.
+	updated, _ = m.Update(key("esc"))
+	m = updated.(tui.Model)
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if id, _ := m.SelectedID(); id == 4 {
+		t.Fatal("expected selection to move off charmander")
+	}
+
+	close(details.blockLoad)
+	msg := <-done
+	updated, _ = m.Update(msg)
+	m = updated.(tui.Model)
+	if m.CoreLoading(4) {
+		t.Fatal("stale dossier must clear loadingCore")
+	}
+
+	updated, _ = m.Update(key("up"))
+	m = updated.(tui.Model)
+	updated, cmd = m.Update(key("enter"))
+	m = updated.(tui.Model)
+	if cmd == nil {
+		cmd = m.EnsureDossierLoadForTest()
+	}
+	if cmd == nil && m.ResourceName(4) == "" && !m.CoreLoading(4) {
+		t.Fatal("reselect enter must retry dossier load")
 	}
 }
 

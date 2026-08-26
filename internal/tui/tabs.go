@@ -1,21 +1,16 @@
 package tui
 
-// BrowseView is the right-pane glance surface cycled with Tab.
+// BrowseView is reserved for future sprite-variant cycling on the browse pane.
+// v1 keeps a single sprite hero (no text views on browse).
 type BrowseView int
 
 const (
 	BrowseSprite BrowseView = iota
-	BrowseSummary
-	BrowseStats
-	BrowseEvolution
 	browseViewCount
 )
 
 var browseViewLabels = [...]string{
-	BrowseSprite:    "Sprite",
-	BrowseSummary:   "Summary",
-	BrowseStats:     "Stats",
-	BrowseEvolution: "Evolution",
+	BrowseSprite: "Sprite",
 }
 
 func (v BrowseView) Label() string {
@@ -33,11 +28,14 @@ func (v BrowseView) Prev() BrowseView {
 	return BrowseView((int(v) + int(browseViewCount) - 1) % int(browseViewCount))
 }
 
-// DialogSection is a deep-detail section inside the Enter/i overlay.
+// DialogSection is a detail section inside the Enter/i overlay (full dossier).
 type DialogSection int
 
 const (
-	DialogMoves DialogSection = iota
+	DialogSummary DialogSection = iota
+	DialogStats
+	DialogEvolution
+	DialogMoves
 	DialogLocations
 	DialogAbilities
 	DialogFlavour
@@ -49,6 +47,9 @@ const (
 )
 
 var dialogSectionLabels = [...]string{
+	DialogSummary:   "Summary",
+	DialogStats:     "Stats",
+	DialogEvolution: "Evolution",
 	DialogMoves:     "Moves",
 	DialogLocations: "Locations",
 	DialogAbilities: "Abilities",
@@ -74,13 +75,10 @@ func (s DialogSection) Prev() DialogSection {
 	return DialogSection((int(s) + int(dialogSectionCount) - 1) % int(dialogSectionCount))
 }
 
+// NeedsLazyLoad is true when the section historically needed an extra fetch.
+// With dossiers, data arrives with LoadDossier; this stays for compatibility.
 func (s DialogSection) NeedsLazyLoad() bool {
-	switch s {
-	case DialogLocations, DialogMoves:
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 // AllDialogSectionLabels returns labels in cycle order for the dialog switcher.

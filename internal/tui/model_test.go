@@ -25,24 +25,30 @@ func fixtureIndex() *search.Index {
 }
 
 type fakeDetails struct {
-	loadCalls    atomic.Int32
-	evoCalls     atomic.Int32
-	encCalls     atomic.Int32
-	moveCalls    atomic.Int32
-	blockLoad    chan struct{}
-	loadErr      error
-	evolutionErr error
+	loadCalls atomic.Int32
+	blockLoad chan struct{}
+	loadErr   error
 }
 
-func (f *fakeDetails) Load(_ context.Context, speciesID int) (domain.Pokemon, domain.Species, error) {
+func (f *fakeDetails) LoadDossier(_ context.Context, speciesID int) (domain.Dossier, error) {
 	f.loadCalls.Add(1)
 	if f.blockLoad != nil {
 		<-f.blockLoad
 	}
 	if f.loadErr != nil {
-		return domain.Pokemon{}, domain.Species{}, f.loadErr
+		return domain.Dossier{}, f.loadErr
 	}
-	return domain.Pokemon{
+	lv := 16
+	pow := 40
+	evo := domain.EvolutionTree{Root: domain.EvolutionNode{
+		DisplayName: "Charmander",
+		Children: []domain.EvolutionBranch{{
+			Conditions: []domain.EvolutionCondition{{Trigger: "level-up", MinimumLevel: &lv}},
+			Target:     domain.EvolutionNode{DisplayName: "Charmeleon"},
+		}},
+	}}
+	return domain.Dossier{
+		Pokemon: domain.Pokemon{
 			ID: speciesID, Slug: "x", DisplayName: "X",
 			HeightDecimeter: 6, WeightHectogram: 85, BaseExperience: 62,
 			Types: []domain.TypeSlot{{Slot: 1, Name: "fire"}},
@@ -55,7 +61,8 @@ func (f *fakeDetails) Load(_ context.Context, speciesID int) (domain.Pokemon, do
 				MoveID: 10, Slug: "scratch",
 				Learnings: []domain.MoveLearning{{VersionGroup: "scarlet-violet", VersionGroupOrder: 25, Method: "level-up", Level: 1}},
 			}},
-		}, domain.Species{
+		},
+		Species: domain.Species{
 			ID: speciesID, Slug: "x", DisplayName: "X", Genus: "Lizard Pokémon",
 			DefaultPokemonID: speciesID, EvolutionChainID: 2,
 			Generation: "generation-i", Habitat: "mountain", Shape: "upright", Color: "red",
@@ -64,38 +71,14 @@ func (f *fakeDetails) Load(_ context.Context, speciesID int) (domain.Pokemon, do
 				{Language: "en", Version: "red", VersionOrder: 1, Text: "Prefers hot places."},
 				{Language: "en", Version: "sword", VersionOrder: 40, Text: "Obviously prefers hot places."},
 			},
-		}, nil
-}
-
-func (f *fakeDetails) Evolution(context.Context, domain.Species) (domain.EvolutionTree, error) {
-	f.evoCalls.Add(1)
-	if f.evolutionErr != nil {
-		return domain.EvolutionTree{}, f.evolutionErr
-	}
-	lv := 16
-	return domain.EvolutionTree{Root: domain.EvolutionNode{
-		DisplayName: "Charmander",
-		Children: []domain.EvolutionBranch{{
-			Conditions: []domain.EvolutionCondition{{Trigger: "level-up", MinimumLevel: &lv}},
-			Target:     domain.EvolutionNode{DisplayName: "Charmeleon"},
+		},
+		Evolution:  &evo,
+		Encounters: []domain.Encounter{{Version: "red", Area: "route-3", Method: "walk", MinimumLevel: 3, MaximumLevel: 5, Chance: 20}},
+		LevelUpMoves: []domain.LevelUpMove{{
+			Level: 1,
+			Move:  domain.Move{Slug: "scratch", DisplayName: "Scratch", Type: "normal", DamageClass: "physical", Power: &pow},
 		}},
-	}}, nil
-}
-
-func (f *fakeDetails) Encounters(context.Context, int) ([]domain.Encounter, error) {
-	f.encCalls.Add(1)
-	return []domain.Encounter{{
-		Version: "red", Area: "route-3", Method: "walk", MinimumLevel: 3, MaximumLevel: 5, Chance: 20,
-	}}, nil
-}
-
-func (f *fakeDetails) LevelUpMoves(context.Context, domain.Pokemon) ([]tui.LevelUpMove, error) {
-	f.moveCalls.Add(1)
-	pow := 40
-	return []tui.LevelUpMove{{
-		Level: 1,
-		Move:  domain.Move{Slug: "scratch", DisplayName: "Scratch", Type: "normal", DamageClass: "physical", Power: &pow},
-	}}, nil
+	}, nil
 }
 
 func key(s string) tea.KeyPressMsg {
@@ -221,28 +204,24 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("selected = %d ok=%v", id, ok)
 	}
 
+	// Tab on browse is reserved (sprite variants later) — no-op.
 	m = apply(t, m, key("tab"))
-	if m.ActiveBrowseView() != tui.BrowseSummary {
-		t.Fatalf("view = %v want Summary", m.ActiveBrowseView())
+	if m.ActiveBrowseView() != tui.BrowseSprite {
+		t.Fatalf("view = %v want Sprite", m.ActiveBrowseView())
 	}
-	m = apply(t, m, key("tab"), key("tab")) // Stats -> Evolution
-	if m.ActiveBrowseView() != tui.BrowseEvolution {
-		t.Fatalf("view = %v want Evolution", m.ActiveBrowseView())
-	}
-	if details.evoCalls.Load() != 1 {
-		t.Fatalf("evolution loads = %d", details.evoCalls.Load())
-	}
-	m = apply(t, m, key("shift+tab")) // back to Stats
-	if details.evoCalls.Load() != 1 {
-		t.Fatalf("evolution refetched: %d", details.evoCalls.Load())
+	if details.loadCalls.Load() != 0 {
+		t.Fatalf("browse must not load dossier, got %d", details.loadCalls.Load())
 	}
 
 	m = apply(t, m, key("enter"))
 	if !m.DialogVisible() {
 		t.Fatal("enter should open dialog")
 	}
-	if m.ActiveDialogSection() != tui.DialogMoves {
+	if m.ActiveDialogSection() != tui.DialogSummary {
 		t.Fatalf("section = %v", m.ActiveDialogSection())
+	}
+	if details.loadCalls.Load() != 1 {
+		t.Fatalf("dossier loads = %d", details.loadCalls.Load())
 	}
 	m = apply(t, m, key("pgdown"), key("home"))
 	if m.DialogOffset() != 0 {
@@ -280,18 +259,18 @@ func TestAsyncRaceSuppression(t *testing.T) {
 	drainCmds(t, &model, m.Init())
 	m = model.(tui.Model)
 
-	// Stale core message for a previous generation must be ignored.
-	stale := tui.CoreMsgForTest(0, 4, domain.Pokemon{ID: 4, DisplayName: "Stale"}, domain.Species{ID: 4}, nil)
-	m = apply(t, m, key("down")) // selection change bumps gen
-	before := details.loadCalls.Load()
+	stale := tui.DossierMsgForTest(0, 4, domain.Dossier{
+		Pokemon: domain.Pokemon{ID: 4, DisplayName: "Stale"},
+		Species: domain.Species{ID: 4},
+	}, nil)
+	m = apply(t, m, key("down"))
 	m = apply(t, m, stale)
 	if res := m.ResourceName(4); res == "Stale" {
-		t.Fatal("stale core applied")
+		t.Fatal("stale dossier applied")
 	}
-	_ = before
 }
 
-func TestLazyLoadNoRefetch(t *testing.T) {
+func TestEnterDossierNoRefetch(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
 	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52})
@@ -299,23 +278,19 @@ func TestLazyLoadNoRefetch(t *testing.T) {
 	drainCmds(t, &model, m.Init())
 	m = model.(tui.Model)
 
-	m = apply(t, m, key("tab"), key("tab"), key("tab")) // Summary -> Stats -> Evolution
-	if details.evoCalls.Load() != 1 {
-		t.Fatalf("evolution loads = %d", details.evoCalls.Load())
+	m = apply(t, m, key("enter"))
+	if details.loadCalls.Load() != 1 {
+		t.Fatalf("dossier loads = %d", details.loadCalls.Load())
 	}
-	m = apply(t, m, key("enter")) // dialog opens on Moves
-	if details.moveCalls.Load() != 1 {
-		t.Fatalf("moves loads = %d", details.moveCalls.Load())
-	}
-	m = apply(t, m, key("tab")) // Locations
-	if details.encCalls.Load() != 1 {
-		t.Fatalf("encounters loads = %d", details.encCalls.Load())
-	}
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 12; i++ {
 		m = apply(t, m, key("tab"))
 	}
-	if details.moveCalls.Load() != 1 || details.encCalls.Load() != 1 || details.evoCalls.Load() != 1 {
-		t.Fatalf("refetch evo=%d enc=%d move=%d", details.evoCalls.Load(), details.encCalls.Load(), details.moveCalls.Load())
+	if details.loadCalls.Load() != 1 {
+		t.Fatalf("dossier refetched: %d", details.loadCalls.Load())
+	}
+	m = apply(t, m, key("esc"), key("enter"))
+	if details.loadCalls.Load() != 1 {
+		t.Fatalf("reopen should use cached dossier, got %d", details.loadCalls.Load())
 	}
 }
 
@@ -357,9 +332,10 @@ func TestLoadErrorSurface(t *testing.T) {
 	var model tea.Model = m
 	drainCmds(t, &model, m.Init())
 	m = model.(tui.Model)
+	m = apply(t, m, key("enter"))
 	view := m.View().Content
 	if !strings.Contains(view, "offline") && !strings.Contains(view, "[ERROR]") {
-		t.Fatalf("expected error in view, got %q", view)
+		t.Fatalf("expected error in dialog view, got %q", view)
 	}
 }
 

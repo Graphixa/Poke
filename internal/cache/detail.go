@@ -42,7 +42,14 @@ func (s *Service) getPokemon(ctx context.Context, id int) (domain.Pokemon, error
 	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
 		return domain.Pokemon{}, cacheErr
 	}
+	if err := s.acquire(ctx); err != nil {
+		if haveCache {
+			return cached, nil
+		}
+		return domain.Pokemon{}, err
+	}
 	fresh, fetchErr := s.api.GetPokemon(ctx, id)
+	s.release()
 	if fetchErr != nil {
 		if haveCache {
 			debuglog.Cachef("stale-serve pokemon id=%d err=%v", id, fetchErr)
@@ -75,7 +82,14 @@ func (s *Service) getSpecies(ctx context.Context, id int) (domain.Species, error
 	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
 		return domain.Species{}, cacheErr
 	}
+	if err := s.acquire(ctx); err != nil {
+		if haveCache {
+			return cached, nil
+		}
+		return domain.Species{}, err
+	}
 	fresh, fetchErr := s.api.GetSpecies(ctx, id)
+	s.release()
 	if fetchErr != nil {
 		if haveCache {
 			return cached, nil
@@ -102,7 +116,14 @@ func (s *Service) getEvolution(ctx context.Context, id int) (domain.EvolutionTre
 	if haveCache && !s.detailStale("evolution", id) {
 		return cached, nil
 	}
+	if err := s.acquire(ctx); err != nil {
+		if haveCache {
+			return cached, nil
+		}
+		return domain.EvolutionTree{}, err
+	}
 	fresh, fetchErr := s.api.GetEvolutionChain(ctx, id)
+	s.release()
 	if fetchErr != nil {
 		if haveCache {
 			return cached, nil
@@ -129,7 +150,14 @@ func (s *Service) getEncounters(ctx context.Context, pokemonID int) ([]domain.En
 	if haveCache && !s.detailStale("encounters", pokemonID) {
 		return cached, nil
 	}
+	if err := s.acquire(ctx); err != nil {
+		if haveCache {
+			return cached, nil
+		}
+		return nil, err
+	}
 	fresh, fetchErr := s.api.GetEncounters(ctx, pokemonID)
+	s.release()
 	if fetchErr != nil {
 		if haveCache {
 			return cached, nil
@@ -156,7 +184,14 @@ func (s *Service) getMove(ctx context.Context, id int) (domain.Move, error) {
 	if haveCache && !s.moveStale(id) {
 		return cached, nil
 	}
+	if err := s.acquire(ctx); err != nil {
+		if haveCache {
+			return cached, nil
+		}
+		return domain.Move{}, err
+	}
 	fresh, fetchErr := s.api.GetMove(ctx, id)
+	s.release()
 	if fetchErr != nil {
 		if haveCache {
 			return cached, nil

@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/Graphixa/Pokedex/internal/domain"
+import (
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/Graphixa/Pokedex/internal/domain"
+)
 
 // Exported accessors for model/layout tests.
 
@@ -32,9 +36,9 @@ func (m Model) ResourceName(speciesID int) string {
 
 func (m Model) LayoutFlags() LayoutFlags { return m.layout() }
 
-// CoreMsgForTest builds a core-loaded message for race tests.
-func CoreMsgForTest(gen, speciesID int, pokemon domain.Pokemon, species domain.Species, err error) coreMsg {
-	return coreMsg{gen: gen, speciesID: speciesID, pokemon: pokemon, species: species, err: err}
+// DossierMsgForTest builds a dossier-loaded message for race tests.
+func DossierMsgForTest(gen, speciesID int, dossier domain.Dossier, err error) dossierMsg {
+	return dossierMsg{gen: gen, speciesID: speciesID, dossier: dossier, err: err}
 }
 
 // SpriteMsgForTest builds a sprite-loaded message for race tests.
@@ -60,3 +64,20 @@ func (m Model) HasSpriteANSI() bool {
 
 // CurrentSpriteCells exposes the active sprite cell size for tests.
 func (m Model) CurrentSpriteCells() int { return m.currentSpriteCells() }
+
+// CoreLoading reports whether speciesID is in-flight/stuck without HasCore.
+func (m Model) CoreLoading(speciesID int) bool {
+	r := m.resources[speciesID]
+	return r != nil && r.loadingCore && !r.HasCore
+}
+
+// HeaderLoading is always false on browse (dossier loads only in the dialog).
+func (m Model) HeaderLoading() bool {
+	return false
+}
+
+// EnsureDossierLoadForTest runs ensureDossierLoad (for dialog race tests).
+func (m *Model) EnsureDossierLoadForTest() tea.Cmd { return m.ensureDossierLoad() }
+
+// EnsureSelectionLoadsForTest runs ensureSelectionLoads (sprite-only on browse).
+func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.ensureSelectionLoads() }

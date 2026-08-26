@@ -133,24 +133,8 @@ type detailAdapter struct {
 	*app.DetailService
 }
 
-func (d detailAdapter) Load(ctx context.Context, speciesID int) (domain.Pokemon, domain.Species, error) {
-	res, err := d.DetailService.Load(ctx, speciesID)
-	if err != nil {
-		return domain.Pokemon{}, domain.Species{}, err
-	}
-	return res.Pokemon, res.Species, nil
-}
-
-func (d detailAdapter) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon) ([]tui.LevelUpMove, error) {
-	rows, err := d.DetailService.LevelUpMoves(ctx, pokemon)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]tui.LevelUpMove, len(rows))
-	for i, row := range rows {
-		out[i] = tui.LevelUpMove{Level: row.Level, Move: row.Move}
-	}
-	return out, nil
+func (d detailAdapter) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
+	return d.DetailService.LoadDossier(ctx, speciesID)
 }
 
 type spriteAdapter struct {

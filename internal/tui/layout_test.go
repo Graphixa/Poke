@@ -115,7 +115,7 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
 		ShowSprite:  true, VerboseFooter: true,
 		BrowseView: 0,
-		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		ViewLabels: []string{"Sprite"},
 		BodySize:   sprite.MaxFrameSize,
 		LeftWidth:  70, RightWidth: 49,
 		HeaderTypes: "Fire",
@@ -127,37 +127,15 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		"> c",
 		"Charmander",
 		"#004",
-		"[ Sprite ]",
-		"Summary",
-		"Stats",
-		"Evolution",
-		"Tab view",
+		"[sprite]",
+		"Enter/i",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
-
-	out2 := views.Browse(views.BrowseData{
-		Width: 120, Height: 52, Query: "c",
-		Rows: rows, HasSelected: true,
-		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
-		ShowSprite: true, VerboseFooter: true,
-		BrowseView: 1,
-		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
-		BodySize:   sprite.MaxFrameSize,
-		LeftWidth:  70, RightWidth: 49,
-		ViewLines:   []string{"Height  0.6 m", "Ability Blaze"},
-		HeaderTypes: "Fire",
-	})
-	if strings.Contains(out2, "Search Pokémon…") {
-		t.Fatal("placeholder should hide when query set")
-	}
-	if !strings.Contains(out2, "[ Summary ]") {
-		t.Fatalf("expected Summary active:\n%s", out2)
-	}
-	if !strings.Contains(out2, "Height") {
-		t.Fatalf("expected summary body:\n%s", out2)
+	if strings.Contains(out, "[ Sprite ]") {
+		t.Fatal("browse must not show text-view switcher")
 	}
 }
 
@@ -168,22 +146,22 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
 		ShowSprite:  true, VerboseFooter: true,
 		BrowseView: 0,
-		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		ViewLabels: []string{"Sprite"},
 		BodySize:   sprite.MaxFrameSize,
 		LeftWidth:  70, RightWidth: 49,
 		ShowDialog:    true,
 		DialogSection: 0,
-		DialogLabels:  []string{"Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
-		DialogLines:   []string{"Lv 1  Scratch"},
+		DialogLabels:  []string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
+		DialogLines:   []string{"Height  0.6 m"},
 	})
-	for _, want := range []string{"Charmander", "#004", "[ Moves ]", "Scratch", "Esc close"} {
+	for _, want := range []string{"Charmander", "#004", "[ Summary ]", "Height", "Esc close"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
 }
 
-func TestBrowseSwitcherBottomAnchored(t *testing.T) {
+func TestBrowseSpriteNoSwitcher(t *testing.T) {
 	rows := []components.ListRow{
 		{Summary: domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}}, Selected: true},
 	}
@@ -193,54 +171,43 @@ func TestBrowseSwitcherBottomAnchored(t *testing.T) {
 		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander", Types: []string{"fire"}},
 		ShowSprite: true, VerboseFooter: true,
 		BrowseView: 0,
-		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		ViewLabels: []string{"Sprite"},
 		BodySize:   sprite.MinFrameSize,
 		LeftWidth:  70, RightWidth: 49,
 		HeaderTypes: "Fire",
 		SpriteANSI:  "X",
 	})
 	plain := stripANSI(out)
-	lines := strings.Split(plain, "\n")
-	var switcherIdx, frameBottomIdx int
-	for i, line := range lines {
-		if strings.Contains(line, "[ Sprite ]") {
-			switcherIdx = i
-		}
-		if strings.Contains(line, "╰") {
-			frameBottomIdx = i
-		}
+	if strings.Contains(plain, "[ Sprite ]") || strings.Contains(plain, "Summary ·") {
+		t.Fatalf("unexpected browse switcher:\n%s", plain)
 	}
-	if switcherIdx == 0 || frameBottomIdx == 0 {
-		t.Fatalf("missing switcher or frame bottom:\n%s", plain)
-	}
-	if frameBottomIdx-switcherIdx > 2 {
-		t.Fatalf("switcher not near bottom: switcher=%d bottom=%d\n%s", switcherIdx, frameBottomIdx, plain)
+	if !strings.Contains(plain, "Charmander") || !strings.Contains(plain, "X") {
+		t.Fatalf("expected list+sprite browse:\n%s", plain)
 	}
 }
 
-func TestSummaryUsesFullPaneWidth(t *testing.T) {
-	rows := []components.ListRow{
-		{Summary: domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"}, Selected: true},
-	}
+func TestDialogUsesFullOverlayWidth(t *testing.T) {
 	long := strings.Repeat("flavour ", 20)
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 40,
-		Rows: rows, HasSelected: true,
-		Selected:   domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
-		ShowSprite: true, VerboseFooter: true,
-		BrowseView: 1,
-		ViewLabels: []string{"Sprite", "Summary", "Stats", "Evolution"},
+		HasSelected: true,
+		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
+		ShowSprite:  true, VerboseFooter: true,
+		BrowseView: 0,
+		ViewLabels: []string{"Sprite"},
 		BodySize:   sprite.MinFrameSize,
 		LeftWidth:  70, RightWidth: 49,
-		ViewLines: []string{long},
+		ShowDialog:    true,
+		DialogSection: 0,
+		DialogLabels:  []string{"Summary"},
+		DialogLines:   []string{long},
 	})
 	plain := stripANSI(out)
 	if !strings.Contains(plain, "flavour") {
-		t.Fatal("summary body missing")
+		t.Fatal("dialog body missing")
 	}
-	// Text view should not be clipped to the tiny sprite art width (~24).
 	if strings.Count(plain, "flavour") < 3 {
-		t.Fatalf("expected wrapped full-width summary, got:\n%s", plain)
+		t.Fatalf("expected wrapped dialog text, got:\n%s", plain)
 	}
 }
 

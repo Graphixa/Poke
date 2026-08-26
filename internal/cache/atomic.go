@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-const schemaVersion = 1
+// schemaVersion 2: per-species dossiers + named sprite folders (see plans/DECISIONS.md).
+const schemaVersion = 2
 
 type envelope struct {
 	SchemaVersion int             `json:"schema_version"`

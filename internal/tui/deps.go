@@ -12,13 +12,10 @@ type LevelUpMove struct {
 	Move  domain.Move
 }
 
-// DetailSource loads selection and lazy-tab data for the browse TUI.
-// Implementations must not expose transport DTOs.
+// DetailSource loads dossier data for the Enter/detail overlay.
+// Browse highlight must not call LoadDossier — only Enter/i does.
 type DetailSource interface {
-	Load(ctx context.Context, speciesID int) (domain.Pokemon, domain.Species, error)
-	Evolution(ctx context.Context, species domain.Species) (domain.EvolutionTree, error)
-	Encounters(ctx context.Context, pokemonID int) ([]domain.Encounter, error)
-	LevelUpMoves(ctx context.Context, pokemon domain.Pokemon) ([]LevelUpMove, error)
+	LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error)
 }
 
 // SpriteRenderer produces terminal sprite art for a Pokémon panel.

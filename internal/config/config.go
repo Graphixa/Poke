@@ -45,10 +45,11 @@ type Config struct {
 }
 
 type Cache struct {
-	AutoRefresh bool     `yaml:"auto_refresh"`
-	IndexTTL    Duration `yaml:"index_ttl"`
-	DetailTTL   Duration `yaml:"detail_ttl"`
-	MoveTTL     Duration `yaml:"move_ttl"`
+	AutoRefresh     bool     `yaml:"auto_refresh"`
+	IndexTTL        Duration `yaml:"index_ttl"`
+	DetailTTL       Duration `yaml:"detail_ttl"`
+	MoveTTL         Duration `yaml:"move_ttl"`
+	DossierPrewarm  string   `yaml:"dossier_prewarm"` // all | window | off
 }
 
 type Render struct {
@@ -59,6 +60,10 @@ type Render struct {
 	SpriteSource string `yaml:"sprite_source"`
 	// Color selects colour encoding: auto | truecolor | 256 | mono
 	Color string `yaml:"color"`
+	// SpritePrewarm controls background chafa warm: all_pixel | window | off.
+	SpritePrewarm string `yaml:"sprite_prewarm"`
+	// SpriteHD controls HD assets for native image: auto | off.
+	SpriteHD string `yaml:"sprite_hd"`
 }
 
 type TUI struct {
@@ -80,22 +85,25 @@ type Network struct {
 func Default() Config {
 	return Config{
 		Cache: Cache{
-			AutoRefresh: true,
-			IndexTTL:    Duration{24 * time.Hour},
-			DetailTTL:   Duration{7 * 24 * time.Hour},
-			MoveTTL:     Duration{30 * 24 * time.Hour},
+			AutoRefresh:    true,
+			IndexTTL:       Duration{24 * time.Hour},
+			DetailTTL:      Duration{7 * 24 * time.Hour},
+			MoveTTL:        Duration{30 * 24 * time.Hour},
+			DossierPrewarm: "window",
 		},
 		Render: Render{
-			SpriteMode:   "auto",
-			SpriteSource: "pixel",
-			Color:        "auto",
+			SpriteMode:    "auto",
+			SpriteSource:  "pixel",
+			Color:         "auto",
+			SpritePrewarm: "window",
+			SpriteHD:      "auto",
 		},
 		TUI:   TUI{ShowSprite: true},
 		Theme: Theme{Name: "catppuccin"},
 		Network: Network{
 			Timeout:        Duration{10 * time.Second},
 			Retries:        3,
-			MaxConcurrency: 4,
+			MaxConcurrency: 8,
 			UserAgent:      "poke-cli",
 		},
 	}
@@ -128,6 +136,21 @@ func (c Config) Validate() error {
 	default:
 		problems = append(problems, `render.color must be one of "auto", "truecolor", "256", "mono"`)
 	}
+	switch c.Render.SpritePrewarm {
+	case "", "all_pixel", "window", "off":
+	default:
+		problems = append(problems, `render.sprite_prewarm must be one of "all_pixel", "window", "off"`)
+	}
+	switch c.Render.SpriteHD {
+	case "", "auto", "off":
+	default:
+		problems = append(problems, `render.sprite_hd must be one of "auto", "off"`)
+	}
+	switch c.Cache.DossierPrewarm {
+	case "", "all", "window", "off":
+	default:
+		problems = append(problems, `cache.dossier_prewarm must be one of "all", "window", "off"`)
+	}
 	if c.Network.Retries < 0 {
 		problems = append(problems, "network.retries must not be negative")
 	}
@@ -150,6 +173,31 @@ func (c Config) EffectiveSpriteMode() string {
 		return "off"
 	}
 	return "auto"
+}
+
+// EffectiveSpritePrewarm returns all_pixel | window | off.
+func (c Config) EffectiveSpritePrewarm() string {
+	switch c.Render.SpritePrewarm {
+	case "all_pixel", "off":
+		return c.Render.SpritePrewarm
+	default:
+		return "window"
+	}
+}
+
+// EffectiveDossierPrewarm returns all | window | off.
+func (c Config) EffectiveDossierPrewarm() string {
+	switch c.Cache.DossierPrewarm {
+	case "all", "off":
+		return c.Cache.DossierPrewarm
+	default:
+		return "window"
+	}
+}
+
+// SpriteHDEnabled reports whether native rendering may fetch HD assets.
+func (c Config) SpriteHDEnabled() bool {
+	return c.Render.SpriteHD != "off"
 }
 
 type Paths struct {

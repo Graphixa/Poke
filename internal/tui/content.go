@@ -11,40 +11,8 @@ import (
 )
 
 func (m Model) browseViewLines() []string {
-	sel, ok := m.selected()
-	if !ok {
-		return []string{"No Pokémon selected."}
-	}
-	r := m.resources[sel.ID]
-	if r == nil || (!r.HasCore && r.loadingCore) {
-		return []string{"Loading…"}
-	}
-	if r != nil && r.CoreErr != nil && !r.HasCore {
-		return []string{usererr.Message(r.CoreErr)}
-	}
-	if r == nil || !r.HasCore {
-		return []string{"Loading…"}
-	}
-
-	switch m.browseView {
-	case BrowseSummary:
-		return formatBrowseSummaryLines(r.Pokemon, r.Species)
-	case BrowseStats:
-		return formatStatsBars(r.Pokemon)
-	case BrowseEvolution:
-		if r.loadingEvolution {
-			return []string{"Loading evolution…"}
-		}
-		if r.EvolutionErr != nil {
-			return []string{usererr.Message(r.EvolutionErr)}
-		}
-		if !r.HasEvolution {
-			return []string{"Loading evolution…"}
-		}
-		return formatBrowseEvolutionLines(r.Evolution)
-	default:
-		return nil
-	}
+	// Browse is sprite-only; text detail lives in the Enter dialog.
+	return nil
 }
 
 func formatStatsBars(p domain.Pokemon) []string {
@@ -148,26 +116,23 @@ func (m Model) dialogContentLines() []string {
 	}
 
 	switch m.dialogSection {
-	case DialogMoves:
-		if r.loadingMoves {
-			return []string{"Loading moves…"}
+	case DialogSummary:
+		return formatBrowseSummaryLines(r.Pokemon, r.Species)
+	case DialogStats:
+		return formatStatsBars(r.Pokemon)
+	case DialogEvolution:
+		if r.EvolutionErr != nil {
+			return []string{usererr.Message(r.EvolutionErr)}
 		}
+		return formatBrowseEvolutionLines(r.Evolution)
+	case DialogMoves:
 		if r.MovesErr != nil {
 			return []string{usererr.Message(r.MovesErr)}
 		}
-		if !r.HasMoves {
-			return []string{"Loading moves…"}
-		}
 		return formatMoveLines(r.Moves)
 	case DialogLocations:
-		if r.loadingEncounters {
-			return []string{"Loading locations…"}
-		}
 		if r.EncountersErr != nil {
 			return []string{usererr.Message(r.EncountersErr)}
-		}
-		if !r.HasEncounters {
-			return []string{"Loading locations…"}
 		}
 		return formatEncounterLines(r.Encounters)
 	case DialogAbilities:

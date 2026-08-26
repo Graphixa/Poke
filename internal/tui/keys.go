@@ -34,11 +34,11 @@ func defaultKeyMap() keyMap {
 		),
 		TabNext: key.NewBinding(
 			key.WithKeys("tab"),
-			key.WithHelp("tab", "view"),
+			key.WithHelp("tab", "section"),
 		),
 		TabPrev: key.NewBinding(
 			key.WithKeys("shift+tab"),
-			key.WithHelp("S-Tab", "prev view"),
+			key.WithHelp("S-Tab", "prev section"),
 		),
 		PageUp: key.NewBinding(
 			key.WithKeys("pgup"),

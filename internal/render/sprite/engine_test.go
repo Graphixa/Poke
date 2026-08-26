@@ -208,13 +208,14 @@ func TestPlaceholderRenderer(t *testing.T) {
 }
 
 func TestCacheKeyRoundTrip(t *testing.T) {
-	key := sprite.CacheKey("abc", sprite.SourcePixel, "chafa", 24, 24, sprite.ColorTrueColor)
-	hash, src, mode, w, h, color, ver, err := sprite.ParseCacheKey(key)
+	bg := color.RGBA{R: 1, G: 2, B: 3, A: 255}
+	key := sprite.CacheKey("abc", sprite.SourcePixel, "chafa", 24, 24, sprite.ColorTrueColor, bg)
+	hash, src, mode, w, h, colorMode, bgHash, ver, err := sprite.ParseCacheKey(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || color != sprite.ColorTrueColor || ver != sprite.AlgorithmVersion {
-		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s", hash, src, mode, w, h, color, ver)
+	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || colorMode != sprite.ColorTrueColor || bgHash != "010203" || ver != sprite.AlgorithmVersion {
+		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s %s", hash, src, mode, w, h, colorMode, bgHash, ver)
 	}
 	if sprite.ClampFrameSide(21) != sprite.MinFrameSize {
 		t.Fatalf("clamp 21 = %d want %d", sprite.ClampFrameSide(21), sprite.MinFrameSize)
@@ -224,6 +225,28 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 	}
 	if sprite.ClampFrameSide(30) != 28 && sprite.ClampFrameSide(30) != 32 {
 		t.Fatalf("clamp 30 = %d", sprite.ClampFrameSide(30))
+	}
+}
+
+func TestURLForTier(t *testing.T) {
+	p := domain.Pokemon{Sprites: domain.Sprites{
+		FrontDefault:    "https://pixel.png",
+		HomeFront:       "https://home.png",
+		OfficialArtwork: "https://art.png",
+	}}
+	if got := sprite.URLForTier(p, sprite.AssetTierPixel); got != "https://pixel.png" {
+		t.Fatalf("pixel = %q", got)
+	}
+	if got := sprite.URLForTier(p, sprite.AssetTierHD); got != "https://art.png" {
+		t.Fatalf("hd art = %q", got)
+	}
+	p.Sprites.OfficialArtwork = ""
+	if got := sprite.URLForTier(p, sprite.AssetTierHD); got != "https://home.png" {
+		t.Fatalf("hd home = %q", got)
+	}
+	p.Sprites.HomeFront = ""
+	if got := sprite.URLForTier(p, sprite.AssetTierHD); got != "https://pixel.png" {
+		t.Fatalf("hd fallback = %q", got)
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
+const enrichIndexBatchSize = 50
+
 // Progress reports refresh work without coupling to CLI or TUI rendering.
 type Progress struct {
 	Stage   string
@@ -55,7 +57,7 @@ func NewService(store *Store, api pokeAPI, cfg config.Config, clock Clock) *Serv
 	}
 	concurrency := cfg.Network.MaxConcurrency
 	if concurrency <= 0 {
-		concurrency = 4
+		concurrency = 8
 	}
 	return &Service{
 		store: store,
@@ -64,6 +66,15 @@ func NewService(store *Store, api pokeAPI, cfg config.Config, clock Clock) *Serv
 		clock: clock,
 		sema:  make(chan struct{}, concurrency),
 	}
+}
+
+// MaxConcurrency returns the shared HTTP concurrency budget.
+func (s *Service) MaxConcurrency() int {
+	n := cap(s.sema)
+	if n < 1 {
+		return 8
+	}
+	return n
 }
 
 func (s *Service) Path() string {
@@ -77,9 +88,9 @@ func (s *Service) Clear() error {
 // EnsureIndex applies the startup cache policy:
 //   - fresh cache: return immediately with no network
 //   - stale cache: return immediately; caller may start BackgroundRefresh
-//   - empty cache: block for bootstrap; return OfflineError when the network fails
+//   - empty cache: block for thin index only; type enrich runs in background
 //
-// progress may be nil; it is used only when an empty cache triggers Refresh.
+// progress may be nil; it is used when an empty cache triggers index fetch.
 func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index []domain.SpeciesSummary, stale bool, err error) {
 	index, fetchedAt, err := s.loadIndex()
 	if err == nil && len(index) > 0 {
@@ -89,7 +100,7 @@ func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index
 	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrCorrupt) {
 		return nil, false, err
 	}
-	if refreshErr := s.Refresh(ctx, progress); refreshErr != nil {
+	if refreshErr := s.refreshIndex(ctx, progress); refreshErr != nil {
 		return nil, false, &OfflineError{Err: refreshErr}
 	}
 	index, _, err = s.loadIndex()
@@ -99,12 +110,24 @@ func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index
 	if len(index) == 0 {
 		return nil, false, ErrEmpty
 	}
+	// Types enrich in background so browse is not blocked.
+	s.BackgroundEnrich(ctx, progress)
 	return index, false, nil
 }
 
 // ShouldBackgroundRefresh reports whether a stale index should refresh in the background.
 func (s *Service) ShouldBackgroundRefresh(stale bool) bool {
 	return stale && s.cfg.Cache.AutoRefresh
+}
+
+// NeedsTypeEnrichment reports whether any index row still lacks types.
+func NeedsTypeEnrichment(index []domain.SpeciesSummary) bool {
+	for _, sum := range index {
+		if len(sum.Types) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // BackgroundRefresh starts at most one in-flight Refresh. It does not block the caller.
@@ -120,17 +143,55 @@ func (s *Service) BackgroundRefresh(ctx context.Context, progress ProgressFunc) 
 	}()
 }
 
-// Refresh fetches the national species index and enriches types with bounded concurrency.
-// Partial progress is persisted after the index write and after each enrichment update batch.
+// BackgroundEnrich starts type enrichment without blocking (single-flight).
+func (s *Service) BackgroundEnrich(ctx context.Context, progress ProgressFunc) {
+	go func() {
+		debuglog.Cachef("background enrich start")
+		err := s.EnrichTypes(ctx, progress)
+		if err != nil {
+			debuglog.Cachef("background enrich err=%v", err)
+		} else {
+			debuglog.Cachef("background enrich done")
+		}
+	}()
+}
+
+// Refresh fetches the national species index and enriches types (CLI path; waits for enrich).
 // Concurrent Refresh calls share a single in-flight run (single-flight).
 func (s *Service) Refresh(ctx context.Context, progress ProgressFunc) error {
 	_, err := s.group.Do("refresh", func() (any, error) {
-		return nil, s.refreshOnce(ctx, progress)
+		if err := s.refreshIndexOnce(ctx, progress); err != nil {
+			return nil, err
+		}
+		index, _, err := s.loadIndex()
+		if err != nil {
+			return nil, err
+		}
+		return nil, s.enrichTypes(ctx, index, progress)
 	})
 	return err
 }
 
-func (s *Service) refreshOnce(ctx context.Context, progress ProgressFunc) error {
+// EnrichTypes fills missing type hints on the cached index (sync).
+func (s *Service) EnrichTypes(ctx context.Context, progress ProgressFunc) error {
+	_, err := s.group.Do("enrich", func() (any, error) {
+		index, _, err := s.loadIndex()
+		if err != nil {
+			return nil, err
+		}
+		return nil, s.enrichTypes(ctx, index, progress)
+	})
+	return err
+}
+
+func (s *Service) refreshIndex(ctx context.Context, progress ProgressFunc) error {
+	_, err := s.group.Do("refresh-index", func() (any, error) {
+		return nil, s.refreshIndexOnce(ctx, progress)
+	})
+	return err
+}
+
+func (s *Service) refreshIndexOnce(ctx context.Context, progress ProgressFunc) error {
 	if err := s.store.EnsureRoot(); err != nil {
 		return err
 	}
@@ -148,8 +209,7 @@ func (s *Service) refreshOnce(ctx context.Context, progress ProgressFunc) error 
 		return err
 	}
 	report(progress, Progress{Stage: "index", Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
-
-	return s.enrichTypes(ctx, summaries, progress)
+	return nil
 }
 
 func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSummary, progress ProgressFunc) error {
@@ -169,18 +229,30 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 		return nil
 	}
 
-	workers := cap(s.sema)
-	if workers <= 0 {
-		workers = 4
-	}
+	workers := s.MaxConcurrency()
 	queue := make(chan job, workers*2)
 
 	var (
-		done     atomic.Int64
-		mu       sync.Mutex
-		index    = append([]domain.SpeciesSummary(nil), summaries...)
-		firstErr error
+		done      atomic.Int64
+		mu        sync.Mutex
+		index     = append([]domain.SpeciesSummary(nil), summaries...)
+		firstErr  error
+		dirty     int
+		lastWrite int
 	)
+
+	flush := func(force bool) {
+		if !force && dirty < enrichIndexBatchSize {
+			return
+		}
+		if dirty == 0 && !force {
+			return
+		}
+		snapshot := append([]domain.SpeciesSummary(nil), index...)
+		_ = s.store.StoreSpeciesIndex(ctx, snapshot, s.clock.Now())
+		dirty = 0
+		lastWrite++
+	}
 
 	var wg sync.WaitGroup
 	worker := func() {
@@ -212,13 +284,13 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 				types = append(types, t.Name)
 			}
 
+			_ = s.store.StorePokemon(ctx, pokemon, s.clock.Now())
+
 			mu.Lock()
 			index[j.idx].Types = types
-			snapshot := append([]domain.SpeciesSummary(nil), index...)
+			dirty++
+			flush(false)
 			mu.Unlock()
-
-			_ = s.store.StorePokemon(ctx, pokemon, s.clock.Now())
-			_ = s.store.StoreSpeciesIndex(ctx, snapshot, s.clock.Now())
 
 			current := int(done.Add(1))
 			report(progress, Progress{Stage: "enrich", Done: current, Total: total, Message: j.sum.DisplayName})
@@ -254,12 +326,10 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 	wg.Wait()
 
 	mu.Lock()
-	final := append([]domain.SpeciesSummary(nil), index...)
+	flush(true)
 	err := firstErr
+	_ = lastWrite
 	mu.Unlock()
-	if storeErr := s.store.StoreSpeciesIndex(ctx, final, s.clock.Now()); storeErr != nil {
-		return storeErr
-	}
 	if err != nil {
 		return err
 	}
@@ -267,6 +337,11 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 }
 
 func (s *Service) fetchDefaultPokemon(ctx context.Context, sum domain.SpeciesSummary) (domain.Pokemon, error) {
+	if err := s.acquire(ctx); err != nil {
+		return domain.Pokemon{}, err
+	}
+	defer s.release()
+
 	pokemon, err := s.api.GetPokemon(ctx, sum.ID)
 	if err == nil {
 		return pokemon, nil

@@ -23,7 +23,7 @@ func (s *Service) SpriteByURL(ctx context.Context, url string) (contentHash stri
 	return contentHash, data, nil
 }
 
-// StoreSpriteByURL persists PNG bytes under their content hash and maps the URL.
+// StoreSpriteByURL persists PNG bytes under their content hash and maps the URL (legacy).
 func (s *Service) StoreSpriteByURL(ctx context.Context, url, contentHash string, data []byte) error {
 	if contentHash == "" || len(data) == 0 {
 		return errors.New("cache: refuse to store empty sprite")
@@ -32,6 +32,26 @@ func (s *Service) StoreSpriteByURL(ctx context.Context, url, contentHash string,
 		return err
 	}
 	return s.store.StoreSpriteURL(ctx, sha256Hex(url), contentHash)
+}
+
+// NamedSprite returns PNG bytes from the named sprites/ or official-artwork/ tree.
+func (s *Service) NamedSprite(ctx context.Context, id int, slug, kind string) ([]byte, error) {
+	return s.store.NamedSprite(ctx, id, slug, kind)
+}
+
+// StoreNamedSprite writes PNG bytes into the named sprite tree and mirrors a content-hash copy
+// so halfblock keys (content-hash based) keep working.
+func (s *Service) StoreNamedSprite(ctx context.Context, id int, slug, kind, contentHash string, data []byte) error {
+	if len(data) == 0 {
+		return errors.New("cache: refuse to store empty named sprite")
+	}
+	if err := s.store.StoreNamedSprite(ctx, id, slug, kind, data); err != nil {
+		return err
+	}
+	if contentHash != "" {
+		_ = s.store.StoreSprite(ctx, contentHash, data)
+	}
+	return nil
 }
 
 // Halfblock returns a cached derived sprite artefact by key.
@@ -49,7 +69,7 @@ func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
 		return errors.New("cache: refuse to store empty halfblock key")
 	}
 	// Validate key shape so callers cannot write outside halfblock/.
-	if _, _, _, _, _, _, _, err := sprite.ParseCacheKey(key); err != nil {
+	if _, _, _, _, _, _, _, _, err := sprite.ParseCacheKey(key); err != nil {
 		return err
 	}
 	return s.store.StoreHalfblock(ctx, key, []byte(ansi))

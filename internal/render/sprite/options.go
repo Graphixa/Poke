@@ -33,7 +33,17 @@ const (
 
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
-const AlgorithmVersion = "v6"
+const AlgorithmVersion = "v7"
+
+// QualityProfile selects chafa conversion quality.
+type QualityProfile string
+
+const (
+	// QualityInteractive uses MosaicFast for browse latency.
+	QualityInteractive QualityProfile = "interactive"
+	// QualityPrewarm uses full Mosaic quality for background warm.
+	QualityPrewarm QualityProfile = "prewarm"
+)
 
 // RenderOptions control a single sprite conversion.
 type RenderOptions struct {
@@ -50,6 +60,8 @@ type RenderOptions struct {
 	Label string
 	// ContentHash identifies the source image for caching.
 	ContentHash string
+	// Quality selects interactive vs prewarm chafa knobs (chafa renderer only).
+	Quality QualityProfile
 }
 
 // DefaultRenderOptions returns options suitable for the fixed sprite frame.

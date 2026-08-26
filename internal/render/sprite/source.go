@@ -13,10 +13,26 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
+// AssetTier selects which sprite URL family to prefer.
+type AssetTier int
+
+const (
+	// AssetTierPixel uses front_default (small game sprites) for chafa.
+	AssetTierPixel AssetTier = iota
+	// AssetTierHD prefers official artwork, then home, then front_default.
+	AssetTierHD
+)
+
 // PNGStore persists sprite PNG bytes by content hash and URL mapping.
 type PNGStore interface {
 	SpriteByURL(ctx context.Context, url string) (contentHash string, data []byte, err error)
 	StoreSpriteByURL(ctx context.Context, url, contentHash string, data []byte) error
+}
+
+// NamedPNGStore is the preferred on-disk layout: sprites/<id-slug>/ and official-artwork/.
+type NamedPNGStore interface {
+	NamedSprite(ctx context.Context, id int, slug, kind string) ([]byte, error)
+	StoreNamedSprite(ctx context.Context, id int, slug, kind, contentHash string, data []byte) error
 }
 
 // Downloader fetches raw sprite bytes from a URL.
@@ -24,7 +40,7 @@ type Downloader interface {
 	GetSprite(ctx context.Context, spriteURL string) (io.ReadCloser, error)
 }
 
-// SourceResolver selects front_default, downloads through the cache, and validates PNG.
+// SourceResolver selects a sprite URL by tier, downloads through the cache, and validates PNG.
 type SourceResolver struct {
 	Store PNGStore
 	API   Downloader
@@ -34,12 +50,29 @@ type SourceResolver struct {
 type SourceResult struct {
 	ContentHash    string
 	PNG            []byte
+	URL            string
 	UsePlaceholder bool
 }
 
-// Resolve returns front_default PNG bytes, or UsePlaceholder when missing/invalid.
-func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon) SourceResult {
-	url := pokemon.Sprites.FrontDefault
+// Resolve returns PNG bytes for the given tier, or UsePlaceholder when missing/invalid.
+// When tier is omitted (zero value), AssetTierPixel is used.
+func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, tier ...AssetTier) SourceResult {
+	t := AssetTierPixel
+	if len(tier) > 0 {
+		t = tier[0]
+	}
+	kind := namedKindForTier(t)
+
+	if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
+		if data, err := named.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind); err == nil && len(data) > 0 {
+			if ValidatePNG(data) == nil {
+				hash := ContentHash(data)
+				return SourceResult{ContentHash: hash, PNG: data, URL: URLForTier(pokemon, t)}
+			}
+		}
+	}
+
+	url := URLForTier(pokemon, t)
 	if url == "" {
 		return SourceResult{UsePlaceholder: true}
 	}
@@ -47,7 +80,10 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon) So
 		hash, data, err := r.Store.SpriteByURL(ctx, url)
 		if err == nil && len(data) > 0 {
 			if ValidatePNG(data) == nil {
-				return SourceResult{ContentHash: hash, PNG: data}
+				if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
+					_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, kind, hash, data)
+				}
+				return SourceResult{ContentHash: hash, PNG: data, URL: url}
 			}
 		}
 	}
@@ -64,8 +100,42 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon) So
 	hash := ContentHash(data)
 	if r.Store != nil {
 		_ = r.Store.StoreSpriteByURL(ctx, url, hash, data)
+		if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
+			_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, kind, hash, data)
+		}
 	}
-	return SourceResult{ContentHash: hash, PNG: data}
+	return SourceResult{ContentHash: hash, PNG: data, URL: url}
+}
+
+func namedKindForTier(tier AssetTier) string {
+	if tier == AssetTierHD {
+		return "artwork"
+	}
+	return "pixel"
+}
+
+// URLForTier picks the best sprite URL for the given asset tier.
+func URLForTier(pokemon domain.Pokemon, tier AssetTier) string {
+	switch tier {
+	case AssetTierHD:
+		if pokemon.Sprites.OfficialArtwork != "" {
+			return pokemon.Sprites.OfficialArtwork
+		}
+		if pokemon.Sprites.HomeFront != "" {
+			return pokemon.Sprites.HomeFront
+		}
+		return pokemon.Sprites.FrontDefault
+	default:
+		return pokemon.Sprites.FrontDefault
+	}
+}
+
+// TierForRenderer returns the asset tier for a logical renderer class.
+func TierForRenderer(name string) AssetTier {
+	if name == "image" {
+		return AssetTierHD
+	}
+	return AssetTierPixel
 }
 
 // ValidatePNG reports whether data is a decodable PNG image.

@@ -102,6 +102,8 @@ type BrowseData struct {
 
 	SpriteANSI string
 
+	WarmHint string
+
 	Frame *FrameRenderer
 }
 
@@ -137,7 +139,7 @@ func Browse(d BrowseData) string {
 }
 
 func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
-	footer := components.Footer(d.VerboseFooter, d.Width)
+	footer := components.Footer(d.VerboseFooter, d.Width, d.WarmHint)
 	footerH := 1
 	margin := 0
 	title := "Pokedex"
@@ -221,20 +223,15 @@ func renderRight(d BrowseData, width, height int) string {
 	}
 
 	header := renderHeader(d, width)
-	divider := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", max(1, width)))
-	switcher := components.ViewSwitcher(d.BrowseView, d.ViewLabels, width)
-
 	headerBlock := countLines(header) + 1 // trailing gap under header
-	footBlock := countLines(divider) + countLines(switcher)
-	bodyAvail := height - headerBlock - footBlock
+	bodyAvail := height - headerBlock
 	if bodyAvail < 3 {
 		bodyAvail = 3
 	}
 
 	body := renderViewBody(d, width, bodyAvail)
 
-	// Bottom-anchor divider + switcher for sprite (fixed body); text views already fill.
-	used := headerBlock + countLines(body) + footBlock
+	used := headerBlock + countLines(body)
 	spacerN := height - used
 	if spacerN < 0 {
 		spacerN = 0
@@ -245,14 +242,10 @@ func renderRight(d BrowseData, width, height int) string {
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 	b.WriteString(body)
-	b.WriteByte('\n')
 	for i := 0; i < spacerN; i++ {
-		b.WriteString(strings.Repeat(" ", width))
 		b.WriteByte('\n')
+		b.WriteString(strings.Repeat(" ", width))
 	}
-	b.WriteString(divider)
-	b.WriteByte('\n')
-	b.WriteString(switcher)
 	col := b.String()
 	lines := strings.Split(col, "\n")
 	if len(lines) > height {

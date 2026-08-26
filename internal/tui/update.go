@@ -19,81 +19,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.SetWidth(msg.Width)
 		m.ensureListVisible()
+		if m.warmer != nil {
+			if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
+				m.warmer.SetCells(cells)
+			}
+		}
 		return m, m.handleSpriteLayoutChange(prevShow, prevSide)
 
-	case coreMsg:
+	case dossierMsg:
 		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
+			m.clearStaleFlag(msg.speciesID, func(r *resourceCache) {
+				if !r.HasCore {
+					r.loadingCore = false
+				}
+			})
+			if m.isSelectedID(msg.speciesID) && m.showDialog {
+				return m, m.ensureDossierLoad()
+			}
 			return m, nil
 		}
 		r := m.ensureResource(msg.speciesID)
 		r.loadingCore = false
 		if msg.err != nil {
 			r.CoreErr = msg.err
+			if m.showDialog {
+				m.syncDialogViewport()
+			}
 			return m, nil
 		}
-		r.Pokemon = msg.pokemon
-		r.Species = msg.species
-		r.HasCore = true
-		r.CoreErr = nil
-		m.clearSpriteArt(r)
-		return m, tea.Batch(m.ensureBrowseLazyLoad(), m.ensureSpriteLoad())
-
-	case evolutionMsg:
-		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
-			return m, nil
-		}
-		r := m.ensureResource(msg.speciesID)
-		r.loadingEvolution = false
-		if msg.err != nil {
-			r.EvolutionErr = msg.err
-			return m, nil
-		}
-		r.Evolution = msg.tree
-		r.HasEvolution = true
-		r.EvolutionErr = nil
-		return m, nil
-
-	case encountersMsg:
-		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
-			return m, nil
-		}
-		r := m.ensureResource(msg.speciesID)
-		r.loadingEncounters = false
-		if msg.err != nil {
-			r.EncountersErr = msg.err
-			return m, nil
-		}
-		r.Encounters = msg.rows
-		r.HasEncounters = true
-		r.EncountersErr = nil
+		r.applyDossier(msg.dossier)
 		if m.showDialog {
 			m.syncDialogViewport()
 		}
-		return m, nil
-
-	case movesMsg:
-		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
-			return m, nil
-		}
-		r := m.ensureResource(msg.speciesID)
-		r.loadingMoves = false
-		if msg.err != nil {
-			r.MovesErr = msg.err
-			return m, nil
-		}
-		r.Moves = msg.rows
-		r.HasMoves = true
-		r.MovesErr = nil
-		if m.showDialog {
-			m.syncDialogViewport()
-		}
-		return m, nil
+		return m, m.ensureSpriteLoad()
 
 	case spriteMsg:
 		if msg.reqID != m.spriteReqID || msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
+			m.clearStaleFlag(msg.speciesID, func(r *resourceCache) {
+				if r.loadingSprite && (msg.cells == 0 || r.SpriteCells == msg.cells) {
+					r.loadingSprite = false
+				}
+			})
+			if m.isSelectedID(msg.speciesID) {
+				return m, m.ensureSpriteLoad()
+			}
 			return m, nil
 		}
 		if msg.cells != m.currentSpriteCells() {
+			m.clearStaleFlag(msg.speciesID, func(r *resourceCache) {
+				if r.loadingSprite && r.SpriteCells == msg.cells {
+					r.loadingSprite = false
+				}
+			})
+			if m.isSelectedID(msg.speciesID) {
+				return m, m.ensureSpriteLoad()
+			}
 			return m, nil
 		}
 		r := m.ensureResource(msg.speciesID)
@@ -108,6 +88,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			r.SpritePlaceholder = false
 		}
 		return m, nil
+
+	case warmProgressMsg:
+		if msg.closed {
+			m.warmActive = false
+			return m, nil
+		}
+		m.warmDone = msg.Done
+		m.warmTotal = msg.Total
+		m.warmActive = msg.Total > 0 && msg.Done < msg.Total
+		return m, listenWarmProgress(m.warmEvents)
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -146,7 +136,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Info) {
-		if m.queryValue() == "" && m.hasSelectedCore() {
+		if m.queryValue() == "" {
 			return m.openDialog()
 		}
 		return m.updateSearch(msg)
@@ -173,13 +163,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.moveCursor(1)
 		return m, m.syncSelectionLoads()
 	}
-	if key.Matches(msg, m.keys.TabNext) {
-		m.browseView = m.browseView.Next()
-		return m, m.ensureBrowseLazyLoad()
-	}
-	if key.Matches(msg, m.keys.TabPrev) {
-		m.browseView = m.browseView.Prev()
-		return m, m.ensureBrowseLazyLoad()
+	// Tab on browse reserved for future sprite variants — no-op for now.
+	// TODO(sprite-variants): cycle pixel / official-artwork when assets exist.
+	if key.Matches(msg, m.keys.TabNext, m.keys.TabPrev) {
+		return m, nil
 	}
 
 	return m.updateSearch(msg)
@@ -194,13 +181,13 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.dialogSection = m.dialogSection.Next()
 		m.dialogVP.GotoTop()
 		m.syncDialogViewport()
-		return m, m.ensureDialogLazyLoad()
+		return m, nil
 	}
 	if key.Matches(msg, m.keys.TabPrev) {
 		m.dialogSection = m.dialogSection.Prev()
 		m.dialogVP.GotoTop()
 		m.syncDialogViewport()
-		return m, m.ensureDialogLazyLoad()
+		return m, nil
 	}
 	if key.Matches(msg, m.keys.Up) {
 		m.scrollDialog(-1)
@@ -232,14 +219,16 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) openDialog() (tea.Model, tea.Cmd) {
-	if !m.hasSelectedCore() {
+	sel, ok := m.selected()
+	if !ok {
 		return m, nil
 	}
 	m.showDialog = true
-	m.dialogSection = DialogMoves
+	m.dialogSection = DialogSummary
 	m.dialogVP.GotoTop()
 	m.syncDialogViewport()
-	return m, m.ensureDialogLazyLoad()
+	_ = sel
+	return m, m.ensureDossierLoad()
 }
 
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -279,91 +268,46 @@ func (m *Model) syncSelectionLoads() tea.Cmd {
 	}
 	m.trackedID = id
 	m.bumpSelection()
+	m.notifyWarmer()
 	return m.ensureSelectionLoads()
 }
 
+func (m *Model) notifyWarmer() {
+	sel, ok := m.selected()
+	if !ok {
+		return
+	}
+	if m.warmer != nil {
+		cells := m.currentSpriteCells()
+		if cells >= sprite.MinFrameSize {
+			m.warmer.SetCells(cells)
+		}
+		m.warmer.Prioritize(sel.ID)
+		m.warmer.SetNeighborsFromList(m.filtered, m.cursor, 5)
+	}
+	if m.dossierWarmer != nil {
+		m.dossierWarmer.Prioritize(sel.ID)
+		m.dossierWarmer.SetNeighborsFromList(m.filtered, m.cursor, 5)
+	}
+}
+
 func (m *Model) ensureSelectionLoads() tea.Cmd {
+	// Browse: sprite only — never GetDossier on scroll.
+	return m.ensureSpriteLoad()
+}
+
+func (m *Model) ensureDossierLoad() tea.Cmd {
 	sel, ok := m.selected()
 	if !ok {
 		return nil
 	}
 	r := m.ensureResource(sel.ID)
-	var cmds []tea.Cmd
-	if !r.HasCore && !r.loadingCore {
-		r.loadingCore = true
-		cmds = append(cmds, loadCoreCmd(m.ctx, m.details, m.selectionGen, sel.ID))
-	}
-	if cmd := m.ensureBrowseLazyLoad(); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-	if cmd := m.ensureSpriteLoad(); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-	return tea.Batch(cmds...)
-}
-
-func (m *Model) ensureBrowseLazyLoad() tea.Cmd {
-	if m.browseView != BrowseEvolution {
+	if r.HasCore || r.loadingCore {
 		return nil
 	}
-	return m.ensureEvolutionLoad()
-}
-
-func (m *Model) ensureDialogLazyLoad() tea.Cmd {
-	if !m.showDialog {
-		return nil
-	}
-	switch m.dialogSection {
-	case DialogMoves:
-		return m.ensureMovesLoad()
-	case DialogLocations:
-		return m.ensureEncountersLoad()
-	default:
-		return nil
-	}
-}
-
-func (m *Model) ensureEvolutionLoad() tea.Cmd {
-	sel, ok := m.selected()
-	if !ok {
-		return nil
-	}
-	r := m.ensureResource(sel.ID)
-	if !r.HasCore || r.HasEvolution || r.loadingEvolution {
-		return nil
-	}
-	r.loadingEvolution = true
-	return loadEvolutionCmd(m.ctx, m.details, m.selectionGen, sel.ID, r.Species)
-}
-
-func (m *Model) ensureMovesLoad() tea.Cmd {
-	sel, ok := m.selected()
-	if !ok {
-		return nil
-	}
-	r := m.ensureResource(sel.ID)
-	if !r.HasCore || r.HasMoves || r.loadingMoves {
-		return nil
-	}
-	r.loadingMoves = true
-	return loadMovesCmd(m.ctx, m.details, m.selectionGen, sel.ID, r.Pokemon)
-}
-
-func (m *Model) ensureEncountersLoad() tea.Cmd {
-	sel, ok := m.selected()
-	if !ok {
-		return nil
-	}
-	r := m.ensureResource(sel.ID)
-	if !r.HasCore || r.HasEncounters || r.loadingEncounters {
-		return nil
-	}
-	r.loadingEncounters = true
-	pokemonID := r.Pokemon.ID
-	if pokemonID == 0 {
-		pokemonID = r.Species.DefaultPokemonID
-	}
-	return loadEncountersCmd(m.ctx, m.details, m.selectionGen, sel.ID, pokemonID)
+	r.loadingCore = true
+	r.CoreErr = nil
+	return loadDossierCmd(m.ctx, m.details, m.selectionGen, sel.ID)
 }
 
 func (m *Model) cancelSprite() {
@@ -372,6 +316,23 @@ func (m *Model) cancelSprite() {
 		m.spriteCancel = nil
 	}
 	m.spriteReqID++
+	if m.spriteLoadSpecies != 0 {
+		if r := m.resources[m.spriteLoadSpecies]; r != nil {
+			r.loadingSprite = false
+		}
+		m.spriteLoadSpecies = 0
+	}
+}
+
+func (m *Model) clearStaleFlag(speciesID int, clear func(*resourceCache)) {
+	if speciesID < 1 || clear == nil {
+		return
+	}
+	r := m.resources[speciesID]
+	if r == nil {
+		return
+	}
+	clear(r)
 }
 
 func (m *Model) clearSpriteArt(r *resourceCache) {
@@ -423,9 +384,6 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 		return nil
 	}
 	r := m.ensureResource(sel.ID)
-	if !r.HasCore {
-		return nil
-	}
 	cells := m.currentSpriteCells()
 	if cells < 1 {
 		return nil
@@ -440,12 +398,18 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.spriteCancel = cancel
 	reqID := m.spriteReqID
+	m.spriteLoadSpecies = sel.ID
 	r.loadingSprite = true
 	r.SpriteCells = cells
 	r.HasSprite = false
 	r.SpriteANSI = ""
 	r.SpritePlaceholder = false
-	return loadSpriteCmd(ctx, m.sprites, reqID, m.selectionGen, sel.ID, cells, r.Pokemon)
+
+	pokemon := r.Pokemon
+	if pokemon.ID == 0 {
+		pokemon = domain.Pokemon{ID: sel.ID, Slug: sel.Slug, DisplayName: sel.DisplayName}
+	}
+	return loadSpriteCmd(ctx, m.sprites, reqID, m.selectionGen, sel.ID, cells, pokemon)
 }
 
 func (m *Model) scrollDialog(delta int) {

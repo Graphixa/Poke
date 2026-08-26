@@ -17,8 +17,14 @@ func TestDefault(t *testing.T) {
 	if cfg.Network.Timeout.Duration != 10*time.Second {
 		t.Fatalf("network timeout = %v", cfg.Network.Timeout.Duration)
 	}
-	if cfg.Network.MaxConcurrency != 4 {
+	if cfg.Network.MaxConcurrency != 8 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+	if cfg.Cache.DossierPrewarm != "window" {
+		t.Fatalf("dossier_prewarm = %q", cfg.Cache.DossierPrewarm)
+	}
+	if cfg.Render.SpritePrewarm != "window" {
+		t.Fatalf("sprite_prewarm = %q", cfg.Render.SpritePrewarm)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config is invalid: %v", err)

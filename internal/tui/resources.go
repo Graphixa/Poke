@@ -4,7 +4,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-// resourceCache holds loaded detail for one species selection.
+// resourceCache holds loaded detail for one species (dossier filled on Enter).
 type resourceCache struct {
 	Pokemon domain.Pokemon
 	Species domain.Species
@@ -29,10 +29,7 @@ type resourceCache struct {
 	SpritePlaceholder bool
 	loadingSprite     bool
 
-	loadingCore       bool
-	loadingEvolution  bool
-	loadingEncounters bool
-	loadingMoves      bool
+	loadingCore bool
 }
 
 func (r *resourceCache) clearSprite() {
@@ -48,4 +45,29 @@ func (r *resourceCache) clearSprite() {
 
 func (r *resourceCache) coreReady() bool {
 	return r != nil && r.HasCore
+}
+
+func (r *resourceCache) applyDossier(d domain.Dossier) {
+	r.Pokemon = d.Pokemon
+	r.Species = d.Species
+	r.HasCore = true
+	r.CoreErr = nil
+	if d.Evolution != nil {
+		r.Evolution = *d.Evolution
+		r.HasEvolution = true
+		r.EvolutionErr = nil
+	} else {
+		r.HasEvolution = true
+		r.Evolution = domain.EvolutionTree{}
+	}
+	r.Encounters = d.Encounters
+	r.HasEncounters = true
+	r.EncountersErr = nil
+	r.Moves = make([]LevelUpMove, len(d.LevelUpMoves))
+	for i, row := range d.LevelUpMoves {
+		r.Moves[i] = LevelUpMove{Level: row.Level, Move: row.Move}
+	}
+	r.HasMoves = true
+	r.MovesErr = nil
+	r.loadingCore = false
 }

@@ -3,11 +3,14 @@ package app
 import (
 	"context"
 
+	"github.com/Graphixa/Pokedex/internal/cache"
+	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/warm"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
@@ -17,24 +20,8 @@ type tuiDetails struct {
 	*DetailService
 }
 
-func (t tuiDetails) Load(ctx context.Context, speciesID int) (domain.Pokemon, domain.Species, error) {
-	d, err := t.DetailService.Load(ctx, speciesID)
-	if err != nil {
-		return domain.Pokemon{}, domain.Species{}, err
-	}
-	return d.Pokemon, d.Species, nil
-}
-
-func (t tuiDetails) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon) ([]tui.LevelUpMove, error) {
-	rows, err := t.DetailService.LevelUpMoves(ctx, pokemon)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]tui.LevelUpMove, len(rows))
-	for i, row := range rows {
-		out[i] = tui.LevelUpMove{Level: row.Level, Move: row.Move}
-	}
-	return out, nil
+func (t tuiDetails) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
+	return t.DetailService.LoadDossier(ctx, speciesID)
 }
 
 type tuiSprites struct {
@@ -55,6 +42,22 @@ func (t tuiSprites) ClearNative() {
 	}
 }
 
+type warmPokemonLoader struct {
+	details *DetailService
+}
+
+func (w warmPokemonLoader) Pokemon(ctx context.Context, speciesID int) (domain.Pokemon, error) {
+	return w.details.PokemonForSprite(ctx, speciesID)
+}
+
+type dossierLoader struct {
+	details *DetailService
+}
+
+func (d dossierLoader) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
+	return d.details.LoadDossier(ctx, speciesID)
+}
+
 func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	svc, err := h.Services()
 	if err != nil {
@@ -63,6 +66,9 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
 	if err != nil {
 		return err
+	}
+	if cache.NeedsTypeEnrichment(index) {
+		svc.Cache.BackgroundEnrich(ctx, nil)
 	}
 
 	img := spriteimage.New()
@@ -96,17 +102,75 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		Color:         colorMode,
 		SourceKind:    sourceKind,
 		Background:    style.BaseRGBA(),
+		HDOff:         !svc.Config.SpriteHDEnabled(),
 		ClearNativeFn: spriteimage.ClearBestEffort,
 		OnNativeFail:  img.Disable,
 	}
 
-	return tui.Run(ctx, tui.Options{
+	details := NewDetailService(svc.Cache)
+	workers := svc.Cache.MaxConcurrency()
+	opts := tui.Options{
 		Index:         search.Build(index),
-		Details:       tuiDetails{NewDetailService(svc.Cache)},
+		Details:       tuiDetails{details},
 		Sprites:       tuiSprites{engine},
 		Selected:      req.Selected,
 		Prefill:       req.Prefill,
 		Context:       ctx,
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
-	})
+	}
+
+	progressCh := make(chan tui.WarmProgress, 16)
+	var useProgress bool
+
+	// Sprite warm first (visible art), then dossier warm (Enter snappiness).
+	prewarm := warm.Mode(svc.Config.EffectiveSpritePrewarm())
+	var spriteWarmer *warm.Service
+	if prewarm != warm.ModeOff && !opts.DisableSprite {
+		useProgress = true
+		spriteWarmer = warm.New(warm.Config{
+			Mode:     prewarm,
+			Cells:    sprite.MaxFrameSize,
+			Workers:  workers,
+			Loader:   warmPokemonLoader{details},
+			Renderer: engine,
+			Index:    index,
+			Progress: func(p cache.Progress) {
+				select {
+				case progressCh <- tui.WarmProgress{Done: p.Done, Total: p.Total, Message: p.Message}:
+				default:
+				}
+			},
+		})
+		spriteWarmer.Start(ctx)
+		defer spriteWarmer.Stop()
+		opts.Warmer = spriteWarmer
+	}
+
+	dossierMode := dossierwarm.Mode(svc.Config.EffectiveDossierPrewarm())
+	var dossierWarmer *dossierwarm.Service
+	if dossierMode != dossierwarm.ModeOff {
+		useProgress = true
+		dossierWarmer = dossierwarm.New(dossierwarm.Config{
+			Mode:    dossierMode,
+			Workers: workers,
+			Loader:  dossierLoader{details},
+			Index:   index,
+			Progress: func(p cache.Progress) {
+				select {
+				case progressCh <- tui.WarmProgress{Done: p.Done, Total: p.Total, Message: p.Message}:
+				default:
+				}
+			},
+		})
+		dossierWarmer.Start(ctx)
+		defer dossierWarmer.Stop()
+		opts.DossierWarmer = dossierWarmer
+	}
+
+	if useProgress {
+		defer close(progressCh)
+		opts.WarmEvents = progressCh
+	}
+
+	return tui.Run(ctx, opts)
 }

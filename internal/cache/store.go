@@ -173,6 +173,7 @@ func bytesTrimSpace(b []byte) []byte {
 }
 
 func (s *Store) StoreSpeciesIndex(_ context.Context, index []domain.SpeciesSummary, fetchedAt time.Time) error {
+	fillIndexSpritePaths(index)
 	if err := s.writeJSON(s.indexPath(), fetchedAt, index); err != nil {
 		return err
 	}
@@ -299,16 +300,16 @@ func (s *Store) writeManifest(man manifest) error {
 func (s *Store) manifestPath() string { return filepath.Join(s.root, "manifest.json") }
 func (s *Store) indexPath() string    { return filepath.Join(s.root, "index", "species.json") }
 func (s *Store) pokemonPath(id int) string {
-	return filepath.Join(s.root, "pokemon", strconv.Itoa(id)+".json")
+	return s.legacyPokemonPath(id)
 }
 func (s *Store) speciesPath(id int) string {
-	return filepath.Join(s.root, "species", strconv.Itoa(id)+".json")
+	return s.legacySpeciesPath(id)
 }
 func (s *Store) evolutionPath(id int) string {
-	return filepath.Join(s.root, "evolution", strconv.Itoa(id)+".json")
+	return s.legacyEvolutionPath(id)
 }
 func (s *Store) encountersPath(id int) string {
-	return filepath.Join(s.root, "encounters", strconv.Itoa(id)+".json")
+	return s.legacyEncountersPath(id)
 }
 func (s *Store) movePath(id int) string {
 	return filepath.Join(s.root, "moves", strconv.Itoa(id)+".json")

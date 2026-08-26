@@ -64,11 +64,13 @@ type ThemeHandler interface {
 type CacheCommands interface {
 	Refresh(context.Context) error
 	Clear() error
+	WarmSprites(context.Context) error
 }
 
 type CacheCommandsFuncs struct {
-	RefreshFunc func(context.Context) error
-	ClearFunc   func() error
+	RefreshFunc     func(context.Context) error
+	ClearFunc       func() error
+	WarmSpritesFunc func(context.Context) error
 }
 
 func (f CacheCommandsFuncs) Refresh(ctx context.Context) error {
@@ -83,6 +85,13 @@ func (f CacheCommandsFuncs) Clear() error {
 		return fmt.Errorf("cache clear is unavailable")
 	}
 	return f.ClearFunc()
+}
+
+func (f CacheCommandsFuncs) WarmSprites(ctx context.Context) error {
+	if f.WarmSpritesFunc == nil {
+		return fmt.Errorf("cache warm-sprites is unavailable")
+	}
+	return f.WarmSpritesFunc(ctx)
 }
 
 func NewRoot(options Options) *cobra.Command {
@@ -286,6 +295,18 @@ func newCacheCommand(options Options) *cobra.Command {
 				return fmt.Errorf("cache clear is unavailable")
 			}
 			return options.Cache.Clear()
+		},
+	})
+	parent.AddCommand(&cobra.Command{
+		Use:   "warm-sprites",
+		Short: "Precompute pixel sprite chafa artefacts for the local cache",
+		Long:  "Downloads front_default PNGs (when missing) and renders chafa ANSI artefacts into the user cache. Does not ship or redistribute sprites; all work is local.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if options.Cache == nil {
+				return fmt.Errorf("cache warm-sprites is unavailable")
+			}
+			return options.Cache.WarmSprites(cmd.Context())
 		},
 	})
 	return parent

@@ -39,7 +39,17 @@ func TestClientUserAgentAndMapping(t *testing.T) {
 					{"base_stat": 90, "stat": map[string]string{"name": "speed", "url": "https://pokeapi.co/api/v2/stat/6/"}},
 				},
 				"moves":   []any{},
-				"sprites": map[string]any{"front_default": "https://example.test/pikachu.png"},
+				"sprites": map[string]any{
+					"front_default": "https://example.test/pikachu.png",
+					"other": map[string]any{
+						"home": map[string]any{
+							"front_default": "https://example.test/pikachu-home.png",
+						},
+						"official-artwork": map[string]any{
+							"front_default": "https://example.test/pikachu-art.png",
+						},
+					},
+				},
 			})
 		default:
 			http.NotFound(w, r)
@@ -66,6 +76,12 @@ func TestClientUserAgentAndMapping(t *testing.T) {
 	}
 	if pokemon.Sprites.FrontDefault == "" {
 		t.Fatal("expected sprite url")
+	}
+	if pokemon.Sprites.HomeFront != "https://example.test/pikachu-home.png" {
+		t.Fatalf("HomeFront = %q", pokemon.Sprites.HomeFront)
+	}
+	if pokemon.Sprites.OfficialArtwork != "https://example.test/pikachu-art.png" {
+		t.Fatalf("OfficialArtwork = %q", pokemon.Sprites.OfficialArtwork)
 	}
 }
 

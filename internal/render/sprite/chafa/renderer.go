@@ -63,6 +63,14 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 	// Sample isotropically. opts.Width×Height should already be cell-aspect
 	// corrected (e.g. 32×16) so Stretch into that grid is visually square.
 	sampleSide := max(w, h) * samplesPerCell
+	quality := uiimage.QualityMosaicFast
+	if opts.Quality == sprite.QualityPrewarm {
+		quality = uiimage.QualityMosaic
+		// Mild integer upscale before mosaic conversion for prewarm fidelity.
+		if opts.Source == sprite.SourcePixel && sampleSide < 256 {
+			sampleSide *= 2
+		}
+	}
 	scaled := sprite.Resize(prepared, sampleSide, sampleSide, opts.Source, true, bg)
 
 	if err := ctx.Err(); err != nil {
@@ -80,7 +88,7 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 		Width:      w,
 		Height:     h,
 		Mode:       canvasMode(opts.ColorMode),
-		Quality:    uiimage.QualityMosaicFast,
+		Quality:    quality,
 		Stretch:    true,
 		Background: bg,
 	})

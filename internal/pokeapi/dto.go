@@ -48,6 +48,14 @@ type pokemonDTO struct {
 	} `json:"moves"`
 	Sprites struct {
 		FrontDefault *string `json:"front_default"`
+		Other        *struct {
+			Home *struct {
+				FrontDefault *string `json:"front_default"`
+			} `json:"home"`
+			OfficialArtwork *struct {
+				FrontDefault *string `json:"front_default"`
+			} `json:"official-artwork"`
+		} `json:"other"`
 	} `json:"sprites"`
 }
 

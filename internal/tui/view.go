@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -8,7 +10,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
-	"github.com/Graphixa/Pokedex/internal/usererr"
 )
 
 func init() {
@@ -86,19 +87,18 @@ func (m Model) browseData() views.BrowseData {
 		data.Selected = sel
 		data.HeaderTypes = style.TypeSummary(sel.Types)
 		data.HeaderGenus = ""
-		if r := m.resources[sel.ID]; r != nil && r.HasCore {
-			data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
-			data.HeaderGenus = r.Species.Genus
+		if r := m.resources[sel.ID]; r != nil {
+			if r.HasCore {
+				data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
+				data.HeaderGenus = r.Species.Genus
+			}
 			if r.HasSprite && !r.SpritePlaceholder && r.SpriteANSI != "" {
 				data.SpriteANSI = r.SpriteANSI
 			}
-		} else if r != nil && r.CoreErr != nil {
-			data.HeaderErr = usererr.Message(r.CoreErr)
-		} else if r != nil && r.loadingCore {
-			data.HeaderLoading = true
-		} else if r == nil {
-			data.HeaderLoading = true
 		}
+	}
+	if m.warmActive && m.warmTotal > 0 {
+		data.WarmHint = fmt.Sprintf("warming %d/%d", m.warmDone, m.warmTotal)
 	}
 	return data
 }

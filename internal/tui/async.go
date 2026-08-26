@@ -8,32 +8,10 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-type coreMsg struct {
+type dossierMsg struct {
 	gen       int
 	speciesID int
-	pokemon   domain.Pokemon
-	species   domain.Species
-	err       error
-}
-
-type evolutionMsg struct {
-	gen       int
-	speciesID int
-	tree      domain.EvolutionTree
-	err       error
-}
-
-type encountersMsg struct {
-	gen       int
-	speciesID int
-	rows      []domain.Encounter
-	err       error
-}
-
-type movesMsg struct {
-	gen       int
-	speciesID int
-	rows      []LevelUpMove
+	dossier   domain.Dossier
 	err       error
 }
 
@@ -46,43 +24,13 @@ type spriteMsg struct {
 	placeholder bool
 }
 
-func loadCoreCmd(ctx context.Context, src DetailSource, gen, speciesID int) tea.Cmd {
+func loadDossierCmd(ctx context.Context, src DetailSource, gen, speciesID int) tea.Cmd {
 	if src == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		pokemon, species, err := src.Load(ctx, speciesID)
-		return coreMsg{gen: gen, speciesID: speciesID, pokemon: pokemon, species: species, err: err}
-	}
-}
-
-func loadEvolutionCmd(ctx context.Context, src DetailSource, gen, speciesID int, species domain.Species) tea.Cmd {
-	if src == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		tree, err := src.Evolution(ctx, species)
-		return evolutionMsg{gen: gen, speciesID: speciesID, tree: tree, err: err}
-	}
-}
-
-func loadEncountersCmd(ctx context.Context, src DetailSource, gen, speciesID, pokemonID int) tea.Cmd {
-	if src == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		rows, err := src.Encounters(ctx, pokemonID)
-		return encountersMsg{gen: gen, speciesID: speciesID, rows: rows, err: err}
-	}
-}
-
-func loadMovesCmd(ctx context.Context, src DetailSource, gen, speciesID int, pokemon domain.Pokemon) tea.Cmd {
-	if src == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		rows, err := src.LevelUpMoves(ctx, pokemon)
-		return movesMsg{gen: gen, speciesID: speciesID, rows: rows, err: err}
+		d, err := src.LoadDossier(ctx, speciesID)
+		return dossierMsg{gen: gen, speciesID: speciesID, dossier: d, err: err}
 	}
 }
 
@@ -102,5 +50,25 @@ func loadSpriteCmd(ctx context.Context, src SpriteRenderer, reqID, gen, speciesI
 			ansi:        ansi,
 			placeholder: placeholder || ansi == "",
 		}
+	}
+}
+
+type warmProgressMsg struct {
+	Done    int
+	Total   int
+	Message string
+	closed  bool
+}
+
+func listenWarmProgress(ch <-chan WarmProgress) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		p, ok := <-ch
+		if !ok {
+			return warmProgressMsg{closed: true}
+		}
+		return warmProgressMsg{Done: p.Done, Total: p.Total, Message: p.Message}
 	}
 }

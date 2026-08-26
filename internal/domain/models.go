@@ -42,7 +42,9 @@ func (s Stats) Total() int {
 }
 
 type Sprites struct {
-	FrontDefault string
+	FrontDefault    string
+	HomeFront       string
+	OfficialArtwork string
 }
 
 type Species struct {
@@ -170,4 +172,21 @@ type SpeciesSummary struct {
 	Slug        string
 	DisplayName string
 	Types       []string
+	// SpritePath is a cache-relative path hint, e.g. sprites/025-pikachu/front_default.png.
+	SpritePath string
+}
+
+// LevelUpMove is a resolved level-up learnset row for dossier / moves UI.
+type LevelUpMove struct {
+	Level int
+	Move  Move
+}
+
+// Dossier is the per-species detail bundle persisted as dossier.json.
+type Dossier struct {
+	Pokemon      Pokemon
+	Species      Species
+	Evolution    *EvolutionTree // nil when unavailable
+	Encounters   []Encounter
+	LevelUpMoves []LevelUpMove
 }

@@ -24,6 +24,33 @@ type Options struct {
 	Context  context.Context
 	// DisableSprite forces the sprite panel off regardless of terminal size.
 	DisableSprite bool
+	// Warmer is an optional priority sprite prewarm service.
+	Warmer SpriteWarmer
+	// DossierWarmer is an optional priority dossier prewarm service.
+	DossierWarmer DossierWarmer
+	// WarmEvents receives progress updates from the warmer (optional).
+	WarmEvents <-chan WarmProgress
+}
+
+// SpriteWarmer prioritizes background chafa precomputation.
+type SpriteWarmer interface {
+	Prioritize(speciesID int)
+	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+	SetCells(cells int)
+	Snapshot() (done, total int)
+}
+
+// DossierWarmer prioritizes background dossier assembly.
+type DossierWarmer interface {
+	Prioritize(speciesID int)
+	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+}
+
+// WarmProgress is a TUI-friendly warm status snapshot.
+type WarmProgress struct {
+	Done    int
+	Total   int
+	Message string
 }
 
 // Model is the Bubble Tea browse state machine.
@@ -54,8 +81,16 @@ type Model struct {
 	trackedID    int
 	resources    map[int]*resourceCache
 
-	spriteCancel context.CancelFunc
-	spriteReqID  int
+	spriteCancel      context.CancelFunc
+	spriteReqID       int
+	spriteLoadSpecies int
+
+	warmer        SpriteWarmer
+	dossierWarmer DossierWarmer
+	warmEvents    <-chan WarmProgress
+	warmDone      int
+	warmTotal     int
+	warmActive    bool
 
 	showHelp   bool
 	showDialog bool
@@ -79,11 +114,14 @@ func NewModel(opts Options) Model {
 		},
 		resources:     make(map[int]*resourceCache),
 		browseView:    BrowseSprite,
-		dialogSection: DialogMoves,
+		dialogSection: DialogSummary,
 		keys:          defaultKeyMap(),
 		help:          newHelpModel(),
 		search:        newSearchInput(),
 		dialogVP:      newContentViewport(),
+		warmer:        opts.Warmer,
+		dossierWarmer: opts.DossierWarmer,
+		warmEvents:    opts.WarmEvents,
 	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)
@@ -155,7 +193,8 @@ func newContentViewport() viewport.Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.ensureSelectionLoads()
+	m.notifyWarmer()
+	return tea.Batch(m.ensureSelectionLoads(), listenWarmProgress(m.warmEvents))
 }
 
 func (m *Model) layout() LayoutFlags {

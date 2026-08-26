@@ -156,12 +156,16 @@ func Header(name string, id int, width int) string {
 }
 
 // Footer renders the compact hint line (wireframe wording).
-func Footer(verbose bool, width int) string {
+// warmHint, when non-empty, is appended as a short status suffix.
+func Footer(verbose bool, width int, warmHint string) string {
 	var text string
 	if verbose {
-		text = " Type to filter • ↑↓ move • Tab view • Enter/i details • Esc clear • q quit"
+		text = " Type to filter • ↑↓ move • Enter/i details • Esc clear • q quit"
 	} else {
-		text = " type • ↑↓ • Tab • Enter/i • Esc • q"
+		text = " type • ↑↓ • Enter/i • Esc • q"
+	}
+	if warmHint != "" {
+		text = text + " • " + warmHint
 	}
 	return mutedSty().Render(textwidth.PadRight(textwidth.Truncate(text, width), width))
 }
@@ -173,7 +177,7 @@ func HelpOverlay(body string, width, height int) string {
 		body = strings.Join([]string{
 			"Browse help",
 			"",
-			"Type to filter • ↑/↓ move • Tab view",
+			"Type to filter • ↑/↓ move",
 			"Enter/i details • Esc clear • q quit",
 			"",
 			"Press Esc or ? to close",

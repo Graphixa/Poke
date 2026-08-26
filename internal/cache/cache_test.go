@@ -190,6 +190,14 @@ func TestEnsureIndexStartupPolicy(t *testing.T) {
 	if err != nil || stale || len(index) != 1 {
 		t.Fatalf("index=%v stale=%v err=%v", index, stale, err)
 	}
+	// Thin index returns before type enrich; wait for enrich to finish.
+	if err := svc.EnrichTypes(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	index, err = svc.SpeciesIndex(context.Background())
+	if err != nil || len(index) != 1 || len(index[0].Types) == 0 || index[0].Types[0] != "electric" {
+		t.Fatalf("enriched index=%#v err=%v", index, err)
+	}
 
 	// Fresh cache: EnsureIndex must not hit the network again.
 	api.listErr = errors.New("network should not be used")
@@ -293,7 +301,7 @@ func TestEnvelopeRoundTripJSON(t *testing.T) {
 	if err := json.Unmarshal(raw, &env); err != nil {
 		t.Fatal(err)
 	}
-	if env["schema_version"].(float64) != 1 || env["source"] != "pokeapi" {
+	if env["schema_version"].(float64) != 2 || env["source"] != "pokeapi" {
 		t.Fatalf("envelope = %#v", env)
 	}
 }

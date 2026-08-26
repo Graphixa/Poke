@@ -29,6 +29,11 @@ type Engine struct {
 	Color      ColorMode
 	SourceKind SpriteSource
 	Background color.RGBA
+	// HDOff disables HD assets for the native image renderer.
+	// When false (default), native uses home/artwork URLs.
+	HDOff bool
+	// Quality defaults to interactive; warm service sets QualityPrewarm.
+	Quality QualityProfile
 	// FrameW/FrameH override the fixed frame; zero uses FrameWidth/FrameHeight.
 	FrameW int
 	FrameH int
@@ -46,7 +51,7 @@ func (e *Engine) memory() *ansiMemCache {
 		return nil
 	}
 	e.memOnce.Do(func() {
-		e.mem = newANSIMemCache(128)
+		e.mem = newANSIMemCache(256)
 	})
 	return e.mem
 }
@@ -66,10 +71,18 @@ func (e *Engine) ClearNative() {
 	}
 }
 
-// Render converts front_default into a sprite frame. cells is the square edge
-// requested by the TUI (bucketed); when ≤0 the engine's configured/default
-// frame size is used.
+// Render converts a sprite into a frame. cells is the square edge requested by
+// the TUI (bucketed); when ≤0 the engine's configured/default frame size is used.
 func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
+	return e.renderAtQuality(ctx, pokemon, cells, "", "")
+}
+
+// WarmRender forces the chafa backend at prewarm quality (background warm path).
+func (e *Engine) WarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
+	return e.renderAtQuality(ctx, pokemon, cells, QualityPrewarm, ModeChafa)
+}
+
+func (e *Engine) renderAtQuality(ctx context.Context, pokemon domain.Pokemon, cells int, quality QualityProfile, forceMode RenderMode) RenderResult {
 	if e == nil {
 		return RenderResult{UsePlaceholder: true}
 	}
@@ -77,44 +90,43 @@ func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) 
 		return RenderResult{UsePlaceholder: true}
 	}
 	fw, fh := e.frameSize()
-	// cells is the longest-side step from the TUI (min..max); map to visual 1:1.
 	if cells >= MinFrameSize {
 		fw, fh = FrameSizeFor(cells)
 	}
 	label := displayName(pokemon)
 
-	if e.Preference == ModeOff {
+	pref := e.Preference
+	if forceMode != "" {
+		pref = forceMode
+	}
+	if pref == ModeOff {
 		return e.placeholderResult(label, fw, fh)
 	}
 
-	if e.Source == nil {
-		return e.placeholderResult(label, fw, fh)
-	}
-	res := e.Source.Resolve(ctx, pokemon)
-	if res.UsePlaceholder || len(res.PNG) == 0 {
-		return e.placeholderResult(label, fw, fh)
-	}
-	if err := ctx.Err(); err != nil {
-		return RenderResult{UsePlaceholder: true}
-	}
-
-	img, err := DecodeImage(res.PNG)
-	if err != nil {
-		debuglog.Renderf("sprite decode fail pokemon=%d err=%v", pokemon.ID, err)
-		return e.placeholderResult(label, fw, fh)
-	}
-
-	opts := e.renderOptions(label, fw, fh, res.ContentHash)
-	return e.renderChain(ctx, img, opts, pokemon.ID)
+	opts := e.renderOptions(label, fw, fh, "", quality)
+	return e.renderChain(ctx, pokemon, opts, pokemon.ID, pref)
 }
 
-func (e *Engine) renderChain(ctx context.Context, img image.Image, opts RenderOptions, pokemonID int) RenderResult {
+// RenderChafa forces the chafa text backend at the engine's configured quality.
+func (e *Engine) RenderChafa(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
+	return e.renderAtQuality(ctx, pokemon, cells, "", ModeChafa)
+}
+
+func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts RenderOptions, pokemonID int, preference RenderMode) RenderResult {
 	if e.Modes == nil || len(e.Modes.Renderers) == 0 {
 		return e.placeholderResult(opts.Label, opts.Width, opts.Height)
 	}
+	if e.Source == nil {
+		return e.placeholderResult(opts.Label, opts.Width, opts.Height)
+	}
 
-	start := e.Modes.Resolve(e.Caps, e.Preference)
+	start := e.Modes.Resolve(e.Caps, preference)
 	started := false
+	var (
+		lastTier AssetTier = -1
+		img      image.Image
+		hash     string
+	)
 	for _, rend := range e.Modes.Renderers {
 		if !started {
 			if start == nil || rend.Name() != start.Name() {
@@ -122,8 +134,6 @@ func (e *Engine) renderChain(ctx context.Context, img image.Image, opts RenderOp
 			}
 			started = true
 		}
-		// Explicit preference may start on a class that caps mark unsupported;
-		// attempt it once, then require Supported for later fallbacks.
 		if !rend.Supported(e.Caps) && (start == nil || rend.Name() != start.Name()) {
 			continue
 		}
@@ -131,11 +141,39 @@ func (e *Engine) renderChain(ctx context.Context, img image.Image, opts RenderOp
 			return RenderResult{UsePlaceholder: true}
 		}
 
-		// Cache text backends (not native image).
+		tier := AssetTierPixel
+		if rend.Name() == "image" && !e.HDOff {
+			tier = AssetTierHD
+		}
+		if img == nil || tier != lastTier {
+			res := e.Source.Resolve(ctx, pokemon, tier)
+			if res.UsePlaceholder || len(res.PNG) == 0 {
+				if rend.Name() == "image" {
+					if e.OnNativeFail != nil {
+						e.OnNativeFail()
+					}
+					continue
+				}
+				return e.placeholderResult(opts.Label, opts.Width, opts.Height)
+			}
+			decoded, err := DecodeImage(res.PNG)
+			if err != nil {
+				debuglog.Renderf("sprite decode fail pokemon=%d err=%v", pokemonID, err)
+				if rend.Name() == "image" {
+					continue
+				}
+				return e.placeholderResult(opts.Label, opts.Width, opts.Height)
+			}
+			img = decoded
+			hash = res.ContentHash
+			lastTier = tier
+			opts.ContentHash = hash
+		}
+
 		key := ""
 		if rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "" {
 			color := effectiveColor(opts.ColorMode, e.Caps)
-			key = CacheKey(opts.ContentHash, opts.Source, rend.Name(), opts.Width, opts.Height, color)
+			key = CacheKey(opts.ContentHash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
 			if cached, ok := e.memory().Get(key); ok {
 				debuglog.Renderf("%s mem cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
 				return RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name()}
@@ -193,7 +231,7 @@ func (e *Engine) placeholderResult(label string, w, h int) RenderResult {
 	return RenderResult{UsePlaceholder: true, Backend: "placeholder"}
 }
 
-func (e *Engine) renderOptions(label string, fw, fh int, hash string) RenderOptions {
+func (e *Engine) renderOptions(label string, fw, fh int, hash string, quality QualityProfile) RenderOptions {
 	bg := e.Background
 	if bg.A == 0 {
 		bg = DefaultBackground
@@ -206,6 +244,12 @@ func (e *Engine) renderOptions(label string, fw, fh int, hash string) RenderOpti
 	if color == "" {
 		color = ColorAuto
 	}
+	if quality == "" {
+		quality = e.Quality
+	}
+	if quality == "" {
+		quality = QualityInteractive
+	}
 	return RenderOptions{
 		Width:           fw,
 		Height:          fh,
@@ -215,6 +259,7 @@ func (e *Engine) renderOptions(label string, fw, fh int, hash string) RenderOpti
 		Source:          source,
 		Label:           label,
 		ContentHash:     hash,
+		Quality:         quality,
 	}
 }
 

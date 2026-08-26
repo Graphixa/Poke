@@ -78,6 +78,14 @@ func mapPokemon(dto pokemonDTO) (domain.Pokemon, error) {
 	if dto.Sprites.FrontDefault != nil {
 		p.Sprites.FrontDefault = *dto.Sprites.FrontDefault
 	}
+	if dto.Sprites.Other != nil {
+		if dto.Sprites.Other.Home != nil && dto.Sprites.Other.Home.FrontDefault != nil {
+			p.Sprites.HomeFront = *dto.Sprites.Other.Home.FrontDefault
+		}
+		if dto.Sprites.Other.OfficialArtwork != nil && dto.Sprites.Other.OfficialArtwork.FrontDefault != nil {
+			p.Sprites.OfficialArtwork = *dto.Sprites.Other.OfficialArtwork.FrontDefault
+		}
+	}
 	for _, t := range dto.Types {
 		p.Types = append(p.Types, domain.TypeSlot{Slot: t.Slot, Name: t.Type.Name})
 	}

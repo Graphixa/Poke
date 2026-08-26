@@ -24,8 +24,9 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 		Stdout: stdout,
 		Stderr: stderr,
 		Cache: cli.CacheCommandsFuncs{
-			RefreshFunc: func(context.Context) error { refreshed++; return nil },
-			ClearFunc:   func() error { cleared++; return nil },
+			RefreshFunc:     func(context.Context) error { refreshed++; return nil },
+			ClearFunc:       func() error { cleared++; return nil },
+			WarmSpritesFunc: func(context.Context) error { return nil },
 		},
 	})
 
@@ -38,6 +39,10 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	root.SetArgs([]string{"cache", "clear"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	root.SetArgs([]string{"cache", "warm-sprites"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}

@@ -18,6 +18,11 @@ type detailCache interface {
 	Move(context.Context, int) (domain.Move, error)
 }
 
+type dossierCache interface {
+	Dossier(context.Context, int) (domain.Dossier, error)
+	DossierWithSlug(context.Context, int, string) (domain.Dossier, error)
+}
+
 // PokemonDetail is the aggregated pokemon + species pair for info/stats.
 type PokemonDetail struct {
 	Pokemon domain.Pokemon
@@ -32,15 +37,81 @@ type LevelUpMove struct {
 
 // DetailService loads cache-backed Pokémon details without exposing API DTOs.
 type DetailService struct {
-	cache detailCache
+	cache   detailCache
+	dossier dossierCache
 }
 
 func NewDetailService(cache detailCache) *DetailService {
-	return &DetailService{cache: cache}
+	d := &DetailService{cache: cache}
+	if dc, ok := cache.(dossierCache); ok {
+		d.dossier = dc
+	}
+	return d
+}
+
+// LoadDossier returns the full per-species dossier (Enter/detail path).
+func (d *DetailService) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
+	if d.dossier != nil {
+		return d.dossier.Dossier(ctx, speciesID)
+	}
+	return d.assembleFallback(ctx, speciesID)
+}
+
+// LoadDossierWithSlug prefers a known slug for the on-disk dossier path.
+func (d *DetailService) LoadDossierWithSlug(ctx context.Context, speciesID int, slug string) (domain.Dossier, error) {
+	if d.dossier != nil {
+		return d.dossier.DossierWithSlug(ctx, speciesID, slug)
+	}
+	return d.assembleFallback(ctx, speciesID)
+}
+
+func (d *DetailService) assembleFallback(ctx context.Context, speciesID int) (domain.Dossier, error) {
+	detail, err := d.Load(ctx, speciesID)
+	if err != nil {
+		return domain.Dossier{}, err
+	}
+	out := domain.Dossier{Pokemon: detail.Pokemon, Species: detail.Species}
+	if tree, evoErr := d.Evolution(ctx, detail.Species); evoErr == nil {
+		out.Evolution = &tree
+	}
+	if enc, encErr := d.Encounters(ctx, detail.Pokemon.ID); encErr == nil {
+		out.Encounters = enc
+	}
+	if moves, moveErr := d.LevelUpMoves(ctx, detail.Pokemon); moveErr == nil {
+		out.LevelUpMoves = make([]domain.LevelUpMove, len(moves))
+		for i, m := range moves {
+			out.LevelUpMoves[i] = domain.LevelUpMove{Level: m.Level, Move: m.Move}
+		}
+	}
+	return out, nil
 }
 
 // Load fetches species then the default Pokémon variety.
+// Preferring dossier when present keeps Enter/CLI paths coherent.
 func (d *DetailService) Load(ctx context.Context, speciesID int) (PokemonDetail, error) {
+	if d.dossier != nil {
+		dossier, err := d.dossier.Dossier(ctx, speciesID)
+		if err == nil {
+			return PokemonDetail{Pokemon: dossier.Pokemon, Species: dossier.Species}, nil
+		}
+	}
+	return d.loadSpeciesPokemon(ctx, speciesID)
+}
+
+// PokemonForSprite loads default-variety pokemon for sprite warm without assembling a dossier.
+func (d *DetailService) PokemonForSprite(ctx context.Context, speciesID int) (domain.Pokemon, error) {
+	// Enrich stores pokemon under the species id with sprite URLs — prefer that hit.
+	if p, err := d.cache.Pokemon(ctx, speciesID); err == nil && p.Sprites.FrontDefault != "" {
+		return p, nil
+	}
+	detail, err := d.loadSpeciesPokemon(ctx, speciesID)
+	if err != nil {
+		return domain.Pokemon{}, err
+	}
+	return detail.Pokemon, nil
+}
+
+func (d *DetailService) loadSpeciesPokemon(ctx context.Context, speciesID int) (PokemonDetail, error) {
 	species, err := d.cache.Species(ctx, speciesID)
 	if err != nil {
 		return PokemonDetail{}, fmt.Errorf("species %d: %w", speciesID, err)
