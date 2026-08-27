@@ -39,19 +39,14 @@ func (s *Service) NamedSprite(ctx context.Context, id int, slug, kind string) ([
 	return s.store.NamedSprite(ctx, id, slug, kind)
 }
 
-// StoreNamedSprite writes PNG bytes into the named sprite tree and mirrors a content-hash copy
-// so halfblock keys (content-hash based) keep working.
+// StoreNamedSprite writes PNG bytes into the named sprite tree only (no legacy
+// content-hash mirror — bulk warm I/O stays named-path addressed).
 func (s *Service) StoreNamedSprite(ctx context.Context, id int, slug, kind, contentHash string, data []byte) error {
 	if len(data) == 0 {
 		return errors.New("cache: refuse to store empty named sprite")
 	}
-	if err := s.store.StoreNamedSprite(ctx, id, slug, kind, data); err != nil {
-		return err
-	}
-	if contentHash != "" {
-		_ = s.store.StoreSprite(ctx, contentHash, data)
-	}
-	return nil
+	_ = contentHash // retained for API compatibility; identity is path-based
+	return s.store.StoreNamedSprite(ctx, id, slug, kind, data)
 }
 
 // Halfblock returns a cached derived sprite artefact by key.
@@ -73,6 +68,26 @@ func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
 		return err
 	}
 	return s.store.StoreHalfblock(ctx, key, []byte(ansi))
+}
+
+// Native returns a cached Kitty/iTerm/Sixel frame by key.
+func (s *Service) Native(ctx context.Context, key string) (string, error) {
+	data, err := s.store.Native(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// StoreNative persists an encoded native graphics frame (Sixel/Kitty/iTerm).
+func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
+	if key == "" {
+		return errors.New("cache: refuse to store empty native key")
+	}
+	if _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(key); err != nil {
+		return err
+	}
+	return s.store.StoreNative(ctx, key, []byte(frame))
 }
 
 func sha256Hex(s string) string {

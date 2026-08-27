@@ -38,10 +38,10 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 	resolver := &sprite.SourceResolver{Store: svc.Cache, API: svc.API}
 	workers := svc.Cache.MaxConcurrency()
 
-	warmAssets := func(ctx context.Context, mode assetwarm.Mode, index []domain.SpeciesSummary, progress cache.ProgressFunc) error {
+	warmArtwork := func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error {
 		w := assetwarm.New(assetwarm.Config{
-			Mode:    mode,
-			Workers: workers,
+			Mode:    assetwarm.ModeArtwork,
+			Workers: assetwarm.ArtworkWorkers(workers),
 			Loader:  loader,
 			Resolver: resolver,
 			Index:   index,
@@ -71,15 +71,10 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 			}
 			return index, nil
 		},
-		WarmPixels: func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error {
-			return warmAssets(ctx, assetwarm.ModePixel, index, progress)
-		},
 		EstimateHD: func(ctx context.Context, index []domain.SpeciesSummary) int64 {
 			return assetwarm.EstimateArtworkBytes(ctx, index, loader, assetwarm.HTTPSizeSampler{})
 		},
-		WarmArtwork: func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error {
-			return warmAssets(ctx, assetwarm.ModeArtwork, index, progress)
-		},
+		WarmArtwork: warmArtwork,
 		SaveConfig: func(c config.Config) error {
 			if err := config.Save(svc.Paths.ConfigFile, c); err != nil {
 				return err

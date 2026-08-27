@@ -310,3 +310,16 @@ func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 		t.Fatal(err)
 	}
 }
+
+func TestDefaultTransportTuned(t *testing.T) {
+	tr := pokeapi.DefaultTransport()
+	if tr.MaxIdleConns < 64 {
+		t.Fatalf("MaxIdleConns=%d", tr.MaxIdleConns)
+	}
+	if tr.MaxIdleConnsPerHost < 32 {
+		t.Fatalf("MaxIdleConnsPerHost=%d", tr.MaxIdleConnsPerHost)
+	}
+	if !tr.ForceAttemptHTTP2 {
+		t.Fatal("expected ForceAttemptHTTP2")
+	}
+}

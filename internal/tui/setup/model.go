@@ -1,5 +1,5 @@
-// Package setup implements the first-run Bubble Tea wizard: index fetch,
-// pixel sprite download, optional official-artwork consent and warm.
+// Package setup implements the first-run Bubble Tea wizard: index fetch and
+// optional official-artwork warm (artwork is the only product sprite source).
 package setup
 
 import (
@@ -24,10 +24,9 @@ type Step int
 const (
 	StepWelcome Step = iota
 	StepIndex
-	StepPixel
-	StepHDPrompt
+	StepArtPrompt
 	StepModePrompt
-	StepHDWarm
+	StepArtWarm
 	StepDone
 )
 
@@ -39,7 +38,6 @@ type Deps struct {
 	Protocol   string // kitty|iterm|sixel|chafa
 
 	EnsureIndex func(ctx context.Context, progress cache.ProgressFunc) ([]domain.SpeciesSummary, error)
-	WarmPixels  func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error
 	EstimateHD  func(ctx context.Context, index []domain.SpeciesSummary) int64
 	WarmArtwork func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error
 	SaveConfig  func(cfg config.Config) error
@@ -145,7 +143,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key == "enter" || key == " " {
 				return m.beginIndex()
 			}
-		case StepHDPrompt:
+		case StepArtPrompt:
 			switch key {
 			case "y", "Y", "enter":
 				return m.beginEstimate()
@@ -186,10 +184,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.index = msg.index
-		m.step = StepPixel
-		m.status = "Downloading pixel sprites"
-		m.done, m.total, m.percent = 0, len(msg.index), 0
-		return m.startPixelWarm()
+		m.step = StepArtPrompt
+		m.status = "Official artwork"
+		return m, nil
 
 	case warmDoneMsg:
 		m.stopWork()
@@ -198,15 +195,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Download failed"
 			return m, nil
 		}
-		switch m.step {
-		case StepPixel:
-			if !m.deps.Native {
-				return m.finishNoNative()
-			}
-			m.step = StepHDPrompt
-			m.status = "Official artwork"
-			return m, nil
-		case StepHDWarm:
+		if m.step == StepArtWarm {
 			return m.finishAccepted(config.ArtworkModeBlocking, false)
 		}
 
@@ -254,8 +243,8 @@ func (m Model) View() tea.View {
 
 	switch m.step {
 	case StepWelcome:
-		fmt.Fprintf(&b, "  %s\n", body.Render("Welcome! We'll download the Pokédex index and pixel sprites"))
-		fmt.Fprintf(&b, "  %s\n", body.Render("(always — they are the fallback for every terminal)."))
+		fmt.Fprintf(&b, "  %s\n", body.Render("Welcome! We'll fetch the Pokédex index, then you can"))
+		fmt.Fprintf(&b, "  %s\n", body.Render("optionally download official artwork for every species."))
 		fmt.Fprintf(&b, "\n  %s\n", ok.Render("Press Enter to continue"))
 	case StepIndex:
 		fmt.Fprintf(&b, "  %s\n\n", body.Render(m.status))
@@ -263,22 +252,18 @@ func (m Model) View() tea.View {
 		if m.total > 0 {
 			fmt.Fprintf(&b, "  %s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
 		}
-	case StepPixel:
-		fmt.Fprintf(&b, "  %s\n\n", body.Render(m.status))
-		fmt.Fprintf(&b, "  %s\n", m.prog.View())
-		fmt.Fprintf(&b, "  %s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
-	case StepHDPrompt:
-		fmt.Fprintf(&b, "  %s\n", body.Render("Your terminal can show full images (official artwork)."))
-		fmt.Fprintf(&b, "  %s\n\n", body.Render("Download HD official artwork for the whole dex?"))
-		fmt.Fprintf(&b, "  %s\n", ok.Render("[Y] Yes   [N] No — pixels only"))
+	case StepArtPrompt:
+		fmt.Fprintf(&b, "  %s\n", body.Render("Official artwork is used for sprites (native or chafa)."))
+		fmt.Fprintf(&b, "  %s\n\n", body.Render("Download the full artwork pack now?"))
+		fmt.Fprintf(&b, "  %s\n", ok.Render("[Y] Yes   [N] Skip — download on demand while browsing"))
 	case StepModePrompt:
 		fmt.Fprintf(&b, "  %s\n", warn.Render(fmt.Sprintf("Estimated download ≈ %s (over %s).",
 			assetwarm.FormatBytes(m.estimate), assetwarm.FormatBytes(assetwarm.ArtworkSizeThreshold))))
 		fmt.Fprintf(&b, "  %s\n\n", body.Render("Choose how to fetch official artwork:"))
 		fmt.Fprintf(&b, "  %s\n", ok.Render("[1] Download now (blocking)"))
-		fmt.Fprintf(&b, "  %s\n", body.Render("[2] Background — open browse; HD fills in over time"))
-		fmt.Fprintf(&b, "  %s\n", sub.Render("[N] Skip HD"))
-	case StepHDWarm:
+		fmt.Fprintf(&b, "  %s\n", body.Render("[2] Background — open browse; art fills in over time"))
+		fmt.Fprintf(&b, "  %s\n", sub.Render("[N] Skip bulk download"))
+	case StepArtWarm:
 		fmt.Fprintf(&b, "  %s\n\n", body.Render(m.status))
 		fmt.Fprintf(&b, "  %s\n", m.prog.View())
 		fmt.Fprintf(&b, "  %s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
@@ -307,27 +292,6 @@ func (m Model) beginIndex() (tea.Model, tea.Cmd) {
 	})
 }
 
-func (m Model) startPixelWarm() (tea.Model, tea.Cmd) {
-	m.stopWork()
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
-	ch := make(chan tea.Msg, 16)
-	m.events = ch
-	deps := m.deps
-	index := m.index
-	go func() {
-		err := deps.WarmPixels(ctx, index, func(p cache.Progress) {
-			select {
-			case ch <- progressMsg{done: p.Done, total: p.Total, message: p.Message}:
-			default:
-			}
-		})
-		ch <- warmDoneMsg{err: err}
-		close(ch)
-	}()
-	return m, tea.Batch(m.prog.SetPercent(0), listenEvents(ch))
-}
-
 func (m Model) beginEstimate() (tea.Model, tea.Cmd) {
 	m.status = "Estimating artwork size…"
 	m.errMsg = ""
@@ -339,7 +303,7 @@ func (m Model) beginEstimate() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) beginArtworkWarm() (tea.Model, tea.Cmd) {
-	m.step = StepHDWarm
+	m.step = StepArtWarm
 	m.status = "Downloading official artwork"
 	m.done, m.total, m.percent = 0, len(m.index), 0
 	m.errMsg = ""
@@ -381,10 +345,6 @@ func (m *Model) stopWork() {
 		m.cancel()
 		m.cancel = nil
 	}
-}
-
-func (m Model) finishNoNative() (tea.Model, tea.Cmd) {
-	return m.persistAndDone(config.ArtworkConsentDeclined, config.ArtworkModeOff, false)
 }
 
 func (m Model) finishDeclined() (tea.Model, tea.Cmd) {

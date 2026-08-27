@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/textinput"
@@ -46,7 +47,9 @@ type SpriteWarmer interface {
 // ArtworkWarmer prioritizes background official-artwork downloads.
 type ArtworkWarmer interface {
 	Prioritize(speciesID int)
-	SetNeighbors(selectedID int, radius int)
+	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+	// Ready reports whether official artwork was successfully stored for id.
+	Ready(speciesID int) bool
 }
 
 // DossierWarmer prioritizes background dossier assembly.
@@ -57,9 +60,11 @@ type DossierWarmer interface {
 
 // WarmProgress is a TUI-friendly warm status snapshot.
 type WarmProgress struct {
-	Done    int
-	Total   int
-	Message string
+	Done      int
+	Total     int
+	Message   string
+	SpeciesID int    // species that just finished a warm unit (0 if unknown)
+	Stage     string // artwork | sprites_render | dossier | …
 }
 
 // Model is the Bubble Tea browse state machine.
@@ -93,7 +98,14 @@ type Model struct {
 	spriteCancel      context.CancelFunc
 	spriteReqID       int
 	spriteLoadSpecies int
+	prefetchCancel    context.CancelFunc
+	prefetchGen       int
 	nativePaintPending bool
+	nativeOverlayDirty bool
+	nativeNeedsFollowUp bool
+	nativePaintSpecies  int
+	nativePaintCells    int
+	nativePaintANSI     string
 
 	warmer        SpriteWarmer
 	artworkWarmer ArtworkWarmer
@@ -102,6 +114,8 @@ type Model struct {
 	warmDone      int
 	warmTotal     int
 	warmActive    bool
+	warmHint      string
+	warmHintAt    time.Time
 
 	pokemonSrc PokemonSource
 
@@ -357,6 +371,9 @@ func (m *Model) bumpSelection() {
 	if m.sprites != nil {
 		m.sprites.ClearNative()
 	}
+	// Sixel ClearNative is a no-op — dirty so scheduleNativeOverlay wipes the
+	// previous species' graphics when the new selection has no frame yet.
+	m.markNativeOverlayDirtyFollowUp()
 }
 
 func (m *Model) ensureResource(id int) *resourceCache {

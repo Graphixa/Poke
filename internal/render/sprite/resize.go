@@ -10,7 +10,14 @@ import (
 
 // Resize maps src into tw×th using the algorithm appropriate for source kind.
 // When fit is true, aspect ratio is preserved and the result is centred on bg.
+// Artwork uses ApproxBiLinear (interactive default); call ResizeWithQuality for
+// CatmullRom on prewarm.
 func Resize(src *image.RGBA, tw, th int, source SpriteSource, fit bool, bg color.RGBA) *image.RGBA {
+	return ResizeWithQuality(src, tw, th, source, QualityInteractive, fit, bg)
+}
+
+// ResizeWithQuality is Resize with an explicit quality profile for artwork scalers.
+func ResizeWithQuality(src *image.RGBA, tw, th int, source SpriteSource, quality QualityProfile, fit bool, bg color.RGBA) *image.RGBA {
 	if tw < 1 {
 		tw = 1
 	}
@@ -21,23 +28,23 @@ func Resize(src *image.RGBA, tw, th int, source SpriteSource, fit bool, bg color
 		bg = DefaultBackground
 	}
 	if !fit {
-		return resizeFill(src, tw, th, source)
+		return resizeFill(src, tw, th, source, quality)
 	}
-	return resizeFit(src, tw, th, source, bg)
+	return resizeFit(src, tw, th, source, quality, bg)
 }
 
-func resizeFill(src *image.RGBA, tw, th int, source SpriteSource) *image.RGBA {
+func resizeFill(src *image.RGBA, tw, th int, source SpriteSource, quality QualityProfile) *image.RGBA {
 	dst := image.NewRGBA(image.Rect(0, 0, tw, th))
 	sb := src.Bounds()
 	if sb.Empty() {
 		return dst
 	}
-	scaler := scalerFor(source)
+	scaler := scalerFor(source, quality)
 	scaler.Scale(dst, dst.Bounds(), src, sb, xdraw.Src, nil)
 	return dst
 }
 
-func resizeFit(src *image.RGBA, tw, th int, source SpriteSource, bg color.RGBA) *image.RGBA {
+func resizeFit(src *image.RGBA, tw, th int, source SpriteSource, quality QualityProfile, bg color.RGBA) *image.RGBA {
 	dst := image.NewRGBA(image.Rect(0, 0, tw, th))
 	draw.Draw(dst, dst.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
 
@@ -65,7 +72,7 @@ func resizeFit(src *image.RGBA, tw, th int, source SpriteSource, bg color.RGBA) 
 	oy := (th - dh) / 2
 
 	fitted := image.NewRGBA(image.Rect(0, 0, dw, dh))
-	scaler := scalerFor(source)
+	scaler := scalerFor(source, quality)
 	scaler.Scale(fitted, fitted.Bounds(), src, sb, xdraw.Src, nil)
 	draw.Draw(dst, image.Rect(ox, oy, ox+dw, oy+dh), fitted, image.Point{}, draw.Src)
 	return dst
@@ -107,7 +114,7 @@ func ResizeCover(src *image.RGBA, tw, th int, source SpriteSource, bg color.RGBA
 		dh = 1
 	}
 	scaled := image.NewRGBA(image.Rect(0, 0, dw, dh))
-	scaler := scalerFor(source)
+	scaler := scalerFor(source, QualityInteractive)
 	scaler.Scale(scaled, scaled.Bounds(), src, sb, xdraw.Src, nil)
 
 	ox := (dw - tw) / 2
@@ -116,9 +123,13 @@ func ResizeCover(src *image.RGBA, tw, th int, source SpriteSource, bg color.RGBA
 	return dst
 }
 
-func scalerFor(source SpriteSource) xdraw.Interpolator {
+func scalerFor(source SpriteSource, quality QualityProfile) xdraw.Interpolator {
 	if source == SourceArtwork {
-		return xdraw.CatmullRom // high-quality downsampling (Lanczos-class)
+		if quality == QualityPrewarm {
+			return xdraw.CatmullRom
+		}
+		// Interactive browse: ApproxBiLinear is much cheaper than CatmullRom.
+		return xdraw.ApproxBiLinear
 	}
 	return xdraw.NearestNeighbor
 }

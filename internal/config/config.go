@@ -77,7 +77,8 @@ type Render struct {
 	// SpriteMode selects sprite output: auto | off.
 	// auto = native image when supported, else chafa, else placeholder.
 	SpriteMode string `yaml:"sprite_mode"`
-	// SpriteSource selects pixel (nearest) or artwork (filtered) assets.
+	// SpriteSource selects pixel (nearest) or artwork (filtered) resize/assets.
+	// Product default is artwork; pixel remains for tests and fallbacks.
 	SpriteSource string `yaml:"sprite_source"`
 	// Color selects colour encoding: auto | truecolor | 256 | mono
 	Color string `yaml:"color"`
@@ -114,7 +115,7 @@ func Default() Config {
 		},
 		Render: Render{
 			SpriteMode:    "auto",
-			SpriteSource:  "pixel",
+			SpriteSource:  "artwork",
 			Color:         "auto",
 			SpritePrewarm: "window",
 			SpriteHD:      "auto",
@@ -231,7 +232,8 @@ func (c Config) EffectiveDossierPrewarm() string {
 	}
 }
 
-// SpriteHDEnabled reports whether native rendering may fetch HD assets.
+// SpriteHDEnabled reports whether bulk artwork warm is allowed.
+// Resolve always prefers official artwork; this gates pack download only.
 func (c Config) SpriteHDEnabled() bool {
 	return c.Render.SpriteHD != "off"
 }

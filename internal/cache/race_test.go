@@ -13,10 +13,11 @@ import (
 func TestEnrichCancellationDoesNotLeak(t *testing.T) {
 	api := &fakeAPI{
 		list: []domain.SpeciesSummary{
-			{ID: 1, Slug: "a", DisplayName: "A"},
-			{ID: 2, Slug: "b", DisplayName: "B"},
-			{ID: 3, Slug: "c", DisplayName: "C"},
-			{ID: 4, Slug: "d", DisplayName: "D"},
+			// IDs outside the national seed so enrich still runs GetPokemon.
+			{ID: 900001, Slug: "a", DisplayName: "A"},
+			{ID: 900002, Slug: "b", DisplayName: "B"},
+			{ID: 900003, Slug: "c", DisplayName: "C"},
+			{ID: 900004, Slug: "d", DisplayName: "D"},
 		},
 		pokemonFn: func(id int) (domain.Pokemon, error) {
 			return domain.Pokemon{ID: id, Slug: "x", Types: []domain.TypeSlot{{Slot: 1, Name: "normal"}}}, nil

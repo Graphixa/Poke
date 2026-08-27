@@ -141,17 +141,23 @@ type spriteAdapter struct {
 	*sprite.Engine
 }
 
-func (s spriteAdapter) Render(ctx context.Context, pokemon domain.Pokemon, cells int) (string, bool, bool) {
+func (s spriteAdapter) Render(ctx context.Context, pokemon domain.Pokemon, cells int) (string, bool, bool, string) {
 	if s.Engine == nil {
-		return "", true, false
+		return "", true, false, ""
 	}
 	res := s.Engine.Render(ctx, pokemon, cells)
-	return res.ANSI, res.UsePlaceholder, res.Native
+	return res.ANSI, res.UsePlaceholder, res.Native, res.AssetKind
 }
 
 func (s spriteAdapter) ClearNative() {
 	if s.Engine != nil {
 		s.Engine.ClearNative()
+	}
+}
+
+func (s spriteAdapter) InvalidateSpecies(speciesID int) {
+	if s.Engine != nil {
+		s.Engine.InvalidateSpecies(speciesID)
 	}
 }
 

@@ -56,10 +56,6 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 		threshold = 16
 	}
 
-	// Trim transparent PNG margins and lock a 1:1 subject crop, then shrink
-	// uniformly into a square sample grid (no distort).
-	cropped := sprite.CropToContentSquare(src, threshold, 1)
-	prepared := sprite.Prepare(cropped, bg, threshold)
 	// Sample isotropically. opts.Width×Height should already be cell-aspect
 	// corrected (e.g. 32×16) so Stretch into that grid is visually square.
 	sampleSide := max(w, h) * samplesPerCell
@@ -71,7 +67,8 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 			sampleSide *= 2
 		}
 	}
-	scaled := sprite.Resize(prepared, sampleSide, sampleSide, opts.Source, true, bg)
+	// Square artwork: downsample then Prepare; non-square: CropAndPrepare then Resize.
+	scaled := sprite.PrepareEncodeSrc(src, sampleSide, sampleSide, opts.Source, bg, threshold, 1)
 
 	if err := ctx.Err(); err != nil {
 		return sprite.Frame{}, err

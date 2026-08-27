@@ -19,7 +19,7 @@ type fakeSprites struct {
 	started chan struct{}
 }
 
-func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (string, bool, bool) {
+func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (string, bool, bool, string) {
 	f.calls.Add(1)
 	if f.started != nil {
 		select {
@@ -30,17 +30,19 @@ func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (stri
 	if f.block != nil {
 		select {
 		case <-ctx.Done():
-			return "", true, false
+			return "", true, false, ""
 		case <-f.block:
 		}
 	}
 	if f.ansi == "" {
-		return "SPRITE", false, false
+		return "SPRITE", false, false, "artwork"
 	}
-	return f.ansi, false, false
+	return f.ansi, false, false, "artwork"
 }
 
 func (f *fakeSprites) ClearNative() {}
+
+func (f *fakeSprites) InvalidateSpecies(int) {}
 
 func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	details := &fakeDetails{}
@@ -218,3 +220,96 @@ func TestTypingDoesNotBlockOnSprite(t *testing.T) {
 	}
 	close(sprites.block)
 }
+
+func TestWarmProgressPopsInSelectedSprite(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "POP"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, ok := m.SelectedID()
+	if !ok {
+		t.Fatal("expected selection")
+	}
+	cells := m.CurrentSpriteCells()
+	// Sticky placeholder as if the first encode ran before artwork landed.
+	ph := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), id, cells, "", true)
+	updated, _ = m.Update(ph)
+	m = updated.(tui.Model)
+	if !m.SelectedSpritePlaceholderForTest() {
+		t.Fatal("expected placeholder")
+	}
+	if m.HasSpriteANSI() {
+		t.Fatal("placeholder should not count as art")
+	}
+
+	before := m.SpriteReqID()
+	updated, cmd := m.Update(tui.WarmProgressSpeciesMsgForTest(1, 10, id))
+	m = updated.(tui.Model)
+	if cmd == nil {
+		t.Fatal("expected reload cmd when warm finishes selected species")
+	}
+	if m.SpriteReqID() <= before && !m.SelectedSpriteLoadingForTest() {
+		t.Fatal("expected sprite reload after warm for selected species")
+	}
+
+	// Other species finishing must not thrash the selected sprite.
+	before = m.SpriteReqID()
+	loading := m.SelectedSpriteLoadingForTest()
+	updated, _ = m.Update(tui.WarmProgressSpeciesMsgForTest(2, 10, id+99))
+	m = updated.(tui.Model)
+	if !loading && m.SpriteReqID() != before {
+		t.Fatal("warm for other species should not bump selected sprite req")
+	}
+}
+
+func TestWarmProgressUpgradesNonPlaceholderPixel(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "HD"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	// First paint succeeded with pixel-tier art (non-placeholder).
+	px := tui.SpriteMsgKindForTest(m.SpriteReqID(), m.SelectionGen(), id, cells, "PIXEL", "pixel", false)
+	updated, _ = m.Update(px)
+	m = updated.(tui.Model)
+	if !m.HasSpriteANSI() {
+		t.Fatal("expected pixel art showing")
+	}
+
+	before := m.SpriteReqID()
+	updated, cmd := m.Update(tui.WarmProgressSpeciesMsgForTest(3, 10, id))
+	m = updated.(tui.Model)
+	if cmd == nil {
+		t.Fatal("artwork warm must upgrade pixel frame without scrolling")
+	}
+	if m.SpriteReqID() <= before && !m.SelectedSpriteLoadingForTest() {
+		t.Fatal("expected reload after artwork warm for pixel-showing selection")
+	}
+
+	// Already artwork: warm should no-op.
+	art := tui.SpriteMsgKindForTest(m.SpriteReqID(), m.SelectionGen(), id, cells, "ART", "artwork", false)
+	updated, _ = m.Update(art)
+	m = updated.(tui.Model)
+	before = m.SpriteReqID()
+	updated, cmd = m.Update(tui.WarmProgressSpeciesMsgForTest(4, 10, id))
+	m = updated.(tui.Model)
+	if m.SpriteReqID() != before {
+		t.Fatal("artwork frame should not reload on artwork warm")
+	}
+	// cmd may still be listenWarmProgress batch with nil reload
+	_ = cmd
+}
+

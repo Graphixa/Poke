@@ -161,6 +161,21 @@ func (s *Store) StoreHalfblock(_ context.Context, key string, data []byte) error
 	return writeAtomic(s.halfblockPath(key), data, 0o600)
 }
 
+func (s *Store) Native(_ context.Context, key string) ([]byte, error) {
+	data, err := os.ReadFile(s.nativePath(key))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (s *Store) StoreNative(_ context.Context, key string, data []byte) error {
+	return writeAtomic(s.nativePath(key), data, 0o600)
+}
+
 func bytesTrimSpace(b []byte) []byte {
 	i, j := 0, len(b)
 	for i < j && (b[i] == ' ' || b[i] == '\n' || b[i] == '\r' || b[i] == '\t') {
@@ -322,6 +337,9 @@ func (s *Store) spriteURLPath(urlHash string) string {
 }
 func (s *Store) halfblockPath(key string) string {
 	return filepath.Join(s.root, "halfblock", key+".ansi")
+}
+func (s *Store) nativePath(key string) string {
+	return filepath.Join(s.root, "native", key+".frame")
 }
 
 func (s *Store) resourcePath(kind string, id int) (string, error) {

@@ -50,10 +50,23 @@ type Options struct {
 	Cache          CacheCommands
 	Theme          ThemeHandler
 	Reset          ResetHandler
+	RenderTest     RenderTestHandler
 	Stdout         io.Writer
 	Stderr         io.Writer
 	// OnDebug is invoked when --debug is set. path may be empty for the default log file.
 	OnDebug func(path string) error
+}
+
+// RenderTestHandler runs the chafa vs halfblock vs termimg compare command.
+type RenderTestHandler interface {
+	RunRenderTest(context.Context, RenderTestRequest) error
+}
+
+// RenderTestRequest is defined in app but mirrored here for CLI wiring.
+type RenderTestRequest struct {
+	Target     string
+	Iterations int
+	SkipVisual bool
 }
 
 // ThemeHandler launches the interactive theme selector.
@@ -169,6 +182,35 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newRandomCommand(options))
 	cmd.AddCommand(newThemeCommand(options))
 	cmd.AddCommand(newResetCommand(options))
+	cmd.AddCommand(newTestCommand(options))
+	return cmd
+}
+
+func newTestCommand(options Options) *cobra.Command {
+	var iters int
+	var benchOnly bool
+	cmd := &cobra.Command{
+		Use:   "test [pokemon]",
+		Short: "Compare chafa vs halfblock (imgcat-style) vs termimg at three sizes",
+		Long:  "DEV: visual side-by-side + timed drag race for sprite renderers. Default subject is Pikachu (#25).",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if options.RenderTest == nil {
+				return fmt.Errorf("poke test is unavailable")
+			}
+			target := ""
+			if len(args) == 1 {
+				target = args[0]
+			}
+			return options.RenderTest.RunRenderTest(cmd.Context(), RenderTestRequest{
+				Target:     target,
+				Iterations: iters,
+				SkipVisual: benchOnly,
+			})
+		},
+	}
+	cmd.Flags().IntVar(&iters, "iters", 30, "timed iterations per backend/size")
+	cmd.Flags().BoolVar(&benchOnly, "bench", false, "timings only (skip visual dumps)")
 	return cmd
 }
 
@@ -307,8 +349,8 @@ func newCacheCommand(options Options) *cobra.Command {
 	})
 	parent.AddCommand(&cobra.Command{
 		Use:   "warm-sprites",
-		Short: "Precompute pixel sprite chafa artefacts for the local cache",
-		Long:  "Downloads front_default PNGs (when missing) and renders chafa ANSI artefacts into the user cache. Does not ship or redistribute sprites; all work is local.",
+		Short: "Download official artwork PNGs into the local cache",
+		Long:  "Fetches official-artwork PNGs for the national dex into the user cache. Does not ship or redistribute sprites; all work is local.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if options.Cache == nil {

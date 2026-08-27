@@ -1,6 +1,9 @@
 package sprite
 
-import "sync"
+import (
+	"sync"
+	"strings"
+)
 
 // ansiMemCache is a tiny process-local LRU for rendered ANSI frames so
 // selection changes that re-hit the same key skip disk and Chafa work.
@@ -66,4 +69,22 @@ func (c *ansiMemCache) Put(key, ansi string) {
 	}
 	c.items[key] = ansi
 	c.order = append(c.order, key)
+}
+
+// InvalidatePrefix removes all keys that contain substr (species named keys).
+func (c *ansiMemCache) InvalidatePrefix(substr string) {
+	if c == nil || substr == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	kept := c.order[:0]
+	for _, k := range c.order {
+		if strings.Contains(k, substr) {
+			delete(c.items, k)
+			continue
+		}
+		kept = append(kept, k)
+	}
+	c.order = kept
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 // detailCache is the subset of cache.Service used for inline detail aggregation.
@@ -21,6 +22,10 @@ type detailCache interface {
 type dossierCache interface {
 	Dossier(context.Context, int) (domain.Dossier, error)
 	DossierWithSlug(context.Context, int, string) (domain.Dossier, error)
+}
+
+type coreWarmer interface {
+	WarmCore(context.Context, int) error
 }
 
 // PokemonDetail is the aggregated pokemon + species pair for info/stats.
@@ -39,12 +44,16 @@ type LevelUpMove struct {
 type DetailService struct {
 	cache   detailCache
 	dossier dossierCache
+	core    coreWarmer
 }
 
 func NewDetailService(cache detailCache) *DetailService {
 	d := &DetailService{cache: cache}
 	if dc, ok := cache.(dossierCache); ok {
 		d.dossier = dc
+	}
+	if cw, ok := cache.(coreWarmer); ok {
+		d.core = cw
 	}
 	return d
 }
@@ -55,6 +64,15 @@ func (d *DetailService) LoadDossier(ctx context.Context, speciesID int) (domain.
 		return d.dossier.Dossier(ctx, speciesID)
 	}
 	return d.assembleFallback(ctx, speciesID)
+}
+
+// WarmCore caches pokemon+species for browse headers without full dossier assemble.
+func (d *DetailService) WarmCore(ctx context.Context, speciesID int) error {
+	if d.core != nil {
+		return d.core.WarmCore(ctx, speciesID)
+	}
+	_, err := d.Load(ctx, speciesID)
+	return err
 }
 
 // LoadDossierWithSlug prefers a known slug for the on-disk dossier path.
@@ -100,15 +118,29 @@ func (d *DetailService) Load(ctx context.Context, speciesID int) (PokemonDetail,
 
 // PokemonForSprite loads default-variety pokemon for sprite warm without assembling a dossier.
 func (d *DetailService) PokemonForSprite(ctx context.Context, speciesID int) (domain.Pokemon, error) {
-	// Enrich stores pokemon under the species id with sprite URLs — prefer that hit.
-	if p, err := d.cache.Pokemon(ctx, speciesID); err == nil && p.Sprites.FrontDefault != "" {
+	// Prefer pokemon/{speciesID} first — national-dex default variety usually shares
+	// that id, so we avoid a Species round-trip on the warm/artwork path.
+	if p, err := d.cache.Pokemon(ctx, speciesID); err == nil && (p.Sprites.FrontDefault != "" || p.Sprites.OfficialArtwork != "") {
+		stampArtworkCDN(&p)
 		return p, nil
 	}
 	detail, err := d.loadSpeciesPokemon(ctx, speciesID)
 	if err != nil {
 		return domain.Pokemon{}, err
 	}
+	stampArtworkCDN(&detail.Pokemon)
 	return detail.Pokemon, nil
+}
+
+// stampArtworkCDN ensures interactive resolve prefers official artwork CDN even
+// when the cached pokemon row only has FrontDefault.
+func stampArtworkCDN(p *domain.Pokemon) {
+	if p == nil || p.ID < 1 {
+		return
+	}
+	if p.Sprites.OfficialArtwork == "" {
+		p.Sprites.OfficialArtwork = sprite.CDNArtworkURL(p.ID)
+	}
 }
 
 func (d *DetailService) loadSpeciesPokemon(ctx context.Context, speciesID int) (PokemonDetail, error) {

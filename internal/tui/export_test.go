@@ -45,7 +45,15 @@ func DossierMsgForTest(gen, speciesID int, dossier domain.Dossier, err error) do
 func SpriteMsgForTest(reqID, gen, speciesID, cells int, ansi string, placeholder bool) spriteMsg {
 	return spriteMsg{
 		reqID: reqID, gen: gen, speciesID: speciesID, cells: cells,
-		ansi: ansi, placeholder: placeholder,
+		ansi: ansi, placeholder: placeholder, assetKind: "artwork",
+	}
+}
+
+// SpriteMsgKindForTest builds a sprite message with an explicit asset kind.
+func SpriteMsgKindForTest(reqID, gen, speciesID, cells int, ansi, kind string, placeholder bool) spriteMsg {
+	return spriteMsg{
+		reqID: reqID, gen: gen, speciesID: speciesID, cells: cells,
+		ansi: ansi, placeholder: placeholder, assetKind: kind,
 	}
 }
 
@@ -60,8 +68,39 @@ func WarmProgressMsgForTest(done, total int) warmProgressMsg {
 	return warmProgressMsg{Done: done, Total: total, Message: "warming"}
 }
 
+// WarmProgressSpeciesMsgForTest builds a warm tick for a finished species.
+func WarmProgressSpeciesMsgForTest(done, total, speciesID int) warmProgressMsg {
+	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: "artwork"}
+}
+
+// WarmProgressSpeciesStageMsgForTest builds a warm tick with an explicit stage.
+func WarmProgressSpeciesStageMsgForTest(done, total, speciesID int, stage string) warmProgressMsg {
+	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: stage}
+}
+
 // NativePaintPendingForTest reports whether a native overlay tick is queued.
 func (m Model) NativePaintPendingForTest() bool { return m.nativePaintPending }
+
+// NativePaintANSIForTest returns the last painted native sequence (test helper).
+func (m Model) NativePaintANSIForTest() string { return m.nativePaintANSI }
+
+// NativeOverlayDirtyForTest reports whether a native re-paint is requested.
+func (m Model) NativeOverlayDirtyForTest() bool { return m.nativeOverlayDirty }
+
+// NativeOverlayFollowUpForTest builds the single delayed re-paint message.
+func NativeOverlayFollowUpForTest() nativeOverlayMsg {
+	return nativeOverlayMsg{followUp: true}
+}
+
+// ClearCellRectForTest exports clearCellRect for overlay tests.
+func ClearCellRectForTest(row, col, w, h int) string {
+	return clearCellRect(row, col, w, h)
+}
+
+// BrowseWarmHintForTest returns the warm hint that would appear in the browse footer.
+func (m Model) BrowseWarmHintForTest() string {
+	return m.browseData().WarmHint
+}
 
 // SpriteReqID exposes the current sprite request id for tests.
 func (m Model) SpriteReqID() int { return m.spriteReqID }
@@ -74,6 +113,26 @@ func (m Model) HasSpriteANSI() bool {
 	}
 	r := m.resources[sel.ID]
 	return r != nil && r.HasSprite && r.SpriteANSI != ""
+}
+
+// SelectedSpritePlaceholderForTest reports sticky placeholder state.
+func (m Model) SelectedSpritePlaceholderForTest() bool {
+	sel, ok := m.selected()
+	if !ok {
+		return false
+	}
+	r := m.resources[sel.ID]
+	return r != nil && r.SpritePlaceholder
+}
+
+// SelectedSpriteLoadingForTest reports whether a sprite encode is in flight.
+func (m Model) SelectedSpriteLoadingForTest() bool {
+	sel, ok := m.selected()
+	if !ok {
+		return false
+	}
+	r := m.resources[sel.ID]
+	return r != nil && r.loadingSprite
 }
 
 // CurrentSpriteCells exposes the active sprite cell size for tests.
@@ -93,5 +152,18 @@ func (m Model) HeaderLoading() bool {
 // EnsureDossierLoadForTest runs ensureDossierLoad (for dialog race tests).
 func (m *Model) EnsureDossierLoadForTest() tea.Cmd { return m.ensureDossierLoad() }
 
-// EnsureSelectionLoadsForTest runs ensureSelectionLoads (sprite-only on browse).
-func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.ensureSelectionLoads() }
+// EnsureSelectionLoadsForTest runs the selected-species sprite load only
+// (prefetch is tested separately).
+func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.ensureSpriteLoad() }
+
+// ScheduleSpritePrefetchForTest starts neighbor sprite encodes.
+func (m *Model) ScheduleSpritePrefetchForTest() tea.Cmd { return m.scheduleSpritePrefetch() }
+
+// PrefetchGenForTest exposes the prefetch generation counter.
+func (m Model) PrefetchGenForTest() int { return m.prefetchGen }
+
+// BumpPrefetchGenForTest cancels in-flight prefetch and advances the generation.
+func (m *Model) BumpPrefetchGenForTest() {
+	m.cancelPrefetch()
+	m.prefetchGen++
+}

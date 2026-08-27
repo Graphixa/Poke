@@ -9,6 +9,7 @@ import (
 	"image"
 	_ "image/png"
 	"io"
+	"strings"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
@@ -17,9 +18,9 @@ import (
 type AssetTier int
 
 const (
-	// AssetTierPixel uses front_default (small game sprites) for chafa.
+	// AssetTierPixel uses front_default (small game sprites).
 	AssetTierPixel AssetTier = iota
-	// AssetTierHD prefers official artwork, then home, then front_default.
+	// AssetTierHD prefers official artwork CDN, then silent Home/pixel fallbacks.
 	AssetTierHD
 )
 
@@ -51,6 +52,7 @@ type SourceResult struct {
 	ContentHash    string
 	PNG            []byte
 	URL            string
+	AssetKind      string // "artwork" | "pixel"
 	UsePlaceholder bool
 }
 
@@ -65,46 +67,118 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 
 	if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
 		if data, err := named.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind); err == nil && len(data) > 0 {
-			if ValidatePNG(data) == nil {
-				hash := ContentHash(data)
-				return SourceResult{ContentHash: hash, PNG: data, URL: URLForTier(pokemon, t)}
+			// Trust named on-disk tree; DecodeImage will fail if corrupt.
+			hash := NamedAssetKey(pokemon.ID, pokemon.Slug, kind)
+			url := URLForTier(pokemon, t)
+			if url == "" {
+				url = fallbackCDNURL(pokemon.ID, t)
 			}
+			return SourceResult{ContentHash: hash, PNG: data, URL: url, AssetKind: kind}
 		}
 	}
 
-	url := URLForTier(pokemon, t)
-	if url == "" {
+	urls := resolveURLs(pokemon, t)
+	if len(urls) == 0 {
 		return SourceResult{UsePlaceholder: true}
 	}
-	if r.Store != nil {
-		hash, data, err := r.Store.SpriteByURL(ctx, url)
-		if err == nil && len(data) > 0 {
-			if ValidatePNG(data) == nil {
+	for _, tryURL := range urls {
+		storeKind := storeKindForURL(t, tryURL, pokemon)
+		if r.Store != nil {
+			hash, data, err := r.Store.SpriteByURL(ctx, tryURL)
+			if err == nil && len(data) > 0 && ValidatePNG(data) == nil {
 				if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
-					_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, kind, hash, data)
+					_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
 				}
-				return SourceResult{ContentHash: hash, PNG: data, URL: url}
+				if pokemon.ID != 0 {
+					hash = NamedAssetKey(pokemon.ID, pokemon.Slug, storeKind)
+				}
+				return SourceResult{ContentHash: hash, PNG: data, URL: tryURL, AssetKind: storeKind}
 			}
 		}
-	}
-	if r.API == nil {
-		return SourceResult{UsePlaceholder: true}
-	}
-	data, err := download(ctx, r.API, url)
-	if err != nil || len(data) == 0 {
-		return SourceResult{UsePlaceholder: true}
-	}
-	if err := ValidatePNG(data); err != nil {
-		return SourceResult{UsePlaceholder: true}
-	}
-	hash := ContentHash(data)
-	if r.Store != nil {
-		_ = r.Store.StoreSpriteByURL(ctx, url, hash, data)
-		if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
-			_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, kind, hash, data)
+		if r.API == nil {
+			continue
 		}
+		data, err := download(ctx, r.API, tryURL)
+		if err != nil || len(data) == 0 || ValidatePNG(data) != nil {
+			continue
+		}
+		hash := ContentHash(data)
+		if r.Store != nil {
+			if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
+				_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
+			} else {
+				_ = r.Store.StoreSpriteByURL(ctx, tryURL, hash, data)
+			}
+		}
+		if pokemon.ID != 0 {
+			hash = NamedAssetKey(pokemon.ID, pokemon.Slug, storeKind)
+		}
+		return SourceResult{ContentHash: hash, PNG: data, URL: tryURL, AssetKind: storeKind}
 	}
-	return SourceResult{ContentHash: hash, PNG: data, URL: url}
+	return SourceResult{UsePlaceholder: true}
+}
+
+// resolveURLs lists preferred then silent fallback URLs for a tier.
+func resolveURLs(pokemon domain.Pokemon, tier AssetTier) []string {
+	urls := make([]string, 0, 5)
+	seen := map[string]struct{}{}
+	add := func(u string) {
+		if u == "" {
+			return
+		}
+		if _, ok := seen[u]; ok {
+			return
+		}
+		seen[u] = struct{}{}
+		urls = append(urls, u)
+	}
+	if tier == AssetTierHD {
+		add(pokemon.Sprites.OfficialArtwork)
+		add(CDNArtworkURL(pokemon.ID))
+		add(pokemon.Sprites.HomeFront)
+		add(pokemon.Sprites.FrontDefault)
+		add(CDNPixelURL(pokemon.ID))
+		return urls
+	}
+	add(URLForTier(pokemon, tier))
+	add(fallbackCDNURL(pokemon.ID, tier))
+	return urls
+}
+
+// storeKindForURL chooses the named on-disk kind. Pixel fallbacks under HD must
+// never poison the official-artwork tree.
+func storeKindForURL(tier AssetTier, url string, pokemon domain.Pokemon) string {
+	if tier != AssetTierHD {
+		return "pixel"
+	}
+	if isArtworkURL(url, pokemon) {
+		return "artwork"
+	}
+	return "pixel"
+}
+
+func isArtworkURL(url string, pokemon domain.Pokemon) bool {
+	if url == "" {
+		return false
+	}
+	if pokemon.Sprites.OfficialArtwork != "" && url == pokemon.Sprites.OfficialArtwork {
+		return true
+	}
+	if art := CDNArtworkURL(pokemon.ID); art != "" && url == art {
+		return true
+	}
+	// Home fronts are HD-class; keep under artwork only when explicitly home URL.
+	if pokemon.Sprites.HomeFront != "" && url == pokemon.Sprites.HomeFront {
+		return true
+	}
+	return strings.Contains(url, "/official-artwork/")
+}
+
+func fallbackCDNURL(id int, tier AssetTier) string {
+	if tier == AssetTierHD {
+		return CDNArtworkURL(id)
+	}
+	return CDNPixelURL(id)
 }
 
 func namedKindForTier(tier AssetTier) string {
@@ -115,27 +189,27 @@ func namedKindForTier(tier AssetTier) string {
 }
 
 // URLForTier picks the best sprite URL for the given asset tier.
+// HD: OfficialArtwork, else CDN artwork (never FrontDefault ahead of CDN).
 func URLForTier(pokemon domain.Pokemon, tier AssetTier) string {
 	switch tier {
 	case AssetTierHD:
 		if pokemon.Sprites.OfficialArtwork != "" {
 			return pokemon.Sprites.OfficialArtwork
 		}
-		if pokemon.Sprites.HomeFront != "" {
-			return pokemon.Sprites.HomeFront
-		}
-		return pokemon.Sprites.FrontDefault
+		return CDNArtworkURL(pokemon.ID)
 	default:
-		return pokemon.Sprites.FrontDefault
+		if pokemon.Sprites.FrontDefault != "" {
+			return pokemon.Sprites.FrontDefault
+		}
+		return CDNPixelURL(pokemon.ID)
 	}
 }
 
 // TierForRenderer returns the asset tier for a logical renderer class.
+// Product path uses official artwork for both native and chafa.
 func TierForRenderer(name string) AssetTier {
-	if name == "image" {
-		return AssetTierHD
-	}
-	return AssetTierPixel
+	_ = name
+	return AssetTierHD
 }
 
 // ValidatePNG reports whether data is a decodable PNG image.

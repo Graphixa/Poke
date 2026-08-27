@@ -24,6 +24,7 @@ type memStore struct {
 	byURL    map[string]string
 	png      map[string][]byte
 	artefact map[string]string
+	native   map[string]string
 }
 
 func newMemStore() *memStore {
@@ -31,6 +32,7 @@ func newMemStore() *memStore {
 		byURL:    make(map[string]string),
 		png:      make(map[string][]byte),
 		artefact: make(map[string]string),
+		native:   make(map[string]string),
 	}
 }
 
@@ -70,6 +72,23 @@ func (m *memStore) StoreHalfblock(_ context.Context, key, ansi string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.artefact[key] = ansi
+	return nil
+}
+
+func (m *memStore) Native(_ context.Context, key string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.native[key]
+	if !ok {
+		return "", errors.New("not found")
+	}
+	return v, nil
+}
+
+func (m *memStore) StoreNative(_ context.Context, key, frame string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.native[key] = frame
 	return nil
 }
 
@@ -230,11 +249,14 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 }
 
 func TestURLForTier(t *testing.T) {
-	p := domain.Pokemon{Sprites: domain.Sprites{
-		FrontDefault:    "https://pixel.png",
-		HomeFront:       "https://home.png",
-		OfficialArtwork: "https://art.png",
-	}}
+	p := domain.Pokemon{
+		ID: 25,
+		Sprites: domain.Sprites{
+			FrontDefault:    "https://pixel.png",
+			HomeFront:       "https://home.png",
+			OfficialArtwork: "https://art.png",
+		},
+	}
 	if got := sprite.URLForTier(p, sprite.AssetTierPixel); got != "https://pixel.png" {
 		t.Fatalf("pixel = %q", got)
 	}
@@ -242,12 +264,39 @@ func TestURLForTier(t *testing.T) {
 		t.Fatalf("hd art = %q", got)
 	}
 	p.Sprites.OfficialArtwork = ""
-	if got := sprite.URLForTier(p, sprite.AssetTierHD); got != "https://home.png" {
-		t.Fatalf("hd home = %q", got)
+	// Without OfficialArtwork, prefer CDN artwork over Home/FrontDefault.
+	if got := sprite.URLForTier(p, sprite.AssetTierHD); got != sprite.CDNArtworkURL(25) {
+		t.Fatalf("hd cdn = %q want %q", got, sprite.CDNArtworkURL(25))
 	}
+	p.Sprites.FrontDefault = ""
 	p.Sprites.HomeFront = ""
-	if got := sprite.URLForTier(p, sprite.AssetTierHD); got != "https://pixel.png" {
-		t.Fatalf("hd fallback = %q", got)
+	if got := sprite.URLForTier(p, sprite.AssetTierPixel); got != sprite.CDNPixelURL(25) {
+		t.Fatalf("cdn pixel = %q", got)
+	}
+	if got := sprite.URLForTier(p, sprite.AssetTierHD); got != sprite.CDNArtworkURL(25) {
+		t.Fatalf("cdn art = %q", got)
+	}
+}
+
+func TestNamedHitUsesNamedAssetKey(t *testing.T) {
+	png := mustPNG(t, color.RGBA{9, 9, 9, 255})
+	store := newNamedMemStore()
+	if err := store.StoreNamedSprite(context.Background(), 7, "squirtle", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	res := (&sprite.SourceResolver{Store: store}).Resolve(context.Background(), domain.Pokemon{
+		ID: 7, Slug: "squirtle",
+	}, sprite.AssetTierPixel)
+	want := sprite.NamedAssetKey(7, "squirtle", "pixel")
+	if res.ContentHash != want {
+		t.Fatalf("hash=%q want %q", res.ContentHash, want)
+	}
+	if res.UsePlaceholder || len(res.PNG) == 0 {
+		t.Fatalf("bad result %+v", res)
+	}
+	// Must not equal raw SHA of PNG (named path skips ContentHash).
+	if res.ContentHash == sprite.ContentHash(png) {
+		t.Fatal("named hit should not use SHA content hash")
 	}
 }
 
@@ -307,6 +356,89 @@ func (s *stubNativeRenderer) Render(_ context.Context, _ image.Image, _ sprite.R
 		return sprite.Frame{}, s.err
 	}
 	return sprite.Frame{Text: "NATIVE", Backend: "image", Native: true}, nil
+}
+
+func TestEngineNativeMemCacheSkipsSecondEncode(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			native,
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeAuto,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+		HDOff:      true,
+	}
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	res1 := engine.Render(context.Background(), poke, 24)
+	if !res1.Native || res1.ANSI != "NATIVE" {
+		t.Fatalf("first render: %+v", res1)
+	}
+	if native.renders != 1 {
+		t.Fatalf("renders=%d after first", native.renders)
+	}
+	res2 := engine.Render(context.Background(), poke, 24)
+	if !res2.Native || res2.ANSI != "NATIVE" {
+		t.Fatalf("second render: %+v", res2)
+	}
+	if native.renders != 1 {
+		t.Fatalf("mem hit must skip encode, renders=%d", native.renders)
+	}
+}
+
+func TestEngineNativeDiskCacheSkipsEncodeOnFreshEngine(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	mk := func() *sprite.Engine {
+		return &sprite.Engine{
+			Source: &sprite.SourceResolver{Store: store},
+			Modes: sprite.NewModeResolver(
+				native,
+				spritechafa.Renderer{},
+				placeholder.Renderer{},
+			),
+			Artefacts:  store,
+			Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+			Preference: sprite.ModeAuto,
+			Color:      sprite.ColorTrueColor,
+			SourceKind: sprite.SourcePixel,
+			Background: color.RGBA{A: 255},
+			HDOff:      true,
+		}
+	}
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	res1 := mk().Render(context.Background(), poke, 24)
+	if !res1.Native || res1.ANSI != "NATIVE" {
+		t.Fatalf("first render: %+v", res1)
+	}
+	if native.renders != 1 {
+		t.Fatalf("renders=%d after first", native.renders)
+	}
+	if _, err := store.Native(context.Background(), res1.CacheKey); err != nil {
+		t.Fatalf("expected native disk store: %v", err)
+	}
+	res2 := mk().Render(context.Background(), poke, 24)
+	if !res2.Native || res2.ANSI != "NATIVE" {
+		t.Fatalf("second engine render: %+v", res2)
+	}
+	if native.renders != 1 {
+		t.Fatalf("disk hit must skip encode, renders=%d", native.renders)
+	}
 }
 
 func TestEngineNativeCancelDoesNotDisable(t *testing.T) {

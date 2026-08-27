@@ -436,16 +436,17 @@ func spriteArtGeometry(d BrowseData, width, maxH int) (artW, artH, outerW, outer
 }
 
 // SpriteArtOrigin returns the 1-indexed terminal CUP row/col of the sprite art
-// box for native overlay painting. ok is false when the sprite is not shown.
-func SpriteArtOrigin(d BrowseData) (row, col int, ok bool) {
+// box for native overlay painting, plus the art cell size for clearing.
+// ok is false when the sprite is not shown.
+func SpriteArtOrigin(d BrowseData) (row, col, artW, artH int, ok bool) {
 	if !d.ShowSprite || !d.SpriteNative {
-		return 0, 0, false
+		return 0, 0, 0, 0, false
 	}
 	if d.TooSmall || d.OnePane || d.ShowHelp || d.ShowDialog || d.BrowseView != 0 {
-		return 0, 0, false
+		return 0, 0, 0, 0, false
 	}
 	if d.Width < 1 || d.Height < 1 {
-		return 0, 0, false
+		return 0, 0, 0, 0, false
 	}
 
 	footerH := 1
@@ -455,7 +456,7 @@ func SpriteArtOrigin(d BrowseData) (row, col int, ok bool) {
 	}
 	leftW, rightW := d.LeftWidth, d.RightWidth
 	if leftW < 1 || rightW < 1 {
-		return 0, 0, false
+		return 0, 0, 0, 0, false
 	}
 	rightContentW := rightW - 1
 	if rightContentW < 10 {
@@ -472,17 +473,17 @@ func SpriteArtOrigin(d BrowseData) (row, col int, ok bool) {
 	if bodyAvail < 3 {
 		bodyAvail = 3
 	}
-	_, _, _, _, padX, padY, centerLeft := spriteArtGeometry(d, rightContentW, bodyAvail)
+	aw, ah, _, _, padX, padY, centerLeft := spriteArtGeometry(d, rightContentW, bodyAvail)
 
 	// Combined frame: row 1 = top border; content rows start at 2.
 	// Right pane content starts at column leftW+2 (after left border, left
 	// content, and the centre separator).
 	row = 2 + headerBlock + padY
 	col = leftW + 2 + centerLeft + padX
-	if row < 1 || col < 1 {
-		return 0, 0, false
+	if row < 1 || col < 1 || aw < 1 || ah < 1 {
+		return 0, 0, 0, 0, false
 	}
-	return row, col, true
+	return row, col, aw, ah, true
 }
 
 func padFrame(inner string, artW, artH, outerW, outerH int, native bool) string {

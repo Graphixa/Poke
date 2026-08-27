@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Graphixa/Pokedex/internal/cache/typeseed"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -17,10 +18,11 @@ const enrichIndexBatchSize = 50
 
 // Progress reports refresh work without coupling to CLI or TUI rendering.
 type Progress struct {
-	Stage   string
-	Done    int
-	Total   int
-	Message string
+	Stage     string
+	Done      int
+	Total     int
+	Message   string
+	SpeciesID int // optional: species that just finished (warmers)
 }
 
 // ProgressFunc receives progress updates during refresh. It must be safe for
@@ -95,6 +97,7 @@ func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index
 	index, fetchedAt, err := s.loadIndex()
 	if err == nil && len(index) > 0 {
 		stale = s.isStale(fetchedAt, s.cfg.Cache.IndexTTL.Duration)
+		index, _ = typeseed.Apply(index)
 		return index, stale, nil
 	}
 	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrCorrupt) {
@@ -110,7 +113,14 @@ func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index
 	if len(index) == 0 {
 		return nil, false, ErrEmpty
 	}
-	// Types enrich in background so browse is not blocked.
+	index, missing := typeseed.Apply(index)
+	if len(missing) == 0 {
+		// Persist seeded types so disk matches what browse shows.
+		_ = s.store.StoreSpeciesIndex(ctx, index, s.clock.Now())
+		return index, false, nil
+	}
+	_ = s.store.StoreSpeciesIndex(ctx, index, s.clock.Now())
+	// Only gap-fill IDs the seed does not know.
 	s.BackgroundEnrich(ctx, progress)
 	return index, false, nil
 }
@@ -120,14 +130,10 @@ func (s *Service) ShouldBackgroundRefresh(stale bool) bool {
 	return stale && s.cfg.Cache.AutoRefresh
 }
 
-// NeedsTypeEnrichment reports whether any index row still lacks types.
+// NeedsTypeEnrichment reports whether any index row still lacks types after seeding.
 func NeedsTypeEnrichment(index []domain.SpeciesSummary) bool {
-	for _, sum := range index {
-		if len(sum.Types) == 0 {
-			return true
-		}
-	}
-	return false
+	_, missing := typeseed.Apply(append([]domain.SpeciesSummary(nil), index...))
+	return len(missing) > 0
 }
 
 // BackgroundRefresh starts at most one in-flight Refresh. It does not block the caller.
@@ -204,6 +210,7 @@ func (s *Service) refreshIndexOnce(ctx context.Context, progress ProgressFunc) e
 	if loadErr == nil {
 		summaries = mergeTypeHints(summaries, existing)
 	}
+	summaries, _ = typeseed.Apply(summaries)
 	now := s.clock.Now()
 	if err := s.store.StoreSpeciesIndex(ctx, summaries, now); err != nil {
 		return err
@@ -217,7 +224,8 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 		idx int
 		sum domain.SpeciesSummary
 	}
-	jobs := make([]job, 0, len(summaries))
+	summaries, _ = typeseed.Apply(summaries)
+	jobs := make([]job, 0)
 	for i, sum := range summaries {
 		if len(sum.Types) == 0 {
 			jobs = append(jobs, job{idx: i, sum: sum})
@@ -225,6 +233,7 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 	}
 	total := len(jobs)
 	if total == 0 {
+		_ = s.store.StoreSpeciesIndex(ctx, summaries, s.clock.Now())
 		report(progress, Progress{Stage: "enrich", Done: 0, Total: 0, Message: "Types already enriched"})
 		return nil
 	}
@@ -283,8 +292,6 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 			for _, t := range pokemon.Types {
 				types = append(types, t.Name)
 			}
-
-			_ = s.store.StorePokemon(ctx, pokemon, s.clock.Now())
 
 			mu.Lock()
 			index[j.idx].Types = types

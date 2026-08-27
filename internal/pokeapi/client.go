@@ -28,7 +28,20 @@ const (
 	maxResponseBytes = 8 << 20 // 8 MiB
 	maxSpriteBytes   = 4 << 20 // 4 MiB
 	listPageLimit    = 200
+
+	// Idle connection pool sized for bulk CDN GETs (artwork warm).
+	defaultMaxIdleConns        = 64
+	defaultMaxIdleConnsPerHost = 32
 )
+
+// DefaultTransport returns an HTTP transport tuned for concurrent API + CDN fetches.
+func DefaultTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConns = defaultMaxIdleConns
+	t.MaxIdleConnsPerHost = defaultMaxIdleConnsPerHost
+	t.ForceAttemptHTTP2 = true
+	return t
+}
 
 // Client is a direct PokeAPI REST v2 client. Transport DTOs never leave this package.
 type Client struct {
@@ -73,7 +86,10 @@ func NewClient(opts Options) *Client {
 	}
 	httpClient := opts.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: timeout}
+		httpClient = &http.Client{
+			Timeout:   timeout,
+			Transport: DefaultTransport(),
+		}
 	}
 	sleeper := opts.Sleeper
 	if sleeper == nil {

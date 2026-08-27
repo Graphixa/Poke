@@ -25,7 +25,7 @@ func BackgroundHash(bg color.RGBA) string {
 //
 //	<hash>-<source>-<mode>-<w>x<h>-<color>-<bg>-<version>
 //
-// Example: 004abc-pixel-chafa-32x16-truecolor-000000-v7
+// Example: 004abc-pixel-chafa-32x16-truecolor-000000-v10
 func CacheKey(contentHash string, source SpriteSource, mode string, w, h int, color ColorMode, bg color.RGBA) string {
 	if source == "" {
 		source = SourcePixel
@@ -58,4 +58,55 @@ func ParseCacheKey(key string) (hash string, source SpriteSource, mode string, w
 		return "", "", "", 0, 0, "", "", "", fmt.Errorf("sprite: invalid cache key %q", key)
 	}
 	return hash, source, mode, w, h, color, bgHash, version, nil
+}
+
+// NativeCacheKey builds a filesystem-safe identity for Kitty/iTerm/Sixel frames:
+//
+//	<hash>-image[-<proto>]-<w>x<h>-<bg>-<version>
+//
+// Example: named-25-pikachu-artwork-image-sixel-40x20-313244-v10
+func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA) string {
+	tag := "image"
+	if proto != "" {
+		tag = "image-" + proto
+	}
+	return fmt.Sprintf("%s-%s-%dx%d-%s-%s",
+		contentHash, tag, w, h, BackgroundHash(bg), AlgorithmVersion)
+}
+
+// ParseNativeCacheKey splits a key produced by NativeCacheKey.
+func ParseNativeCacheKey(key string) (hash, proto string, w, h int, bgHash, version string, err error) {
+	if key == "" || strings.Contains(key, "..") || strings.ContainsAny(key, `/\`) {
+		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+	}
+	parts := strings.Split(key, "-")
+	// hash + image + dim + bg + version = at least 5; proto optional.
+	if len(parts) < 5 {
+		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+	}
+	version = parts[len(parts)-1]
+	bgHash = parts[len(parts)-2]
+	dim := parts[len(parts)-3]
+	if _, err = fmt.Sscanf(dim, "%dx%d", &w, &h); err != nil || w < 1 || h < 1 {
+		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid dimensions in native key %q", key)
+	}
+	dimIdx := len(parts) - 3
+	imageIdx := -1
+	for i := dimIdx - 1; i >= 0; i-- {
+		if parts[i] == "image" {
+			imageIdx = i
+			break
+		}
+	}
+	if imageIdx < 0 || bgHash == "" || version == "" {
+		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+	}
+	if imageIdx+1 < dimIdx {
+		proto = strings.Join(parts[imageIdx+1:dimIdx], "-")
+	}
+	hash = strings.Join(parts[:imageIdx], "-")
+	if hash == "" {
+		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+	}
+	return hash, proto, w, h, bgHash, version, nil
 }

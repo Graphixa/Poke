@@ -24,7 +24,8 @@ func TestChafaRenderer(t *testing.T) {
 		ColorMode:       sprite.ColorTrueColor,
 		BackgroundColor: color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255},
 		AlphaThreshold:  16,
-		Source:          sprite.SourcePixel,
+		Source:          sprite.SourceArtwork,
+		Quality:         sprite.QualityInteractive,
 	})
 	if err != nil {
 		t.Fatal(err)

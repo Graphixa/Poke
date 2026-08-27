@@ -6,6 +6,7 @@ package dossierwarm
 import (
 	"container/heap"
 	"context"
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,11 @@ type Loader interface {
 	LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error)
 }
 
+// CoreLoader warms pokemon+species only (window mode).
+type CoreLoader interface {
+	WarmCore(ctx context.Context, speciesID int) error
+}
+
 // ProgressFunc receives warm progress updates.
 type ProgressFunc func(cache.Progress)
 
@@ -43,8 +49,10 @@ type Config struct {
 	Mode     Mode
 	Workers  int
 	Loader   Loader
-	Index    []domain.SpeciesSummary
-	Progress ProgressFunc
+	// CoreLoader, when set, is used for ModeWindow instead of full LoadDossier.
+	CoreLoader CoreLoader
+	Index      []domain.SpeciesSummary
+	Progress   ProgressFunc
 }
 
 // Service owns the priority dossier warm queue.
@@ -88,7 +96,10 @@ func New(cfg Config) *Service {
 
 // Start launches worker goroutines.
 func (s *Service) Start(ctx context.Context) {
-	if s == nil || s.cfg.Mode == ModeOff || s.cfg.Loader == nil {
+	if s == nil || s.cfg.Mode == ModeOff {
+		return
+	}
+	if s.cfg.Loader == nil && s.cfg.CoreLoader == nil {
 		return
 	}
 	if !s.started.CompareAndSwap(false, true) {
@@ -221,7 +232,14 @@ func (s *Service) runJob(ctx context.Context, id int) {
 	if ctx.Err() != nil {
 		return
 	}
-	_, err := s.cfg.Loader.LoadDossier(ctx, id)
+	var err error
+	if s.cfg.Mode == ModeWindow && s.cfg.CoreLoader != nil {
+		err = s.cfg.CoreLoader.WarmCore(ctx, id)
+	} else if s.cfg.Loader != nil {
+		_, err = s.cfg.Loader.LoadDossier(ctx, id)
+	} else {
+		err = fmt.Errorf("dossierwarm: no loader")
+	}
 	if err != nil {
 		debuglog.Cachef("dossier warm fail id=%d err=%v", id, err)
 	} else {
@@ -233,10 +251,11 @@ func (s *Service) runJob(ctx context.Context, id int) {
 	total := int(s.totalN.Load())
 	if s.cfg.Progress != nil {
 		s.cfg.Progress(cache.Progress{
-			Stage:   "dossier",
-			Done:    done,
-			Total:   total,
-			Message: "dossier warm",
+			Stage:     "dossier",
+			Done:      done,
+			Total:     total,
+			Message:   "dossier warm",
+			SpeciesID: id,
 		})
 	}
 }

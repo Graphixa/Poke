@@ -12,10 +12,12 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-// ArtefactCache stores derived text-renderer ANSI strings.
+// ArtefactCache stores derived halfblock ANSI and native graphics frames.
 type ArtefactCache interface {
 	Halfblock(ctx context.Context, key string) (string, error)
 	StoreHalfblock(ctx context.Context, key, ansi string) error
+	Native(ctx context.Context, key string) (string, error)
+	StoreNative(ctx context.Context, key, frame string) error
 }
 
 // ClearNativeFunc clears prior native image placements (best-effort).
@@ -31,8 +33,8 @@ type Engine struct {
 	Color      ColorMode
 	SourceKind SpriteSource
 	Background color.RGBA
-	// HDOff disables HD assets for the native image renderer.
-	// When false (default), native uses home/artwork URLs.
+	// HDOff forces pixel-tier assets (tests / explicit pixel SourceKind).
+	// Product browse leaves this false — consent gates bulk warm only.
 	HDOff bool
 	// Quality defaults to interactive; warm service sets QualityPrewarm.
 	Quality QualityProfile
@@ -53,7 +55,7 @@ func (e *Engine) memory() *ansiMemCache {
 		return nil
 	}
 	e.memOnce.Do(func() {
-		e.mem = newANSIMemCache(256)
+		e.mem = newANSIMemCache(512)
 	})
 	return e.mem
 }
@@ -66,6 +68,8 @@ type RenderResult struct {
 	Backend        string
 	// Native is true when ANSI embeds Kitty/iTerm/Sixel graphics sequences.
 	Native bool
+	// AssetKind is "artwork" or "pixel" for the PNG that was encoded.
+	AssetKind string
 }
 
 // protocolNamer is implemented by the image renderer to tag native cache keys.
@@ -80,15 +84,27 @@ func (e *Engine) ClearNative() {
 	}
 }
 
+// InvalidateSpecies drops mem-cached frames for a species so artwork pop-in
+// re-encodes after named PNGs are overwritten on disk.
+func (e *Engine) InvalidateSpecies(speciesID int) {
+	if e == nil || speciesID < 1 {
+		return
+	}
+	// NamedAssetKey format: named-{id}-{slug}-{kind}; match on named-{id}-
+	e.memory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
+}
+
 // Render converts a sprite into a frame. cells is the square edge requested by
 // the TUI (bucketed); when ≤0 the engine's configured/default frame size is used.
 func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
 	return e.renderAtQuality(ctx, pokemon, cells, "", "")
 }
 
-// WarmRender forces the chafa backend at prewarm quality (background warm path).
+// WarmRender forces the chafa backend at interactive (fast) quality for
+// background warm. Full Mosaic prewarm is too expensive and unused on native
+// terminals (browse skips chafa warm when NativeImage is set).
 func (e *Engine) WarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
-	return e.renderAtQuality(ctx, pokemon, cells, QualityPrewarm, ModeChafa)
+	return e.renderAtQuality(ctx, pokemon, cells, QualityInteractive, ModeChafa)
 }
 
 func (e *Engine) renderAtQuality(ctx context.Context, pokemon domain.Pokemon, cells int, quality QualityProfile, forceMode RenderMode) RenderResult {
@@ -132,9 +148,10 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 	start := e.Modes.Resolve(e.Caps, preference)
 	started := false
 	var (
-		lastTier AssetTier = -1
-		img      image.Image
-		hash     string
+		lastTier  AssetTier = -1
+		img       image.Image
+		hash      string
+		assetKind string
 	)
 	for _, rend := range e.Modes.Renderers {
 		if !started {
@@ -150,14 +167,22 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 			return RenderResult{UsePlaceholder: true}
 		}
 
-		tier := AssetTierPixel
-		if rend.Name() == "image" && !e.HDOff {
-			tier = AssetTierHD
+		tier := AssetTierHD
+		if e.SourceKind == SourcePixel {
+			tier = AssetTierPixel
 		}
-		if img == nil || tier != lastTier {
+		if rend.Name() == "image" {
+			// Native always prefers HD with silent pixel fallback inside resolveNativeAsset.
+		} else if e.HDOff {
+			tier = AssetTierPixel
+		}
+		// Reuse decoded PNG from a prior native attempt when falling to chafa
+		// even if the preferred tier label differs (avoids double Resolve).
+		needResolve := img == nil
+		if needResolve || (tier != lastTier && rend.Name() == "image") {
 			var (
-				res      SourceResult
-				usedTier AssetTier
+				res       SourceResult
+				usedTier  AssetTier
 			)
 			if rend.Name() == "image" {
 				res, usedTier = e.resolveNativeAsset(ctx, pokemon, pokemonID)
@@ -174,6 +199,47 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 				}
 				return e.placeholderResult(opts.Label, opts.Width, opts.Height)
 			}
+			hash = res.ContentHash
+			lastTier = usedTier
+			assetKind = res.AssetKind
+			if assetKind == "" {
+				assetKind = namedKindForTier(usedTier)
+			}
+			opts.ContentHash = hash
+
+			// Mem → disk lookup before decode — avoids PNG decode on hit.
+			if hash != "" {
+				if rend.Name() == "image" {
+					key := nativeCacheKey(hash, rend, opts.Width, opts.Height, opts.BackgroundColor)
+					if cached, ok := e.memory().Get(key); ok {
+						debuglog.Renderf("%s mem cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
+						return RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
+					}
+					if e.Artefacts != nil {
+						if cached, err := e.Artefacts.Native(ctx, key); err == nil && cached != "" {
+							e.memory().Put(key, cached)
+							debuglog.Renderf("%s disk cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
+							return RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
+						}
+					}
+				} else if rend.Name() != "placeholder" {
+					color := effectiveColor(opts.ColorMode, e.Caps)
+					key := CacheKey(hash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
+					if cached, ok := e.memory().Get(key); ok {
+						debuglog.Renderf("%s mem cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
+						return RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}
+					}
+					if e.Artefacts != nil {
+						if cached, err := e.Artefacts.Halfblock(ctx, key); err == nil && cached != "" {
+							e.memory().Put(key, cached)
+							debuglog.Renderf("%s cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
+							return RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}
+						}
+					}
+					opts.ColorMode = color
+				}
+			}
+
 			decoded, err := DecodeImage(res.PNG)
 			if err != nil {
 				debuglog.Renderf("sprite decode fail pokemon=%d err=%v", pokemonID, err)
@@ -184,33 +250,15 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 				return e.placeholderResult(opts.Label, opts.Width, opts.Height)
 			}
 			img = decoded
-			hash = res.ContentHash
-			lastTier = usedTier
-			opts.ContentHash = hash
 		}
 
 		key := ""
 		switch {
 		case rend.Name() == "image" && opts.ContentHash != "":
-			key = nativeCacheKey(opts.ContentHash, rend, opts.Width, opts.Height)
-			if cached, ok := e.memory().Get(key); ok {
-				debuglog.Renderf("%s mem cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
-				return RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true}
-			}
+			key = nativeCacheKey(opts.ContentHash, rend, opts.Width, opts.Height, opts.BackgroundColor)
 		case rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "":
 			color := effectiveColor(opts.ColorMode, e.Caps)
 			key = CacheKey(opts.ContentHash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
-			if cached, ok := e.memory().Get(key); ok {
-				debuglog.Renderf("%s mem cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
-				return RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name()}
-			}
-			if e.Artefacts != nil {
-				if cached, err := e.Artefacts.Halfblock(ctx, key); err == nil && cached != "" {
-					e.memory().Put(key, cached)
-					debuglog.Renderf("%s cache hit key=%s frame=%dx%d", rend.Name(), key, opts.Width, opts.Height)
-					return RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name()}
-				}
-			}
 			opts.ColorMode = color
 		}
 
@@ -228,21 +276,20 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 			return RenderResult{UsePlaceholder: true}
 		}
 		if key != "" {
-			if frame.Native {
-				// Mem-only: never persist native graphics sequences to halfblock/.
-				e.memory().Put(key, frame.Text)
-			} else {
-				e.memory().Put(key, frame.Text)
-				if e.Artefacts != nil {
+			e.memory().Put(key, frame.Text)
+			if e.Artefacts != nil {
+				if frame.Native {
+					_ = e.Artefacts.StoreNative(ctx, key, frame.Text)
+				} else {
 					_ = e.Artefacts.StoreHalfblock(ctx, key, frame.Text)
 				}
 			}
 		}
-		debuglog.Renderf("%s render pokemon=%d frame=%dx%d key=%s", rend.Name(), pokemonID, opts.Width, opts.Height, key)
+		debuglog.Renderf("%s render pokemon=%d frame=%dx%d key=%s kind=%s", rend.Name(), pokemonID, opts.Width, opts.Height, key, assetKind)
 		if frame.Backend == "placeholder" {
 			return RenderResult{ANSI: frame.Text, UsePlaceholder: true, Backend: "placeholder"}
 		}
-		return RenderResult{ANSI: frame.Text, CacheKey: key, Backend: frame.Backend, Native: frame.Native}
+		return RenderResult{ANSI: frame.Text, CacheKey: key, Backend: frame.Backend, Native: frame.Native, AssetKind: assetKind}
 	}
 	return e.placeholderResult(opts.Label, opts.Width, opts.Height)
 }
@@ -271,7 +318,7 @@ func (e *Engine) renderOptions(label string, fw, fh int, hash string, quality Qu
 	}
 	source := e.SourceKind
 	if source == "" {
-		source = SourcePixel
+		source = SourceArtwork
 	}
 	color := e.Color
 	if color == "" {
@@ -336,18 +383,17 @@ func displayName(p domain.Pokemon) string {
 	return "???"
 }
 
-// resolveNativeAsset prefers HD when enabled, then pixel. Browse often has no
-// sprite URLs until the dossier loads; named pixel files from warm still work.
+// resolveNativeAsset prefers official artwork, then silent pixel CDN fallback.
 func (e *Engine) resolveNativeAsset(ctx context.Context, pokemon domain.Pokemon, pokemonID int) (SourceResult, AssetTier) {
-	tiers := []AssetTier{AssetTierPixel}
-	if !e.HDOff {
-		tiers = []AssetTier{AssetTierHD, AssetTierPixel}
+	tiers := []AssetTier{AssetTierHD, AssetTierPixel}
+	if e.HDOff && e.SourceKind == SourcePixel {
+		tiers = []AssetTier{AssetTierPixel}
 	}
 	var last SourceResult
 	for _, tier := range tiers {
 		res := e.Source.Resolve(ctx, pokemon, tier)
 		if !res.UsePlaceholder && len(res.PNG) > 0 {
-			if tier == AssetTierPixel && !e.HDOff {
+			if tier == AssetTierPixel {
 				debuglog.Renderf("image using pixel asset pokemon=%d (hd unavailable)", pokemonID)
 			}
 			return res, tier
@@ -355,16 +401,14 @@ func (e *Engine) resolveNativeAsset(ctx context.Context, pokemon domain.Pokemon,
 		last = res
 		debuglog.Renderf("image asset tier miss pokemon=%d tier=%d", pokemonID, int(tier))
 	}
-	return last, AssetTierPixel
+	return last, AssetTierHD
 }
 
-// nativeCacheKey builds an in-memory-only key for Kitty/iTerm/Sixel frames.
-func nativeCacheKey(contentHash string, rend Renderer, w, h int) string {
-	tag := "image"
+// nativeCacheKey builds a mem+disk key for Kitty/iTerm/Sixel frames (bg + version).
+func nativeCacheKey(contentHash string, rend Renderer, w, h int, bg color.RGBA) string {
+	proto := ""
 	if namer, ok := rend.(protocolNamer); ok {
-		if p := namer.ProtocolName(); p != "" {
-			tag = "image-" + p
-		}
+		proto = namer.ProtocolName()
 	}
-	return fmt.Sprintf("%s-%s-%dx%d", contentHash, tag, w, h)
+	return NativeCacheKey(contentHash, proto, w, h, bg)
 }

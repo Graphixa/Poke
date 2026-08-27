@@ -66,27 +66,38 @@ type Service struct {
 	seq     int64
 	queued  map[int]bool
 	done    map[int]bool
+	byID    map[int]domain.SpeciesSummary
 	wake    chan struct{}
 	started atomic.Bool
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	doneN   atomic.Int64
 	totalN  atomic.Int64
+	ready   map[int]bool // successfully stored artwork/pixel for species
+
+	lastReport atomic.Int64 // unix nano of last Progress emit
 }
 
 // New creates an asset warm service. Call Start to begin workers.
 func New(cfg Config) *Service {
+	if cfg.Mode == "" {
+		cfg.Mode = ModePixel
+	}
 	if cfg.Workers < 1 {
 		cfg.Workers = runtime.GOMAXPROCS(0)
 		if cfg.Workers < 1 {
 			cfg.Workers = 2
 		}
+	}
+	switch cfg.Mode {
+	case ModeArtwork:
+		cfg.Workers = ArtworkWorkers(cfg.Workers)
+	case ModePixel:
+		cfg.Workers = PixelWorkers(cfg.Workers)
+	default:
 		if cfg.Workers > 8 {
 			cfg.Workers = 8
 		}
-	}
-	if cfg.Mode == "" {
-		cfg.Mode = ModePixel
 	}
 	if cfg.Stage == "" {
 		if cfg.Mode == ModeArtwork {
@@ -102,17 +113,26 @@ func New(cfg Config) *Service {
 			cfg.Message = "Downloading sprites"
 		}
 	}
+	byID := make(map[int]domain.SpeciesSummary, len(cfg.Index))
+	for _, sum := range cfg.Index {
+		byID[sum.ID] = sum
+	}
 	return &Service{
 		cfg:    cfg,
+		byID:   byID,
 		queued: make(map[int]bool),
 		done:   make(map[int]bool),
+		ready:  make(map[int]bool),
 		wake:   make(chan struct{}, 1),
 	}
 }
 
 // Start launches workers and enqueues the full index.
 func (s *Service) Start(ctx context.Context) {
-	if s == nil || s.cfg.Mode == ModeOff || s.cfg.Loader == nil || s.cfg.Resolver == nil {
+	if s == nil || s.cfg.Mode == ModeOff || s.cfg.Resolver == nil {
+		return
+	}
+	if len(s.cfg.Index) == 0 && s.cfg.Loader == nil {
 		return
 	}
 	if !s.started.CompareAndSwap(false, true) {
@@ -139,20 +159,36 @@ func (s *Service) Stop() {
 }
 
 // Prioritize bumps the selected species to P0.
+// Retries species that previously missed (done but not ready).
 func (s *Service) Prioritize(speciesID int) {
 	if s == nil || speciesID < 1 || s.cfg.Mode == ModeOff {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done[speciesID] {
+	if s.ready[speciesID] {
 		return
+	}
+	if s.done[speciesID] {
+		// Allow another attempt after a miss; progress count stays as-is.
+		delete(s.done, speciesID)
+		delete(s.queued, speciesID)
 	}
 	s.pushLocked(job{speciesID: speciesID, priority: PrioritySelected})
 	s.signal()
 }
 
-// SetNeighbors enqueues ±radius neighbors at P1.
+// Ready reports whether a successful PNG was stored for speciesID.
+func (s *Service) Ready(speciesID int) bool {
+	if s == nil || speciesID < 1 {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ready[speciesID]
+}
+
+// SetNeighbors enqueues ±radius neighbors at P1 (national dex index order).
 func (s *Service) SetNeighbors(selectedID int, radius int) {
 	if s == nil || s.cfg.Mode == ModeOff || radius < 1 {
 		return
@@ -179,6 +215,38 @@ func (s *Service) SetNeighbors(selectedID int, radius int) {
 	}
 	for i := lo; i <= hi; i++ {
 		id := s.cfg.Index[i].ID
+		if id == selectedID || s.done[id] {
+			continue
+		}
+		s.pushLocked(job{speciesID: id, priority: PriorityNeighbor})
+	}
+	s.signal()
+}
+
+// SetNeighborsFromList enqueues ±radius neighbors from a filtered browse list.
+func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int) {
+	if s == nil || s.cfg.Mode == ModeOff || radius < 1 || len(list) == 0 {
+		return
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor >= len(list) {
+		cursor = len(list) - 1
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lo := cursor - radius
+	if lo < 0 {
+		lo = 0
+	}
+	hi := cursor + radius
+	if hi >= len(list) {
+		hi = len(list) - 1
+	}
+	selectedID := list[cursor].ID
+	for i := lo; i <= hi; i++ {
+		id := list[i].ID
 		if id == selectedID || s.done[id] {
 			continue
 		}
@@ -284,19 +352,16 @@ func (s *Service) pop() (job, bool) {
 }
 
 func (s *Service) runJob(ctx context.Context, j job) {
-	poke, err := s.cfg.Loader.Pokemon(ctx, j.speciesID)
-	if err != nil {
-		debuglog.Renderf("assetwarm skip species=%d err=%v", j.speciesID, err)
+	poke, ok := s.pokemonForJob(ctx, j.speciesID)
+	if !ok {
+		debuglog.Renderf("assetwarm skip species=%d (no pokemon)", j.speciesID)
 		s.markDone(j.speciesID)
-		s.report()
+		s.report(true, j.speciesID)
 		return
 	}
 	tier := sprite.AssetTierPixel
 	if s.cfg.Mode == ModeArtwork {
 		tier = sprite.AssetTierHD
-	}
-	if sprite.URLForTier(poke, tier) == "" {
-		// Still try named disk; Resolve handles miss.
 	}
 	if err := ctx.Err(); err != nil {
 		return
@@ -304,9 +369,50 @@ func (s *Service) runJob(ctx context.Context, j job) {
 	res := s.cfg.Resolver.Resolve(ctx, poke, tier)
 	if res.UsePlaceholder || len(res.PNG) == 0 {
 		debuglog.Renderf("assetwarm miss species=%d mode=%s", j.speciesID, s.cfg.Mode)
+		// Do not mark ready — Prioritize can retry. Still count as done for progress.
+		s.markDone(j.speciesID)
+		s.report(false, j.speciesID)
+		return
 	}
+	s.markReady(j.speciesID)
 	s.markDone(j.speciesID)
-	s.report()
+	s.report(false, j.speciesID)
+}
+
+func (s *Service) markReady(speciesID int) {
+	s.mu.Lock()
+	s.ready[speciesID] = true
+	s.mu.Unlock()
+}
+
+// pokemonForJob builds a CDN-URL pokemon from the index (no JSON) when possible.
+func (s *Service) pokemonForJob(ctx context.Context, speciesID int) (domain.Pokemon, bool) {
+	if sum, ok := s.byID[speciesID]; ok {
+		return PokemonForCDN(sum, s.cfg.Mode), true
+	}
+	if s.cfg.Loader == nil {
+		return domain.Pokemon{}, false
+	}
+	poke, err := s.cfg.Loader.Pokemon(ctx, speciesID)
+	if err != nil {
+		return domain.Pokemon{}, false
+	}
+	return poke, true
+}
+
+// PokemonForCDN synthesizes sprite URLs from the PokeAPI CDN using national dex ID.
+func PokemonForCDN(sum domain.SpeciesSummary, mode Mode) domain.Pokemon {
+	p := domain.Pokemon{
+		ID:          sum.ID,
+		Slug:        sum.Slug,
+		DisplayName: sum.DisplayName,
+	}
+	if mode == ModeArtwork {
+		p.Sprites.OfficialArtwork = sprite.CDNArtworkURL(sum.ID)
+	} else {
+		p.Sprites.FrontDefault = sprite.CDNPixelURL(sum.ID)
+	}
+	return p
 }
 
 func (s *Service) markDone(speciesID int) {
@@ -318,15 +424,36 @@ func (s *Service) markDone(speciesID int) {
 	s.mu.Unlock()
 }
 
-func (s *Service) report() {
+const progressMinInterval = 100 * time.Millisecond
+
+func (s *Service) report(force bool, speciesID int) {
 	if s.cfg.Progress == nil {
 		return
 	}
+	done := int(s.doneN.Load())
+	total := int(s.totalN.Load())
+	// Always emit when a specific species finished so browse can pop in art.
+	// Aggregate-only ticks stay throttled.
+	if !force && speciesID == 0 && done < total {
+		now := time.Now().UnixNano()
+		prev := s.lastReport.Load()
+		if prev != 0 && time.Duration(now-prev) < progressMinInterval && done%25 != 0 {
+			return
+		}
+		if !s.lastReport.CompareAndSwap(prev, now) {
+			if done < total {
+				return
+			}
+		}
+	} else {
+		s.lastReport.Store(time.Now().UnixNano())
+	}
 	s.cfg.Progress(cache.Progress{
-		Stage:   s.cfg.Stage,
-		Done:    int(s.doneN.Load()),
-		Total:   int(s.totalN.Load()),
-		Message: s.cfg.Message,
+		Stage:     s.cfg.Stage,
+		Done:      done,
+		Total:     total,
+		Message:   s.cfg.Message,
+		SpeciesID: speciesID,
 	})
 }
 

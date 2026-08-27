@@ -98,6 +98,18 @@ func Execute(ctx context.Context, runtime Runtime) error {
 	if resetHandler == nil {
 		resetHandler = defaultCache
 	}
+	var testRunner renderTestRunner
+	if h, ok := handler.(*Handler); ok {
+		testRunner = h
+	} else {
+		testRunner = &Handler{
+			Services: services,
+			Stdout:   runtime.Stdout,
+			Stderr:   runtime.Stderr,
+			Rand:     runtime.Rand,
+			Paths:    paths,
+		}
+	}
 
 	// Apply configured theme before any TUI runs.
 	if svc, err := services(); err == nil {
@@ -115,6 +127,7 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		Cache:          cacheCmds,
 		Theme:          themeHandler,
 		Reset:          resetHandler,
+		RenderTest:     renderTestAdapter{testRunner},
 		Stdout:         runtime.Stdout,
 		Stderr:         runtime.Stderr,
 		OnDebug: func(path string) error {
@@ -130,6 +143,26 @@ func Execute(ctx context.Context, runtime Runtime) error {
 	})
 	root.SetArgs(runtime.Args)
 	return root.ExecuteContext(ctx)
+}
+
+// renderTestRunner is implemented by Handler.
+type renderTestRunner interface {
+	RunRenderTest(context.Context, RenderTestRequest) error
+}
+
+type renderTestAdapter struct {
+	r renderTestRunner
+}
+
+func (a renderTestAdapter) RunRenderTest(ctx context.Context, req cli.RenderTestRequest) error {
+	if a.r == nil {
+		return fmt.Errorf("poke test is unavailable")
+	}
+	return a.r.RunRenderTest(ctx, RenderTestRequest{
+		Target:     req.Target,
+		Iterations: req.Iterations,
+		SkipVisual: req.SkipVisual,
+	})
 }
 
 // ApplyTheme loads and installs the configured colour theme.

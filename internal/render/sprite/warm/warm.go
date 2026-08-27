@@ -312,7 +312,7 @@ func (s *Service) runJob(ctx context.Context, j job) {
 	if err != nil || poke.Sprites.FrontDefault == "" {
 		debuglog.Renderf("warm skip species=%d err=%v", j.speciesID, err)
 		s.markDone(j.speciesID)
-		s.report()
+		s.report(j.speciesID)
 		return
 	}
 	if err := ctx.Err(); err != nil {
@@ -323,7 +323,7 @@ func (s *Service) runJob(ctx context.Context, j job) {
 		debuglog.Renderf("warm placeholder species=%d", j.speciesID)
 	}
 	s.markDone(j.speciesID)
-	s.report()
+	s.report(j.speciesID)
 }
 
 func (s *Service) markDone(speciesID int) {
@@ -335,17 +335,18 @@ func (s *Service) markDone(speciesID int) {
 	s.mu.Unlock()
 }
 
-func (s *Service) report() {
+func (s *Service) report(speciesID int) {
 	if s.cfg.Progress == nil {
 		return
 	}
 	done := int(s.doneN.Load())
 	total := int(s.totalN.Load())
 	s.cfg.Progress(cache.Progress{
-		Stage:   "sprites_render",
-		Done:    done,
-		Total:   total,
-		Message: "Warming sprites",
+		Stage:     "sprites_render",
+		Done:      done,
+		Total:     total,
+		Message:   "Warming sprites",
+		SpeciesID: speciesID,
 	})
 }
 

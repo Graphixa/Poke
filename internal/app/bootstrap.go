@@ -13,9 +13,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/pokeapi"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/warm"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 )
 
 // Ensure the file store satisfies the application cache contract.
@@ -112,80 +110,31 @@ func (c cacheCommands) WarmSprites(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	caps := sprite.DetectCapabilities(false)
-	if !caps.TrueColor && !caps.ANSI256 {
-		// Non-interactive hosts may lack COLORTERM; still produce truecolour artefacts.
-		caps.TrueColor = true
-		caps.ANSI256 = true
-	}
-	colorMode := sprite.ColorMode(svc.Config.Render.Color)
-	if colorMode == "" || colorMode == sprite.ColorAuto {
-		if caps.TrueColor {
-			colorMode = sprite.ColorTrueColor
-		} else {
-			colorMode = sprite.Color256
-		}
-	}
-	engine := &sprite.Engine{
-		Source: &sprite.SourceResolver{
-			Store: svc.Cache,
-			API:   svc.API,
-		},
-		Modes: sprite.NewModeResolver(
-			spritechafa.Renderer{},
-			placeholder.Renderer{},
-		),
-		Artefacts:  svc.Cache,
-		Caps:       caps,
-		Preference: sprite.ModeChafa,
-		Color:      colorMode,
-		SourceKind: sprite.SourcePixel,
-		Background: sprite.DefaultBackground,
-		HDOff:      true,
-	}
 	details := NewDetailService(svc.Cache)
 	progress := func(p cache.Progress) {
 		if c.stderr == nil || p.Total <= 0 {
 			return
 		}
 		if p.Done == p.Total || p.Done%25 == 0 {
-			fmt.Fprintf(c.stderr, "Warming sprites %d/%d\n", p.Done, p.Total)
+			fmt.Fprintf(c.stderr, "Warming artwork %d/%d\n", p.Done, p.Total)
 		}
 	}
-	warmer := warm.New(warm.Config{
-		Mode:     warm.ModeAllPixel,
-		Cells:    sprite.MaxFrameSize,
-		Workers:  svc.Cache.MaxConcurrency(),
+	w := assetwarm.New(assetwarm.Config{
+		Mode:     assetwarm.ModeArtwork,
+		Workers:  assetwarm.ArtworkWorkers(svc.Cache.MaxConcurrency()),
 		Loader:   warmPokemonLoader{details},
-		Renderer: engine,
+		Resolver: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
 		Index:    index,
 		Progress: progress,
 	})
-	warmer.Start(ctx)
-	// Wait until complete or cancelled.
-	for {
-		if err := ctx.Err(); err != nil {
-			warmer.Stop()
-			return err
-		}
-		done, total := warmer.Snapshot()
-		if total > 0 && done >= total {
-			break
-		}
-		if total == 0 && len(index) == 0 {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			warmer.Stop()
-			return ctx.Err()
-		case <-time.After(200 * time.Millisecond):
-		}
+	w.Start(ctx)
+	err = w.Wait(ctx)
+	w.Stop()
+	if err != nil {
+		return err
 	}
-	warmer.Stop()
 	if c.stdout != nil {
-		fmt.Fprintln(c.stdout, "Sprite warm complete")
+		fmt.Fprintln(c.stdout, "Artwork warm complete")
 	}
 	return nil
 }

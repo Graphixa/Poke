@@ -33,7 +33,7 @@ const (
 
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
-const AlgorithmVersion = "v7"
+const AlgorithmVersion = "v10"
 
 // QualityProfile selects chafa conversion quality.
 type QualityProfile string
@@ -71,6 +71,6 @@ func DefaultRenderOptions() RenderOptions {
 		Height:         FrameHeight,
 		ColorMode:      ColorAuto,
 		AlphaThreshold: 16,
-		Source:         SourcePixel,
+		Source:         SourceArtwork,
 	}
 }

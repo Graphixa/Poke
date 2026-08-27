@@ -78,6 +78,24 @@ func (s *Service) getDossier(ctx context.Context, speciesID int, slug string) (d
 	return fresh, nil
 }
 
+// WarmCore fetches and caches pokemon+species only (no evolution/encounters/moves).
+// Used by window-mode dossier warm so browse headers stay snappy without API storms.
+func (s *Service) WarmCore(ctx context.Context, speciesID int) error {
+	if speciesID < 1 {
+		return fmt.Errorf("cache: invalid species id")
+	}
+	species, err := s.Species(ctx, speciesID)
+	if err != nil {
+		return err
+	}
+	pokemonID := species.DefaultPokemonID
+	if pokemonID == 0 {
+		pokemonID = speciesID
+	}
+	_, err = s.Pokemon(ctx, pokemonID)
+	return err
+}
+
 func slugOr(d domain.Dossier, slug string) string {
 	if d.Species.Slug != "" {
 		return d.Species.Slug

@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"fmt"
-
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -102,10 +100,32 @@ func (m Model) browseData() views.BrowseData {
 			}
 		}
 	}
-	if m.warmActive && m.warmTotal > 0 {
-		data.WarmHint = fmt.Sprintf("warming %d/%d", m.warmDone, m.warmTotal)
+	if m.warmHint != "" && m.showsWarmHintInView() {
+		data.WarmHint = m.warmHint
 	}
 	return data
+}
+
+// showsWarmHintInView is false while a native sprite is on screen. Footer warm
+// ticks would otherwise rewrite cells under Sixel and leave "warming N/M" ghosts.
+// Must not call browseData/nativeOverlayReady (those call back into browseData).
+func (m Model) showsWarmHintInView() bool {
+	if m.showHelp || m.showDialog || m.quitting {
+		return true
+	}
+	sel, ok := m.selected()
+	if !ok {
+		return true
+	}
+	r := m.resources[sel.ID]
+	if r == nil || !r.HasSprite || r.SpritePlaceholder || !r.SpriteNative || r.SpriteANSI == "" {
+		return true
+	}
+	lay := m.layout()
+	if !lay.ShowSprite || lay.SpriteSize < sprite.MinFrameSize {
+		return true
+	}
+	return false
 }
 
 func pokemonTypeNames(p domain.Pokemon) []string {

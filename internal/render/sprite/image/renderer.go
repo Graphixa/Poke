@@ -52,7 +52,7 @@ func New() *Renderer {
 func (r *Renderer) Name() string { return "image" }
 
 // ProtocolName returns the active native protocol tag (kitty|iterm|sixel), or
-// empty when none. Used for in-memory cache keys.
+// empty when none. Used for mem+disk native cache keys.
 func (r *Renderer) ProtocolName() string {
 	if r == nil {
 		return ""
@@ -180,11 +180,6 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 	if threshold == 0 {
 		threshold = 16
 	}
-	src = sprite.CropToContentSquare(src, threshold, 1)
-
-	// go-termimg's Sixel path double-wraps mattn/go-sixel's already-complete DCS
-	// sequence (ESC Pq + ESC P0;0;8q…ST), which Windows Terminal rejects.
-	// Encode with go-sixel directly instead.
 	if r.proto == protocolSixel {
 		out, err := encodeSixel(src, w, h, opts)
 		if err != nil {
@@ -195,6 +190,15 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		}
 		return sprite.Frame{Text: out, Backend: "image", Native: true}, nil
 	}
+
+	// Square official artwork: skip full-res content crop (termimg scales next).
+	if b := src.Bounds(); b.Dx() != b.Dy() {
+		src = sprite.CropToContentSquare(src, threshold, 1)
+	}
+
+	// go-termimg's Sixel path double-wraps mattn/go-sixel's already-complete DCS
+	// sequence (ESC Pq + ESC P0;0;8q…ST), which Windows Terminal rejects.
+	// Encode with go-sixel directly instead (handled above).
 
 	restore := bypassDetection(r.proto)
 	defer restore()
@@ -232,19 +236,19 @@ func encodeSixel(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderOptio
 	if threshold == 0 {
 		threshold = 16
 	}
-	prepared := sprite.Prepare(src, bg, threshold)
 	pxW := cellsW * sixelCellPxW
 	pxH := cellsH * sixelCellPxH
 	source := opts.Source
 	if source == "" {
-		source = sprite.SourcePixel
+		source = sprite.SourceArtwork
 	}
-	resized := sprite.Resize(prepared, pxW, pxH, source, true, bg)
+	// Square artwork: downsample then Prepare; non-square: CropAndPrepare then Resize.
+	prepared := sprite.PrepareEncodeSrc(src, pxW, pxH, source, bg, threshold, 1)
 
 	var buf bytes.Buffer
 	enc := sixel.NewEncoder(&buf)
 	enc.Colors = 256
-	if err := enc.Encode(resized); err != nil {
+	if err := enc.Encode(prepared); err != nil {
 		return "", fmt.Errorf("image: sixel encode: %w", err)
 	}
 	out := buf.String()

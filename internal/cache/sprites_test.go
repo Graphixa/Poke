@@ -50,4 +50,19 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 	if err := svc.StoreHalfblock(context.Background(), "../escape", "x"); err == nil {
 		t.Fatal("expected reject of invalid key")
 	}
+
+	nkey := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255})
+	if err := svc.StoreNative(context.Background(), nkey, "FRAME"); err != nil {
+		t.Fatal(err)
+	}
+	frame, err := svc.Native(context.Background(), nkey)
+	if err != nil || frame != "FRAME" {
+		t.Fatalf("Native = %q err=%v", frame, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "native", nkey+".frame")); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StoreNative(context.Background(), "../escape", "x"); err == nil {
+		t.Fatal("expected reject of invalid native key")
+	}
 }

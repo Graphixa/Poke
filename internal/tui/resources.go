@@ -28,6 +28,7 @@ type resourceCache struct {
 	HasSprite         bool
 	SpritePlaceholder bool
 	SpriteNative      bool
+	SpriteKind        string // "artwork" | "pixel" | ""
 	loadingSprite     bool
 
 	loadingCore bool
@@ -42,6 +43,7 @@ func (r *resourceCache) clearSprite() {
 	r.HasSprite = false
 	r.SpritePlaceholder = false
 	r.SpriteNative = false
+	r.SpriteKind = ""
 	r.loadingSprite = false
 }
 

@@ -26,6 +26,9 @@ func TestDefault(t *testing.T) {
 	if cfg.Render.SpritePrewarm != "window" {
 		t.Fatalf("sprite_prewarm = %q", cfg.Render.SpritePrewarm)
 	}
+	if cfg.Render.SpriteSource != "artwork" {
+		t.Fatalf("sprite_source = %q want artwork", cfg.Render.SpriteSource)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config is invalid: %v", err)
 	}
