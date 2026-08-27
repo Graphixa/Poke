@@ -45,11 +45,11 @@ cp poke pokedex   # or: ln -s poke pokedex
 ## Quick start
 
 ```bash
-# First run: bootstrap the local species index (needs network)
-poke update
-
-# Browse TUI
+# First run: poke opens a setup wizard (index + pixel sprites; optional HD art)
 poke
+
+# Or bootstrap the index alone first
+poke update
 
 # Open browse with a selection / search prefill
 poke pikachu
@@ -68,6 +68,9 @@ poke cache clear
 poke config path
 poke config init
 poke config edit
+
+# DEV: wipe cache + config to re-test first-run setup (remove before release)
+poke reset
 
 # Colour themes (interactive selector with live preview)
 poke theme

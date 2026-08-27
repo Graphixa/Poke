@@ -42,7 +42,28 @@ type Config struct {
 	TUI     TUI     `yaml:"tui"`
 	Theme   Theme   `yaml:"theme"`
 	Network Network `yaml:"network"`
+	Setup   Setup   `yaml:"setup"`
 }
+
+// Setup tracks first-run wizard state and official-artwork consent.
+type Setup struct {
+	// Completed is true after the first-run wizard finishes.
+	Completed bool `yaml:"completed"`
+	// ArtworkConsent is none | accepted | declined.
+	ArtworkConsent string `yaml:"artwork_consent"`
+	// ArtworkMode is off | blocking | background.
+	ArtworkMode string `yaml:"artwork_mode"`
+}
+
+const (
+	ArtworkConsentNone     = "none"
+	ArtworkConsentAccepted = "accepted"
+	ArtworkConsentDeclined = "declined"
+
+	ArtworkModeOff        = "off"
+	ArtworkModeBlocking   = "blocking"
+	ArtworkModeBackground = "background"
+)
 
 type Cache struct {
 	AutoRefresh     bool     `yaml:"auto_refresh"`
@@ -106,6 +127,11 @@ func Default() Config {
 			MaxConcurrency: 8,
 			UserAgent:      "poke-cli",
 		},
+		Setup: Setup{
+			Completed:      false,
+			ArtworkConsent: ArtworkConsentNone,
+			ArtworkMode:    ArtworkModeOff,
+		},
 	}
 }
 
@@ -150,6 +176,16 @@ func (c Config) Validate() error {
 	case "", "all", "window", "off":
 	default:
 		problems = append(problems, `cache.dossier_prewarm must be one of "all", "window", "off"`)
+	}
+	switch c.Setup.ArtworkConsent {
+	case "", ArtworkConsentNone, ArtworkConsentAccepted, ArtworkConsentDeclined:
+	default:
+		problems = append(problems, `setup.artwork_consent must be one of "none", "accepted", "declined"`)
+	}
+	switch c.Setup.ArtworkMode {
+	case "", ArtworkModeOff, ArtworkModeBlocking, ArtworkModeBackground:
+	default:
+		problems = append(problems, `setup.artwork_mode must be one of "off", "blocking", "background"`)
 	}
 	if c.Network.Retries < 0 {
 		problems = append(problems, "network.retries must not be negative")
@@ -198,6 +234,65 @@ func (c Config) EffectiveDossierPrewarm() string {
 // SpriteHDEnabled reports whether native rendering may fetch HD assets.
 func (c Config) SpriteHDEnabled() bool {
 	return c.Render.SpriteHD != "off"
+}
+
+// NeedsSetup reports whether the first-run wizard should run.
+func (c Config) NeedsSetup() bool {
+	return !c.Setup.Completed
+}
+
+// EffectiveArtworkConsent returns none | accepted | declined.
+func (c Config) EffectiveArtworkConsent() string {
+	switch c.Setup.ArtworkConsent {
+	case ArtworkConsentAccepted, ArtworkConsentDeclined:
+		return c.Setup.ArtworkConsent
+	default:
+		return ArtworkConsentNone
+	}
+}
+
+// EffectiveArtworkMode returns off | blocking | background.
+func (c Config) EffectiveArtworkMode() string {
+	switch c.Setup.ArtworkMode {
+	case ArtworkModeBlocking, ArtworkModeBackground:
+		return c.Setup.ArtworkMode
+	default:
+		return ArtworkModeOff
+	}
+}
+
+// ApplyArtworkConsent updates setup + render.sprite_hd to match a wizard choice.
+func (c *Config) ApplyArtworkConsent(consent, mode string) {
+	if c == nil {
+		return
+	}
+	switch consent {
+	case ArtworkConsentAccepted:
+		c.Setup.ArtworkConsent = ArtworkConsentAccepted
+		c.Render.SpriteHD = "auto"
+		switch mode {
+		case ArtworkModeBackground:
+			c.Setup.ArtworkMode = ArtworkModeBackground
+		default:
+			c.Setup.ArtworkMode = ArtworkModeBlocking
+		}
+	case ArtworkConsentDeclined:
+		c.Setup.ArtworkConsent = ArtworkConsentDeclined
+		c.Setup.ArtworkMode = ArtworkModeOff
+		c.Render.SpriteHD = "off"
+	default:
+		c.Setup.ArtworkConsent = ArtworkConsentNone
+		c.Setup.ArtworkMode = ArtworkModeOff
+		c.Render.SpriteHD = "off"
+	}
+}
+
+// MarkSetupComplete flags the first-run wizard as finished.
+func (c *Config) MarkSetupComplete() {
+	if c == nil {
+		return
+	}
+	c.Setup.Completed = true
 }
 
 type Paths struct {

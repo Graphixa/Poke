@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
@@ -184,6 +186,29 @@ func (c cacheCommands) WarmSprites(ctx context.Context) error {
 	warmer.Stop()
 	if c.stdout != nil {
 		fmt.Fprintln(c.stdout, "Sprite warm complete")
+	}
+	return nil
+}
+
+// Reset clears cache and deletes the config file so first-run setup runs again.
+// DEV: remove before release.
+func (c cacheCommands) Reset() error {
+	svc, err := c.services()
+	if err != nil {
+		return err
+	}
+	cachePath := svc.Cache.Path()
+	configPath := svc.Paths.ConfigFile
+	if err := svc.Cache.Clear(); err != nil {
+		return fmt.Errorf("clear cache: %w", err)
+	}
+	if err := os.Remove(configPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove config: %w", err)
+	}
+	if c.stdout != nil {
+		fmt.Fprintf(c.stdout, "Cleared cache at %s\n", cachePath)
+		fmt.Fprintf(c.stdout, "Removed config at %s\n", configPath)
+		fmt.Fprintln(c.stdout, "Run poke to start setup")
 	}
 	return nil
 }

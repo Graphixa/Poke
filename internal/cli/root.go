@@ -49,6 +49,7 @@ type Options struct {
 	Random         RandomHandler
 	Cache          CacheCommands
 	Theme          ThemeHandler
+	Reset          ResetHandler
 	Stdout         io.Writer
 	Stderr         io.Writer
 	// OnDebug is invoked when --debug is set. path may be empty for the default log file.
@@ -58,6 +59,12 @@ type Options struct {
 // ThemeHandler launches the interactive theme selector.
 type ThemeHandler interface {
 	Theme(context.Context) error
+}
+
+// ResetHandler clears cache + config for first-run retesting.
+// DEV: remove before release.
+type ResetHandler interface {
+	Reset() error
 }
 
 // CacheCommands handles cache maintenance subcommands.
@@ -161,6 +168,7 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newSearchCommand(options))
 	cmd.AddCommand(newRandomCommand(options))
 	cmd.AddCommand(newThemeCommand(options))
+	cmd.AddCommand(newResetCommand(options))
 	return cmd
 }
 
@@ -337,6 +345,22 @@ func newThemeCommand(options Options) *cobra.Command {
 				return fmt.Errorf("theme selector is unavailable")
 			}
 			return options.Theme.Theme(cmd.Context())
+		},
+	}
+}
+
+// DEV: remove before release — clears cache + config so first-run setup can be retested.
+func newResetCommand(options Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "reset",
+		Short: "DEV: clear cache and config (re-run first-run setup)",
+		Long:  "Temporary developer helper: deletes the cache directory and config file so the next poke run shows the first-run wizard. Remove before release.",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			if options.Reset == nil {
+				return fmt.Errorf("reset is unavailable")
+			}
+			return options.Reset.Reset()
 		},
 	}
 }

@@ -305,6 +305,10 @@ func (m *Model) notifyWarmer() {
 		m.warmer.Prioritize(sel.ID)
 		m.warmer.SetNeighborsFromList(m.filtered, m.cursor, 5)
 	}
+	if m.artworkWarmer != nil {
+		m.artworkWarmer.Prioritize(sel.ID)
+		m.artworkWarmer.SetNeighbors(sel.ID, 5)
+	}
 	if m.dossierWarmer != nil {
 		m.dossierWarmer.Prioritize(sel.ID)
 		m.dossierWarmer.SetNeighborsFromList(m.filtered, m.cursor, 5)
@@ -430,7 +434,7 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 	if pokemon.ID == 0 {
 		pokemon = domain.Pokemon{ID: sel.ID, Slug: sel.Slug, DisplayName: sel.DisplayName}
 	}
-	return loadSpriteCmd(ctx, m.sprites, reqID, m.selectionGen, sel.ID, cells, pokemon)
+	return loadSpriteCmd(ctx, m.sprites, m.pokemonSrc, reqID, m.selectionGen, sel.ID, cells, pokemon)
 }
 
 func (m *Model) scrollDialog(delta int) {

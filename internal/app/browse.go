@@ -6,9 +6,11 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
+	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
@@ -24,6 +26,10 @@ type tuiDetails struct {
 
 func (t tuiDetails) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
 	return t.DetailService.LoadDossier(ctx, speciesID)
+}
+
+func (t tuiDetails) PokemonForSprite(ctx context.Context, speciesID int) (domain.Pokemon, error) {
+	return t.DetailService.PokemonForSprite(ctx, speciesID)
 }
 
 type tuiSprites struct {
@@ -65,6 +71,13 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	if err != nil {
 		return err
 	}
+
+	cfg, startBgArtwork, err := h.runSetupIfNeeded(ctx, svc)
+	if err != nil {
+		return err
+	}
+	svc.Config = cfg
+
 	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
 	if err != nil {
 		return err
@@ -116,6 +129,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	opts := tui.Options{
 		Index:         search.Build(index),
 		Details:       tuiDetails{details},
+		Pokemon:       tuiDetails{details},
 		Sprites:       tuiSprites{engine},
 		Selected:      req.Selected,
 		Prefill:       req.Prefill,
@@ -148,6 +162,29 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		spriteWarmer.Start(ctx)
 		defer spriteWarmer.Stop()
 		opts.Warmer = spriteWarmer
+	}
+
+	wantArtworkBG := startBgArtwork ||
+		(svc.Config.EffectiveArtworkMode() == config.ArtworkModeBackground && svc.Config.SpriteHDEnabled())
+	var artworkWarmer *assetwarm.Service
+	if wantArtworkBG && caps.NativeImage && !opts.DisableSprite {
+		useProgress = true
+		artworkWarmer = assetwarm.New(assetwarm.Config{
+			Mode:     assetwarm.ModeArtwork,
+			Workers:  workers,
+			Loader:   warmPokemonLoader{details},
+			Resolver: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
+			Index:    index,
+			Progress: func(p cache.Progress) {
+				select {
+				case progressCh <- tui.WarmProgress{Done: p.Done, Total: p.Total, Message: p.Message}:
+				default:
+				}
+			},
+		})
+		artworkWarmer.Start(ctx)
+		defer artworkWarmer.Stop()
+		opts.ArtworkWarmer = artworkWarmer
 	}
 
 	dossierMode := dossierwarm.Mode(svc.Config.EffectiveDossierPrewarm())

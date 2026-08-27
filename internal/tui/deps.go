@@ -18,6 +18,11 @@ type DetailSource interface {
 	LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error)
 }
 
+// PokemonSource loads default-variety Pokémon (including sprite URLs) for art.
+type PokemonSource interface {
+	PokemonForSprite(ctx context.Context, speciesID int) (domain.Pokemon, error)
+}
+
 // SpriteRenderer produces terminal sprite art for a Pokémon panel.
 // Implementations must be safe to call from Bubble Tea commands and honour ctx.
 type SpriteRenderer interface {

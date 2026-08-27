@@ -28,6 +28,7 @@ type Runtime struct {
 	Random         cli.RandomHandler
 	Cache          cli.CacheCommands
 	Theme          cli.ThemeHandler
+	Reset          cli.ResetHandler
 	Rand           IntnRand
 	Stdout         io.Writer
 	Stderr         io.Writer
@@ -55,19 +56,21 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		return err
 	}
 	services := lazyServices(paths)
+	defaultCache := cacheCommands{
+		services: services,
+		stdout:   runtime.Stdout,
+		stderr:   runtime.Stderr,
+	}
 	cacheCmds := runtime.Cache
 	if cacheCmds == nil {
-		cacheCmds = cacheCommands{
-			services: services,
-			stdout:   runtime.Stdout,
-			stderr:   runtime.Stderr,
-		}
+		cacheCmds = defaultCache
 	}
 
 	handler := runtime.Handler
 	searchHandler := runtime.Search
 	randomHandler := runtime.Random
 	themeHandler := runtime.Theme
+	resetHandler := runtime.Reset
 	if handler == nil || searchHandler == nil || randomHandler == nil || themeHandler == nil {
 		appHandler := &Handler{
 			Services: services,
@@ -92,6 +95,9 @@ func Execute(ctx context.Context, runtime Runtime) error {
 			themeHandler = appHandler
 		}
 	}
+	if resetHandler == nil {
+		resetHandler = defaultCache
+	}
 
 	// Apply configured theme before any TUI runs.
 	if svc, err := services(); err == nil {
@@ -108,6 +114,7 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		Random:         randomHandler,
 		Cache:          cacheCmds,
 		Theme:          themeHandler,
+		Reset:          resetHandler,
 		Stdout:         runtime.Stdout,
 		Stderr:         runtime.Stderr,
 		OnDebug: func(path string) error {

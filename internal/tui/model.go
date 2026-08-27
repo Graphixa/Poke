@@ -18,6 +18,7 @@ import (
 type Options struct {
 	Index    *search.Index
 	Details  DetailSource
+	Pokemon  PokemonSource
 	Sprites  SpriteRenderer
 	Selected *domain.SpeciesSummary
 	Prefill  string
@@ -26,6 +27,8 @@ type Options struct {
 	DisableSprite bool
 	// Warmer is an optional priority sprite prewarm service.
 	Warmer SpriteWarmer
+	// ArtworkWarmer is an optional background official-artwork downloader.
+	ArtworkWarmer ArtworkWarmer
 	// DossierWarmer is an optional priority dossier prewarm service.
 	DossierWarmer DossierWarmer
 	// WarmEvents receives progress updates from the warmer (optional).
@@ -38,6 +41,12 @@ type SpriteWarmer interface {
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
 	SetCells(cells int)
 	Snapshot() (done, total int)
+}
+
+// ArtworkWarmer prioritizes background official-artwork downloads.
+type ArtworkWarmer interface {
+	Prioritize(speciesID int)
+	SetNeighbors(selectedID int, radius int)
 }
 
 // DossierWarmer prioritizes background dossier assembly.
@@ -87,11 +96,14 @@ type Model struct {
 	nativePaintPending bool
 
 	warmer        SpriteWarmer
+	artworkWarmer ArtworkWarmer
 	dossierWarmer DossierWarmer
 	warmEvents    <-chan WarmProgress
 	warmDone      int
 	warmTotal     int
 	warmActive    bool
+
+	pokemonSrc PokemonSource
 
 	showHelp   bool
 	showDialog bool
@@ -121,8 +133,10 @@ func NewModel(opts Options) Model {
 		search:        newSearchInput(),
 		dialogVP:      newContentViewport(),
 		warmer:        opts.Warmer,
+		artworkWarmer: opts.ArtworkWarmer,
 		dossierWarmer: opts.DossierWarmer,
 		warmEvents:    opts.WarmEvents,
+		pokemonSrc:    opts.Pokemon,
 	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)

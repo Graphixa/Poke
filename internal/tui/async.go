@@ -35,13 +35,18 @@ func loadDossierCmd(ctx context.Context, src DetailSource, gen, speciesID int) t
 	}
 }
 
-func loadSpriteCmd(ctx context.Context, src SpriteRenderer, reqID, gen, speciesID, cells int, pokemon domain.Pokemon) tea.Cmd {
+func loadSpriteCmd(ctx context.Context, src SpriteRenderer, pokemonSrc PokemonSource, reqID, gen, speciesID, cells int, pokemon domain.Pokemon) tea.Cmd {
 	if src == nil || cells < 1 {
 		return func() tea.Msg {
 			return spriteMsg{reqID: reqID, gen: gen, speciesID: speciesID, cells: cells, placeholder: true}
 		}
 	}
 	return func() tea.Msg {
+		if pokemonSrc != nil && pokemon.Sprites.FrontDefault == "" && pokemon.Sprites.OfficialArtwork == "" {
+			if p, err := pokemonSrc.PokemonForSprite(ctx, speciesID); err == nil {
+				pokemon = p
+			}
+		}
 		ansi, placeholder, native := src.Render(ctx, pokemon, cells)
 		return spriteMsg{
 			reqID:       reqID,
