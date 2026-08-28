@@ -95,6 +95,18 @@ func (s *Store) StoreNamedSprite(_ context.Context, id int, slug, kind string, d
 	return writeAtomic(path, data, 0o600)
 }
 
+// StoreNamedSpriteWithMeta writes PNG bytes and provenance sidecar.
+func (s *Store) StoreNamedSpriteWithMeta(ctx context.Context, id int, slug, kind string, url, sha256 string, data []byte) error {
+	if err := s.StoreNamedSprite(ctx, id, slug, kind, data); err != nil {
+		return err
+	}
+	return s.writeNamedSpriteMeta(id, slug, kind, NamedSpriteMeta{
+		URL:       url,
+		SHA256:    sha256,
+		UpdatedAt: s.clock.Now(),
+	})
+}
+
 func (s *Store) namedSpritePath(id int, slug, kind string) (string, error) {
 	key := PokemonFolderKey(id, slug)
 	switch kind {

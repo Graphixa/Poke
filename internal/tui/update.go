@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -44,6 +43,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.warmer != nil {
 			if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
 				m.warmer.SetCells(cells)
+			}
+		}
+		if m.nativeWarmer != nil {
+			if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
+				m.nativeWarmer.SetCells(cells)
 			}
 		}
 		return m, m.handleSpriteLayoutChange(prevShow, prevSide)
@@ -123,7 +127,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case warmProgressMsg:
 		if msg.closed {
 			m.warmActive = false
-			m.warmHint = ""
+			m.warmRight = ""
+			m.warmStage = ""
 			if sel, ok := m.selected(); ok {
 				return m, m.refreshSpriteAfterWarm(sel.ID, "artwork")
 			}
@@ -132,19 +137,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.warmDone = msg.Done
 		m.warmTotal = msg.Total
 		m.warmActive = msg.Total > 0 && msg.Done < msg.Total
-		hint := ""
-		if m.warmActive {
-			hint = fmt.Sprintf("warming %d/%d", m.warmDone, m.warmTotal)
+		if msg.Stage != "" {
+			m.warmStage = msg.Stage
 		}
-		// Throttle model updates so browseData/footer does not churn every tick.
-		// While a native sprite is visible the hint is omitted from View entirely
-		// (showsWarmHintInView) so these updates never wipe Sixel.
-		hintChanged := hint != m.warmHint
+		right := ""
+		if m.warmActive {
+			right = formatWarmFooterRight(m.warmStage, m.warmDone, m.warmTotal)
+		}
+		rightChanged := right != m.warmRight
 		now := time.Now()
-		shouldShow := hintChanged && (m.warmHint == "" || hint == "" ||
+		shouldShow := rightChanged && (m.warmRight == "" || right == "" ||
 			now.Sub(m.warmHintAt) >= warmHintMinInterval || m.warmDone == m.warmTotal)
 		if shouldShow {
-			m.warmHint = hint
+			m.warmRight = right
 			m.warmHintAt = now
 		}
 		var reload tea.Cmd
@@ -349,9 +354,9 @@ func (m *Model) notifyWarmer() {
 		m.artworkWarmer.Prioritize(sel.ID)
 		m.artworkWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
 	}
-	if m.dossierWarmer != nil {
-		m.dossierWarmer.Prioritize(sel.ID)
-		m.dossierWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
+	if m.nativeWarmer != nil {
+		m.nativeWarmer.Prioritize(sel.ID)
+		m.nativeWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
 	}
 }
 
@@ -527,8 +532,9 @@ func (m *Model) refreshSpriteAfterWarm(speciesID int, stage string) tea.Cmd {
 	}
 	r := m.resources[sel.ID]
 	artworkDone := stage == "artwork" || stage == ""
+	_ = stage // native warm does not force selected reload when art is already visible
 	if r != nil && r.HasSprite && !r.SpritePlaceholder && r.SpriteANSI != "" && r.SpriteKind == "artwork" {
-		// Already showing official artwork — no upgrade needed.
+		// Already showing official artwork — native disk warm does not require reload.
 		return nil
 	}
 	if !artworkDone {

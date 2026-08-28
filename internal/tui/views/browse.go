@@ -140,7 +140,7 @@ func Browse(d BrowseData) string {
 }
 
 func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
-	footer := components.Footer(d.VerboseFooter, d.Width, d.WarmHint)
+	footer := components.FooterSplit(d.VerboseFooter, d.Width, d.WarmHint)
 	footerH := 1
 	margin := 0
 	title := "Pokedex"

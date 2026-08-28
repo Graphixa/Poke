@@ -85,12 +85,14 @@ type CacheCommands interface {
 	Refresh(context.Context) error
 	Clear() error
 	WarmSprites(context.Context) error
+	Update(context.Context) error
 }
 
 type CacheCommandsFuncs struct {
 	RefreshFunc     func(context.Context) error
 	ClearFunc       func() error
 	WarmSpritesFunc func(context.Context) error
+	UpdateFunc      func(context.Context) error
 }
 
 func (f CacheCommandsFuncs) Refresh(ctx context.Context) error {
@@ -112,6 +114,13 @@ func (f CacheCommandsFuncs) WarmSprites(ctx context.Context) error {
 		return fmt.Errorf("cache warm-sprites is unavailable")
 	}
 	return f.WarmSpritesFunc(ctx)
+}
+
+func (f CacheCommandsFuncs) Update(ctx context.Context) error {
+	if f.UpdateFunc == nil {
+		return fmt.Errorf("poke update is unavailable")
+	}
+	return f.UpdateFunc(ctx)
 }
 
 func NewRoot(options Options) *cobra.Command {
@@ -365,13 +374,14 @@ func newCacheCommand(options Options) *cobra.Command {
 func newUpdateCommand(options Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
-		Short: "Refresh the species index and type enrichment",
+		Short: "Refresh index, sync artwork, and build native image cache",
+		Long:  "Refreshes the species index and type enrichment, downloads new or changed official artwork, then pre-encodes Kitty/iTerm/Sixel frames when the terminal supports native graphics.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if options.Cache == nil {
-				return fmt.Errorf("cache refresh is unavailable")
+				return fmt.Errorf("poke update is unavailable")
 			}
-			return options.Cache.Refresh(cmd.Context())
+			return options.Cache.Update(cmd.Context())
 		},
 	}
 }

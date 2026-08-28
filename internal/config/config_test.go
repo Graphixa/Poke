@@ -20,8 +20,8 @@ func TestDefault(t *testing.T) {
 	if cfg.Network.MaxConcurrency != 8 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.Cache.DossierPrewarm != "window" {
-		t.Fatalf("dossier_prewarm = %q", cfg.Cache.DossierPrewarm)
+	if cfg.Cache.DossierPrewarm != "off" {
+		t.Fatalf("dossier_prewarm = %q want off", cfg.Cache.DossierPrewarm)
 	}
 	if cfg.Render.SpritePrewarm != "window" {
 		t.Fatalf("sprite_prewarm = %q", cfg.Render.SpritePrewarm)

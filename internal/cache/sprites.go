@@ -39,14 +39,54 @@ func (s *Service) NamedSprite(ctx context.Context, id int, slug, kind string) ([
 	return s.store.NamedSprite(ctx, id, slug, kind)
 }
 
-// StoreNamedSprite writes PNG bytes into the named sprite tree only (no legacy
-// content-hash mirror — bulk warm I/O stays named-path addressed).
+// StoreNamedSprite writes PNG bytes into the named sprite tree.
+// contentHash when a 64-char hex digest is stored as sha256 in sidecar meta (url omitted).
 func (s *Service) StoreNamedSprite(ctx context.Context, id int, slug, kind, contentHash string, data []byte) error {
 	if len(data) == 0 {
 		return errors.New("cache: refuse to store empty named sprite")
 	}
-	_ = contentHash // retained for API compatibility; identity is path-based
+	if isHexSHA256(contentHash) {
+		return s.store.StoreNamedSpriteWithMeta(ctx, id, slug, kind, "", contentHash, data)
+	}
 	return s.store.StoreNamedSprite(ctx, id, slug, kind, data)
+}
+
+// StoreNamedSpriteWithURL persists PNG bytes and url+sha256 sidecar metadata.
+func (s *Service) StoreNamedSpriteWithURL(ctx context.Context, id int, slug, kind, url, sha256 string, data []byte) error {
+	if len(data) == 0 {
+		return errors.New("cache: refuse to store empty named sprite")
+	}
+	if sha256 == "" {
+		sha256 = sha256HexBytes(data)
+	}
+	return s.store.StoreNamedSpriteWithMeta(ctx, id, slug, kind, url, sha256, data)
+}
+
+// InvalidateNativeSpecies drops mem-cached native frames and deletes on-disk .frame files.
+func (s *Service) InvalidateNativeSpecies(speciesID int) error {
+	if speciesID < 1 {
+		return nil
+	}
+	return s.store.DeleteNativeForSpecies(speciesID)
+}
+
+func sha256HexBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func isHexSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // Halfblock returns a cached derived sprite artefact by key.

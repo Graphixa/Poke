@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -153,7 +154,7 @@ func TestClearCellRectCoversBox(t *testing.T) {
 	}
 }
 
-func TestWarmHintHiddenWhileNativeSpriteVisible(t *testing.T) {
+func TestWarmProgressNativeFooter(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}
 	m := tui.NewModel(tui.Options{
@@ -164,19 +165,11 @@ func TestWarmHintHiddenWhileNativeSpriteVisible(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
-	id, _ := m.SelectedID()
-	cells := m.CurrentSpriteCells()
-	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
-		m.SpriteReqID(), m.SelectionGen(), id, cells,
-		"\x1bP0;0;8q#1~~~\x1b\\", false,
-	))
-	updated, _ = m.Update(msg)
+	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(5, 10, 0, "native"))
 	m = updated.(tui.Model)
-
-	updated, _ = m.Update(tui.WarmProgressMsgForTest(50, 100))
-	m = updated.(tui.Model)
-	if m.BrowseWarmHintForTest() != "" {
-		t.Fatalf("warm hint must be omitted from view while native sprite shows, got %q", m.BrowseWarmHintForTest())
+	hint := m.BrowseWarmHintForTest()
+	if hint == "" || !strings.Contains(hint, "Building image cache") {
+		t.Fatalf("warm right=%q", hint)
 	}
 }
 

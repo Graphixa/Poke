@@ -100,8 +100,8 @@ func (m Model) browseData() views.BrowseData {
 			}
 		}
 	}
-	if m.warmHint != "" && m.showsWarmHintInView() {
-		data.WarmHint = m.warmHint
+	if m.warmRight != "" {
+		data.WarmHint = m.warmRight
 	}
 	return data
 }

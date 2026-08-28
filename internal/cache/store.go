@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -340,6 +341,35 @@ func (s *Store) halfblockPath(key string) string {
 }
 func (s *Store) nativePath(key string) string {
 	return filepath.Join(s.root, "native", key+".frame")
+}
+
+// DeleteNativeForSpecies removes encoded native frames for a species id prefix.
+func (s *Store) DeleteNativeForSpecies(speciesID int) error {
+	if speciesID < 1 {
+		return nil
+	}
+	dir := filepath.Join(s.root, "native")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	prefix := fmt.Sprintf("named-%d-", speciesID)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".frame") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) resourcePath(kind string, id int) (string, error) {

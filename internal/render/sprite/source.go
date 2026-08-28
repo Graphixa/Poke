@@ -36,6 +36,11 @@ type NamedPNGStore interface {
 	StoreNamedSprite(ctx context.Context, id int, slug, kind, contentHash string, data []byte) error
 }
 
+// NamedPNGStoreWithURL persists url+sha256 sidecar metadata alongside named PNGs.
+type NamedPNGStoreWithURL interface {
+	StoreNamedSpriteWithURL(ctx context.Context, id int, slug, kind, url, sha256 string, data []byte) error
+}
+
 // Downloader fetches raw sprite bytes from a URL.
 type Downloader interface {
 	GetSprite(ctx context.Context, spriteURL string) (io.ReadCloser, error)
@@ -88,6 +93,9 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 			if err == nil && len(data) > 0 && ValidatePNG(data) == nil {
 				if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
 					_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
+					if urlStore, ok := r.Store.(NamedPNGStoreWithURL); ok {
+						_ = urlStore.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, storeKind, tryURL, hash, data)
+					}
 				}
 				if pokemon.ID != 0 {
 					hash = NamedAssetKey(pokemon.ID, pokemon.Slug, storeKind)
@@ -106,6 +114,9 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 		if r.Store != nil {
 			if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
 				_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
+				if urlStore, ok := r.Store.(NamedPNGStoreWithURL); ok {
+					_ = urlStore.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, storeKind, tryURL, hash, data)
+				}
 			} else {
 				_ = r.Store.StoreSpriteByURL(ctx, tryURL, hash, data)
 			}

@@ -111,7 +111,7 @@ func Default() Config {
 			IndexTTL:       Duration{24 * time.Hour},
 			DetailTTL:      Duration{7 * 24 * time.Hour},
 			MoveTTL:        Duration{30 * 24 * time.Hour},
-			DossierPrewarm: "window",
+			DossierPrewarm: "off",
 		},
 		Render: Render{
 			SpriteMode:    "auto",
@@ -222,13 +222,13 @@ func (c Config) EffectiveSpritePrewarm() string {
 	}
 }
 
-// EffectiveDossierPrewarm returns all | window | off.
+// EffectiveDossierPrewarm returns all | window | off (browse ignores this; dossiers load on Enter).
 func (c Config) EffectiveDossierPrewarm() string {
 	switch c.Cache.DossierPrewarm {
-	case "all", "off":
+	case "all", "window", "off":
 		return c.Cache.DossierPrewarm
 	default:
-		return "window"
+		return "off"
 	}
 }
 

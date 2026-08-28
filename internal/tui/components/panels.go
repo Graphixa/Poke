@@ -174,18 +174,46 @@ func Header(name string, id int, width int) string {
 }
 
 // Footer renders the compact hint line (wireframe wording).
-// warmHint, when non-empty, is appended as a short status suffix.
 func Footer(verbose bool, width int, warmHint string) string {
-	var text string
+	return FooterSplit(verbose, width, warmHint)
+}
+
+// FooterSplit renders help keys on the left and a fixed-width status on the right.
+func FooterSplit(verbose bool, width int, rightStatus string) string {
+	const footerRightWidth = 38
+	right := strings.TrimSpace(rightStatus)
+	if len(right) > footerRightWidth {
+		right = right[:footerRightWidth]
+	}
+	right = padLeft(padRight(right, footerRightWidth), footerRightWidth)
+
+	leftW := width - footerRightWidth
+	if leftW < 10 {
+		leftW = width
+		right = ""
+	}
+	var leftText string
 	if verbose {
-		text = " Type to filter • ↑↓ move • Enter/i details • Esc clear • q quit"
+		leftText = " Type to filter • ↑↓ move • Enter/i details • Esc clear • q quit"
 	} else {
-		text = " type • ↑↓ • Enter/i • Esc • q"
+		leftText = " type • ↑↓ • Enter/i • Esc • q"
 	}
-	if warmHint != "" {
-		text = text + " • " + warmHint
+	left := textwidth.PadRight(textwidth.Truncate(leftText, leftW), leftW)
+	return mutedSty().Render(left + right)
+}
+
+func padRight(s string, w int) string {
+	if len(s) >= w {
+		return s
 	}
-	return mutedSty().Render(textwidth.PadRight(textwidth.Truncate(text, width), width))
+	return s + strings.Repeat(" ", w-len(s))
+}
+
+func padLeft(s string, w int) string {
+	if len(s) >= w {
+		return s
+	}
+	return strings.Repeat(" ", w-len(s)) + s
 }
 
 // HelpOverlay renders the keybinding help card.

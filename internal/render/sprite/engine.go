@@ -94,6 +94,22 @@ func (e *Engine) InvalidateSpecies(speciesID int) {
 	e.memory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
 }
 
+// InvalidateSpeciesNative drops mem + disk native frames for a species.
+func (e *Engine) InvalidateSpeciesNative(ctx context.Context, speciesID int) {
+	e.InvalidateSpecies(speciesID)
+	if e == nil || speciesID < 1 {
+		return
+	}
+	if nativeStore, ok := e.Artefacts.(NativeSpeciesStore); ok {
+		_ = nativeStore.InvalidateNativeSpecies(speciesID)
+	}
+}
+
+// NativeSpeciesStore deletes on-disk native frames for a species.
+type NativeSpeciesStore interface {
+	InvalidateNativeSpecies(speciesID int) error
+}
+
 // Render converts a sprite into a frame. cells is the square edge requested by
 // the TUI (bucketed); when ≤0 the engine's configured/default frame size is used.
 func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
@@ -105,6 +121,47 @@ func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) 
 // terminals (browse skips chafa warm when NativeImage is set).
 func (e *Engine) WarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
 	return e.renderAtQuality(ctx, pokemon, cells, QualityInteractive, ModeChafa)
+}
+
+// NativeWarmRender encodes Kitty/iTerm/Sixel frames into the native artefact cache.
+func (e *Engine) NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
+	return e.renderAtQuality(ctx, pokemon, cells, QualityInteractive, ModeImage)
+}
+
+// HasNativeCache reports whether a native frame exists on disk for species at cells.
+func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cells int) bool {
+	if e == nil || e.Artefacts == nil || e.Source == nil || pokemon.ID == 0 {
+		return false
+	}
+	res, _ := e.resolveNativeAsset(ctx, pokemon, pokemon.ID)
+	if res.UsePlaceholder || len(res.PNG) == 0 || res.ContentHash == "" {
+		return false
+	}
+	fw, fh := e.frameSize()
+	if cells >= MinFrameSize {
+		fw, fh = FrameSizeFor(cells)
+	}
+	bg := e.Background
+	if bg.A == 0 {
+		bg = DefaultBackground
+	}
+	key := NativeCacheKey(res.ContentHash, e.protocolName(), fw, fh, bg)
+	frame, err := e.Artefacts.Native(ctx, key)
+	return err == nil && frame != ""
+}
+
+func (e *Engine) protocolName() string {
+	if e == nil || e.Modes == nil {
+		return ""
+	}
+	for _, rend := range e.Modes.Renderers {
+		if namer, ok := rend.(protocolNamer); ok {
+			if p := namer.ProtocolName(); p != "" {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 func (e *Engine) renderAtQuality(ctx context.Context, pokemon domain.Pokemon, cells int, quality QualityProfile, forceMode RenderMode) RenderResult {

@@ -97,9 +97,9 @@ func ClearCellRectForTest(row, col, w, h int) string {
 	return clearCellRect(row, col, w, h)
 }
 
-// BrowseWarmHintForTest returns the warm hint that would appear in the browse footer.
+// BrowseWarmHintForTest returns the warm status shown in the browse footer (right segment).
 func (m Model) BrowseWarmHintForTest() string {
-	return m.browseData().WarmHint
+	return m.warmRight
 }
 
 // SpriteReqID exposes the current sprite request id for tests.

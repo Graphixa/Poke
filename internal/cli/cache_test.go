@@ -27,6 +27,7 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 			RefreshFunc:     func(context.Context) error { refreshed++; return nil },
 			ClearFunc:       func() error { cleared++; return nil },
 			WarmSpritesFunc: func(context.Context) error { return nil },
+			UpdateFunc:      func(context.Context) error { refreshed++; return nil },
 		},
 		Reset: resetFunc(func() error { reset++; return nil }),
 	})
@@ -56,7 +57,7 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	if refreshed != 2 || cleared != 1 || reset != 1 {
-		t.Fatalf("refreshed=%d cleared=%d reset=%d", refreshed, cleared, reset)
+		t.Fatalf("refreshed=%d cleared=%d reset=%d want update+refresh=2", refreshed, cleared, reset)
 	}
 	if !strings.Contains(stdout.String(), "cache") {
 		t.Fatalf("stdout = %q", stdout.String())

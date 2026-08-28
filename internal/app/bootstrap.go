@@ -13,7 +13,11 @@ import (
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/pokeapi"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
+	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
+	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
+	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
 // Ensure the file store satisfies the application cache contract.
@@ -110,31 +114,117 @@ func (c cacheCommands) WarmSprites(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	details := NewDetailService(svc.Cache)
 	progress := func(p cache.Progress) {
 		if c.stderr == nil || p.Total <= 0 {
 			return
 		}
 		if p.Done == p.Total || p.Done%25 == 0 {
-			fmt.Fprintf(c.stderr, "Warming artwork %d/%d\n", p.Done, p.Total)
+			fmt.Fprintf(c.stderr, "Downloading artwork %d/%d\n", p.Done, p.Total)
 		}
 	}
-	w := assetwarm.New(assetwarm.Config{
-		Mode:     assetwarm.ModeArtwork,
-		Workers:  assetwarm.ArtworkWorkers(svc.Cache.MaxConcurrency()),
-		Loader:   warmPokemonLoader{details},
-		Resolver: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
-		Index:    index,
-		Progress: progress,
-	})
-	w.Start(ctx)
-	err = w.Wait(ctx)
-	w.Stop()
+	result, err := svc.Cache.SyncArtwork(ctx, index, progress)
 	if err != nil {
 		return err
 	}
 	if c.stdout != nil {
-		fmt.Fprintln(c.stdout, "Artwork warm complete")
+		fmt.Fprintf(c.stdout, "Artwork sync complete: new=%d updated=%d unchanged=%d failed=%d\n",
+			result.New, result.Updated, result.Unchanged, result.Failed)
+	}
+	return nil
+}
+
+func (c cacheCommands) Update(ctx context.Context) error {
+	svc, err := c.services()
+	if err != nil {
+		return err
+	}
+	progress := func(p cache.Progress) {
+		w := c.stderr
+		if w == nil {
+			return
+		}
+		switch p.Stage {
+		case "index":
+			if p.Message != "" {
+				fmt.Fprintf(w, "%s\n", p.Message)
+			}
+		case "enrich":
+			if p.Total > 0 {
+				fmt.Fprintf(w, "Enriching types %d/%d %s\n", p.Done, p.Total, p.Message)
+			}
+		case "artwork":
+			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
+				fmt.Fprintf(w, "Downloading artwork %d/%d\n", p.Done, p.Total)
+			}
+		case "native":
+			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
+				fmt.Fprintf(w, "Building image cache %d/%d\n", p.Done, p.Total)
+			}
+		}
+	}
+	if err := svc.Cache.Refresh(ctx, progress); err != nil {
+		return err
+	}
+	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
+	if err != nil {
+		return err
+	}
+	syncResult, err := svc.Cache.SyncArtwork(ctx, index, progress)
+	if err != nil {
+		return err
+	}
+	if c.stdout != nil {
+		fmt.Fprintf(c.stdout, "Artwork: new=%d updated=%d unchanged=%d failed=%d\n",
+			syncResult.New, syncResult.Updated, syncResult.Unchanged, syncResult.Failed)
+	}
+	img := spriteimage.New()
+	if !img.Available() {
+		if c.stdout != nil {
+			fmt.Fprintln(c.stdout, "Native image cache skipped (terminal has no Kitty/iTerm/Sixel support)")
+		}
+		if c.stdout != nil {
+			fmt.Fprintln(c.stdout, "Update complete")
+		}
+		return nil
+	}
+	details := NewDetailService(svc.Cache)
+	caps := sprite.DetectCapabilities(img.Available())
+	colorMode := sprite.ColorTrueColor
+	if !caps.TrueColor {
+		colorMode = sprite.Color256
+	}
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
+		Modes: sprite.NewModeResolver(
+			img,
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:     svc.Cache,
+		Caps:          caps,
+		Preference:    sprite.ModeImage,
+		Color:         colorMode,
+		SourceKind:    sprite.SourceArtwork,
+		Background:    style.BaseRGBA(),
+		HDOff:         false,
+		ClearNativeFn: spriteimage.ClearBestEffort,
+	}
+	nw := nativewarm.New(nativewarm.Config{
+		Cells:    sprite.MaxFrameSize,
+		Workers:  2,
+		Loader:   warmPokemonLoader{details},
+		Renderer: engine,
+		Index:    index,
+		Progress: progress,
+	})
+	nw.Start(ctx)
+	if err := nw.Wait(ctx); err != nil {
+		nw.Stop()
+		return err
+	}
+	nw.Stop()
+	if c.stdout != nil {
+		fmt.Fprintln(c.stdout, "Update complete")
 	}
 	return nil
 }

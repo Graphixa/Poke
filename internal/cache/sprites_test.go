@@ -65,4 +65,13 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 	if err := svc.StoreNative(context.Background(), "../escape", "x"); err == nil {
 		t.Fatal("expected reject of invalid native key")
 	}
+
+	if err := svc.StoreNamedSpriteWithURL(context.Background(), 25, "pikachu", cache.SpriteKindArtwork,
+		sprite.CDNArtworkURL(25), "deadbeef", png); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := store.ReadNamedSpriteMeta(25, "pikachu", cache.SpriteKindArtwork)
+	if err != nil || meta.URL != sprite.CDNArtworkURL(25) || meta.SHA256 != "deadbeef" {
+		t.Fatalf("meta=%+v err=%v", meta, err)
+	}
 }

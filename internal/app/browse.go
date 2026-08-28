@@ -5,12 +5,12 @@ import (
 	"os"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
@@ -52,7 +52,7 @@ func (t tuiSprites) ClearNative() {
 
 func (t tuiSprites) InvalidateSpecies(speciesID int) {
 	if t.Engine != nil {
-		t.Engine.InvalidateSpecies(speciesID)
+		t.Engine.InvalidateSpeciesNative(context.Background(), speciesID)
 	}
 }
 
@@ -79,18 +79,6 @@ type warmPokemonLoader struct {
 
 func (w warmPokemonLoader) Pokemon(ctx context.Context, speciesID int) (domain.Pokemon, error) {
 	return w.details.PokemonForSprite(ctx, speciesID)
-}
-
-type dossierLoader struct {
-	details *DetailService
-}
-
-func (d dossierLoader) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
-	return d.details.LoadDossier(ctx, speciesID)
-}
-
-func (d dossierLoader) WarmCore(ctx context.Context, speciesID int) error {
-	return d.details.WarmCore(ctx, speciesID)
 }
 
 func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
@@ -211,27 +199,22 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.ArtworkWarmer = artworkWarmer
 	}
 
-	dossierMode := dossierwarm.Mode(svc.Config.EffectiveDossierPrewarm())
-	var dossierWarmer *dossierwarm.Service
-	if dossierMode != dossierwarm.ModeOff {
+	var nativeWarmer *nativewarm.Service
+	if caps.NativeImage && !opts.DisableSprite {
 		useProgress = true
-		dl := dossierLoader{details}
-		cfg := dossierwarm.Config{
-			Mode:    dossierMode,
-			Workers: workers,
-			Loader:  dl,
-			Index:   index,
+		nativeWarmer = nativewarm.New(nativewarm.Config{
+			Cells:    sprite.MaxFrameSize,
+			Workers:  2,
+			Loader:   warmPokemonLoader{details},
+			Renderer: engine,
+			Index:    index,
 			Progress: func(p cache.Progress) {
 				sendWarmProgress(progressCh, p)
 			},
-		}
-		if dossierMode == dossierwarm.ModeWindow {
-			cfg.CoreLoader = dl
-		}
-		dossierWarmer = dossierwarm.New(cfg)
-		dossierWarmer.Start(ctx)
-		defer dossierWarmer.Stop()
-		opts.DossierWarmer = dossierWarmer
+		})
+		nativeWarmer.Start(ctx)
+		defer nativeWarmer.Stop()
+		opts.NativeWarmer = nativeWarmer
 	}
 
 	if useProgress {

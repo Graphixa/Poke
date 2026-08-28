@@ -30,8 +30,8 @@ type Options struct {
 	Warmer SpriteWarmer
 	// ArtworkWarmer is an optional background official-artwork downloader.
 	ArtworkWarmer ArtworkWarmer
-	// DossierWarmer is an optional priority dossier prewarm service.
-	DossierWarmer DossierWarmer
+	// NativeWarmer pre-encodes Kitty/iTerm/Sixel frames into disk cache.
+	NativeWarmer NativeWarmer
 	// WarmEvents receives progress updates from the warmer (optional).
 	WarmEvents <-chan WarmProgress
 }
@@ -52,10 +52,12 @@ type ArtworkWarmer interface {
 	Ready(speciesID int) bool
 }
 
-// DossierWarmer prioritizes background dossier assembly.
-type DossierWarmer interface {
+// NativeWarmer pre-encodes native graphics frames into the disk cache.
+type NativeWarmer interface {
 	Prioritize(speciesID int)
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+	SetCells(cells int)
+	Snapshot() (done, total int)
 }
 
 // WarmProgress is a TUI-friendly warm status snapshot.
@@ -109,12 +111,13 @@ type Model struct {
 
 	warmer        SpriteWarmer
 	artworkWarmer ArtworkWarmer
-	dossierWarmer DossierWarmer
+	nativeWarmer  NativeWarmer
 	warmEvents    <-chan WarmProgress
 	warmDone      int
 	warmTotal     int
 	warmActive    bool
-	warmHint      string
+	warmStage     string
+	warmRight     string
 	warmHintAt    time.Time
 
 	pokemonSrc PokemonSource
@@ -148,7 +151,7 @@ func NewModel(opts Options) Model {
 		dialogVP:      newContentViewport(),
 		warmer:        opts.Warmer,
 		artworkWarmer: opts.ArtworkWarmer,
-		dossierWarmer: opts.DossierWarmer,
+		nativeWarmer:  opts.NativeWarmer,
 		warmEvents:    opts.WarmEvents,
 		pokemonSrc:    opts.Pokemon,
 	}
