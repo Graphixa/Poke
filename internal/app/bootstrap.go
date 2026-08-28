@@ -12,12 +12,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/pokeapi"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
 // Ensure the file store satisfies the application cache contract.
@@ -156,10 +150,6 @@ func (c cacheCommands) Update(ctx context.Context) error {
 			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
 				fmt.Fprintf(w, "Downloading artwork %d/%d\n", p.Done, p.Total)
 			}
-		case "native":
-			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
-				fmt.Fprintf(w, "Building image cache %d/%d\n", p.Done, p.Total)
-			}
 		}
 	}
 	if err := svc.Cache.Refresh(ctx, progress); err != nil {
@@ -176,54 +166,6 @@ func (c cacheCommands) Update(ctx context.Context) error {
 	if c.stdout != nil {
 		fmt.Fprintf(c.stdout, "Artwork: new=%d updated=%d unchanged=%d failed=%d\n",
 			syncResult.New, syncResult.Updated, syncResult.Unchanged, syncResult.Failed)
-	}
-	img := spriteimage.New()
-	if !img.Available() {
-		if c.stdout != nil {
-			fmt.Fprintln(c.stdout, "Native image cache skipped (terminal has no Kitty/iTerm/Sixel support)")
-		}
-		if c.stdout != nil {
-			fmt.Fprintln(c.stdout, "Update complete")
-		}
-		return nil
-	}
-	details := NewDetailService(svc.Cache)
-	caps := sprite.DetectCapabilities(img.Available())
-	colorMode := sprite.ColorTrueColor
-	if !caps.TrueColor {
-		colorMode = sprite.Color256
-	}
-	engine := &sprite.Engine{
-		Source: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
-		Modes: sprite.NewModeResolver(
-			img,
-			spritechafa.Renderer{},
-			placeholder.Renderer{},
-		),
-		Artefacts:     svc.Cache,
-		Caps:          caps,
-		Preference:    sprite.ModeImage,
-		Color:         colorMode,
-		SourceKind:    sprite.SourceArtwork,
-		Background:    style.BaseRGBA(),
-		HDOff:         false,
-		ClearNativeFn: spriteimage.ClearBestEffort,
-	}
-	nw := nativewarm.New(nativewarm.Config{
-		Cells:    sprite.MaxFrameSize,
-		Workers:  2,
-		Loader:   warmPokemonLoader{details},
-		Renderer: engine,
-		Index:    index,
-		Progress: progress,
-	})
-	nw.Start(ctx)
-	if err := nw.Wait(ctx); err != nil {
-		nw.Stop()
-		return err
-	}
-	nw.Stop()
-	if c.stdout != nil {
 		fmt.Fprintln(c.stdout, "Update complete")
 	}
 	return nil

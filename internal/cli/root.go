@@ -374,8 +374,8 @@ func newCacheCommand(options Options) *cobra.Command {
 func newUpdateCommand(options Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
-		Short: "Refresh index, sync artwork, and build native image cache",
-		Long:  "Refreshes the species index and type enrichment, downloads new or changed official artwork, then pre-encodes Kitty/iTerm/Sixel frames when the terminal supports native graphics.",
+		Short: "Refresh index and sync official artwork",
+		Long:  "Refreshes the species index and type enrichment, then downloads new or changed official artwork into the app cache. Native Kitty/iTerm/Sixel frame caches are built in the background while browsing, not during update.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if options.Cache == nil {

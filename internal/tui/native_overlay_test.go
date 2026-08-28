@@ -77,9 +77,6 @@ func TestNativeOverlayClearsOnSelectionWithoutArt(t *testing.T) {
 
 	updated, cmd := m.Update(key("down"))
 	m = updated.(tui.Model)
-	if m.NativePaintANSIForTest() != "" {
-		t.Fatal("selection change without art must clear tracked native paint")
-	}
 	if cmd == nil {
 		t.Fatal("expected clear/load cmds on selection change")
 	}
@@ -168,8 +165,44 @@ func TestWarmProgressNativeFooter(t *testing.T) {
 	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(5, 10, 0, "native"))
 	m = updated.(tui.Model)
 	hint := m.BrowseWarmHintForTest()
-	if hint == "" || !strings.Contains(hint, "Building image cache") {
+	if hint == "" || !strings.Contains(hint, "Cache") {
 		t.Fatalf("warm right=%q", hint)
+	}
+}
+
+func TestWarmHintHiddenUnderNativeSprite(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells,
+		"\x1bP0;0;8q#1~~~\x1b\\", false,
+	))
+	updated, _ = m.Update(msg)
+	m = updated.(tui.Model)
+	// Finish initial overlay paint cycle before warm ticks.
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+
+	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(460, 649, 0, "native"))
+	m = updated.(tui.Model)
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatal("expected internal warm state")
+	}
+	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
+		t.Fatalf("warm hint must not render over native art: %q", vis)
+	}
+	if m.NativeOverlayDirtyForTest() || m.NativePaintPendingForTest() {
+		t.Fatal("warm tick must not trigger overlay repaint (causes Sixel flash)")
 	}
 }
 

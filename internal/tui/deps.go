@@ -29,6 +29,8 @@ type SpriteRenderer interface {
 	Render(ctx context.Context, pokemon domain.Pokemon, cells int) (ansi string, usePlaceholder, native bool, assetKind string)
 	// ClearNative clears prior native graphics placements (Kitty/iTerm/Sixel). May be a no-op.
 	ClearNative()
+	// ClearNativeRegion returns a scoped native clear sequence for WxH cells (Sixel blank fill).
+	ClearNativeRegion(cellsW, cellsH int) string
 	// InvalidateSpecies drops in-memory encode caches for a species (artwork pop-in).
 	InvalidateSpecies(speciesID int)
 }

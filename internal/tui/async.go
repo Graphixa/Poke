@@ -120,6 +120,7 @@ type warmProgressMsg struct {
 	Message   string
 	SpeciesID int
 	Stage     string
+	Cells     int
 	closed    bool
 }
 
@@ -134,7 +135,7 @@ func listenWarmProgress(ch <-chan WarmProgress) tea.Cmd {
 		}
 		return warmProgressMsg{
 			Done: p.Done, Total: p.Total, Message: p.Message,
-			SpeciesID: p.SpeciesID, Stage: p.Stage,
+			SpeciesID: p.SpeciesID, Stage: p.Stage, Cells: p.Cells,
 		}
 	}
 }

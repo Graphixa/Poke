@@ -47,7 +47,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.nativeWarmer != nil {
 			if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
-				m.nativeWarmer.SetCells(cells)
+				m.nativeWarmer.EnsureStarted(m.ctx, cells)
 			}
 		}
 		return m, m.handleSpriteLayoutChange(prevShow, prevSide)
@@ -355,6 +355,9 @@ func (m *Model) notifyWarmer() {
 		m.artworkWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
 	}
 	if m.nativeWarmer != nil {
+		if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
+			m.nativeWarmer.EnsureStarted(m.ctx, cells)
+		}
 		m.nativeWarmer.Prioritize(sel.ID)
 		m.nativeWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
 	}

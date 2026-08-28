@@ -102,6 +102,11 @@ func (m Model) BrowseWarmHintForTest() string {
 	return m.warmRight
 }
 
+// BrowseVisibleWarmHintForTest returns warm hint actually rendered in View (hidden under native art).
+func (m Model) BrowseVisibleWarmHintForTest() string {
+	return m.browseData().WarmHint
+}
+
 // SpriteReqID exposes the current sprite request id for tests.
 func (m Model) SpriteReqID() int { return m.spriteReqID }
 

@@ -23,6 +23,9 @@ type ArtefactCache interface {
 // ClearNativeFunc clears prior native image placements (best-effort).
 type ClearNativeFunc func()
 
+// ClearNativeRegionFunc returns a scoped native clear sequence for WxH cells.
+type ClearNativeRegionFunc func(cellsW, cellsH int, bg color.RGBA) string
+
 // Engine orchestrates PNG resolution, mode selection, rendering, and caching.
 type Engine struct {
 	Source     *SourceResolver
@@ -43,6 +46,8 @@ type Engine struct {
 	FrameH int
 	// ClearNativeFn clears native placements; optional.
 	ClearNativeFn ClearNativeFunc
+	// ClearNativeRegionFn emits scoped Sixel/Kitty clear for WxH cells; optional.
+	ClearNativeRegionFn ClearNativeRegionFunc
 	// OnNativeFail is called when native image rendering fails (session fallback).
 	OnNativeFail func()
 
@@ -82,6 +87,18 @@ func (e *Engine) ClearNative() {
 	if e != nil && e.ClearNativeFn != nil {
 		e.ClearNativeFn()
 	}
+}
+
+// ClearNativeRegion emits a scoped clear sequence for a WxH cell art box.
+func (e *Engine) ClearNativeRegion(cellsW, cellsH int) string {
+	if e == nil || e.ClearNativeRegionFn == nil || cellsW < 1 || cellsH < 1 {
+		return ""
+	}
+	bg := e.Background
+	if bg.A == 0 {
+		bg = DefaultBackground
+	}
+	return e.ClearNativeRegionFn(cellsW, cellsH, bg)
 }
 
 // InvalidateSpecies drops mem-cached frames for a species so artwork pop-in

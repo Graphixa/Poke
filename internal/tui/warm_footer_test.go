@@ -12,7 +12,7 @@ func TestFooterSplitFixedWidthRight(t *testing.T) {
 	if len(left) < 40 {
 		t.Fatalf("footer too short: %q", left)
 	}
-	withBar := components.FooterSplit(false, 80, "Building image cache [████░░░░] 50%")
+	withBar := components.FooterSplit(false, 80, "Cache ██████░░░░ 5/10")
 	if withBar == left {
 		t.Fatal("expected different footer with progress")
 	}
@@ -20,8 +20,11 @@ func TestFooterSplitFixedWidthRight(t *testing.T) {
 
 func TestFormatNativeCacheBar(t *testing.T) {
 	got := tui.FormatNativeCacheBarForTest(5, 10)
-	if got == "" || !contains(got, "Building image cache") {
+	if got == "" || !contains(got, "Cache") {
 		t.Fatalf("bar=%q", got)
+	}
+	if !contains(got, "5/10") {
+		t.Fatalf("expected count in bar=%q", got)
 	}
 }
 

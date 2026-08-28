@@ -52,7 +52,11 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.nativePaintPending {
-		return m, nil
+		if m.nativeOverlayReady() {
+			return m, nil
+		}
+		m.nativePaintPending = false
+		m.nativeNeedsFollowUp = false
 	}
 	if !m.nativeOverlayReady() {
 		// Keep dirty while dialog/help is up so Esc restores the paint.
@@ -84,7 +88,13 @@ func (m Model) emitNativeClear() (Model, tea.Cmd) {
 		return m, nil
 	}
 	debuglog.Renderf("native overlay clear row=%d col=%d %dx%d", row, col, artW, artH)
-	return m, tea.Raw(clearCellRect(row, col, artW, artH))
+	seq := clearCellRect(row, col, artW, artH)
+	if m.sprites != nil {
+		if region := m.sprites.ClearNativeRegion(artW, artH); region != "" {
+			seq = fmt.Sprintf("\x1b[%d;%dH%s", row, col, region)
+		}
+	}
+	return m, tea.Raw(seq)
 }
 
 func (m Model) nativeOverlayReady() bool {

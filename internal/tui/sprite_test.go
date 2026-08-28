@@ -42,6 +42,8 @@ func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (stri
 
 func (f *fakeSprites) ClearNative() {}
 
+func (f *fakeSprites) ClearNativeRegion(cellsW, cellsH int) string { return "" }
+
 func (f *fakeSprites) InvalidateSpecies(int) {}
 
 func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {

@@ -56,12 +56,19 @@ func (t tuiSprites) InvalidateSpecies(speciesID int) {
 	}
 }
 
+func (t tuiSprites) ClearNativeRegion(cellsW, cellsH int) string {
+	if t.Engine == nil {
+		return ""
+	}
+	return t.Engine.ClearNativeRegion(cellsW, cellsH)
+}
+
 // sendWarmProgress never drops SpeciesID events so selected pop-in cannot miss.
 // Aggregate-only ticks (SpeciesID==0) may drop when the buffer is full.
 func sendWarmProgress(ch chan<- tui.WarmProgress, p cache.Progress) {
 	msg := tui.WarmProgress{
 		Done: p.Done, Total: p.Total, Message: p.Message,
-		SpeciesID: p.SpeciesID, Stage: p.Stage,
+		SpeciesID: p.SpeciesID, Stage: p.Stage, Cells: p.Cells,
 	}
 	if p.SpeciesID != 0 {
 		ch <- msg
@@ -136,8 +143,9 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		Background:    style.BaseRGBA(),
 		// Consent gates bulk warm, not resolve — always use artwork tier.
 		HDOff:         false,
-		ClearNativeFn: spriteimage.ClearBestEffort,
-		OnNativeFail:  img.Disable,
+		ClearNativeFn:         spriteimage.ClearBestEffort,
+		ClearNativeRegionFn:   spriteimage.ClearNativeRegion,
+		OnNativeFail:          img.Disable,
 	}
 
 	details := NewDetailService(svc.Cache)
@@ -201,20 +209,23 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 
 	var nativeWarmer *nativewarm.Service
 	if caps.NativeImage && !opts.DisableSprite {
-		useProgress = true
+		protocol := img.ProtocolName()
+		_ = svc.Cache.EnsureNativeManifest(protocol)
 		nativeWarmer = nativewarm.New(nativewarm.Config{
-			Cells:    sprite.MaxFrameSize,
 			Workers:  2,
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
 			Index:    index,
+			Manifest: svc.Cache,
+			Protocol: protocol,
 			Progress: func(p cache.Progress) {
 				sendWarmProgress(progressCh, p)
 			},
 		})
-		nativeWarmer.Start(ctx)
 		defer nativeWarmer.Stop()
 		opts.NativeWarmer = nativeWarmer
+		// Footer progress only while a layout bucket is incomplete (checked at EnsureStarted).
+		useProgress = true
 	}
 
 	if useProgress {

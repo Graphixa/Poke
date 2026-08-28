@@ -32,6 +32,15 @@ type NativeRenderer interface {
 	NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
 }
 
+// ManifestStore tracks per-size native cache completeness on disk.
+type ManifestStore interface {
+	EnsureManifest(protocol string) error
+	NativeSizeComplete(cells, total int) bool
+	InitNativeSizePhase(cells, total int) error
+	MarkNativeSizeComplete(cells, total int) error
+	RecountNativeSize(cells int) (int, error)
+}
+
 // ProgressFunc receives warm progress updates.
 type ProgressFunc func(cache.Progress)
 
@@ -43,6 +52,8 @@ type Config struct {
 	Renderer NativeRenderer
 	Index    []domain.SpeciesSummary
 	Progress ProgressFunc
+	Manifest ManifestStore
+	Protocol string
 	// OnlyIDs when non-empty restricts background encode to these species (poke update).
 	OnlyIDs map[int]struct{}
 }
@@ -51,21 +62,22 @@ type Config struct {
 type Service struct {
 	cfg Config
 
-	mu      sync.Mutex
-	pq      priorityQueue
-	seq     int64
-	queued  map[int]bool
-	done    map[int]bool
-	cells   int
-	wake    chan struct{}
-	started atomic.Bool
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	doneN   atomic.Int64
-	totalN  atomic.Int64
+	mu        sync.Mutex
+	pq        priorityQueue
+	seq       int64
+	queued    map[int]bool
+	done      map[int]bool
+	indexByID map[int]domain.SpeciesSummary
+	cells     int
+	wake      chan struct{}
+	started   atomic.Bool
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	doneN     atomic.Int64
+	totalN    atomic.Int64
 }
 
-// New creates a native warm service. Call Start to begin workers.
+// New creates a native warm service. Call EnsureStarted when browse layout is known.
 func New(cfg Config) *Service {
 	if cfg.Workers < 1 {
 		cfg.Workers = runtime.GOMAXPROCS(0)
@@ -80,30 +92,161 @@ func New(cfg Config) *Service {
 		cfg.Cells = sprite.MaxFrameSize
 	}
 	cfg.Cells = sprite.ClampFrameSide(cfg.Cells)
+	indexByID := make(map[int]domain.SpeciesSummary, len(cfg.Index))
+	for _, sum := range cfg.Index {
+		if sum.ID > 0 {
+			indexByID[sum.ID] = sum
+		}
+	}
 	return &Service{
-		cfg:    cfg,
-		queued: make(map[int]bool),
-		done:   make(map[int]bool),
-		cells:  cfg.Cells,
-		wake:   make(chan struct{}, 1),
+		cfg:       cfg,
+		queued:    make(map[int]bool),
+		done:      make(map[int]bool),
+		indexByID: indexByID,
+		cells:     cfg.Cells,
+		wake:      make(chan struct{}, 1),
 	}
 }
 
-// Start launches worker goroutines.
+// Start launches workers for cfg.Cells. Prefer EnsureStarted with the browse frame size.
 func (s *Service) Start(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.EnsureStarted(ctx, s.cells)
+}
+
+// EnsureStarted seeds on-disk hits, enqueues only missing species, and starts workers
+// when there is work. No-op when the native cache is already complete for cells.
+func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 	if s == nil || s.cfg.Renderer == nil || s.cfg.Loader == nil {
 		return
 	}
-	if !s.started.CompareAndSwap(false, true) {
+	cells = sprite.ClampFrameSide(cells)
+	total := len(s.cfg.Index)
+	if s.cfg.Manifest != nil {
+		if err := s.cfg.Manifest.EnsureManifest(s.cfg.Protocol); err != nil {
+			debuglog.Renderf("nativewarm manifest err=%v", err)
+		}
+		if s.cfg.Manifest.NativeSizeComplete(cells, total) {
+			return
+		}
+	}
+
+	s.mu.Lock()
+	cellsChanged := s.cells != cells
+	if cellsChanged {
+		s.cells = cells
+	}
+	alreadyStarted := s.started.Load()
+	s.mu.Unlock()
+
+	if !alreadyStarted {
+		if s.cfg.Manifest != nil {
+			if err := s.cfg.Manifest.InitNativeSizePhase(cells, total); err != nil {
+				debuglog.Renderf("nativewarm init phase err=%v", err)
+			}
+		}
+		s.prepareQueueAtCells(ctx)
+		if s.totalN.Load() == 0 {
+			if s.cfg.Manifest != nil {
+				_ = s.cfg.Manifest.MarkNativeSizeComplete(cells, total)
+			}
+			return
+		}
+		if !s.started.CompareAndSwap(false, true) {
+			return
+		}
+		runCtx, cancel := context.WithCancel(ctx)
+		s.cancel = cancel
+		for i := 0; i < s.cfg.Workers; i++ {
+			s.wg.Add(1)
+			go s.worker(runCtx)
+		}
 		return
 	}
-	runCtx, cancel := context.WithCancel(ctx)
-	s.cancel = cancel
-	s.enqueueAll(PriorityBackground)
-	for i := 0; i < s.cfg.Workers; i++ {
-		s.wg.Add(1)
-		go s.worker(runCtx)
+	if cellsChanged {
+		if s.cfg.Manifest != nil {
+			if err := s.cfg.Manifest.InitNativeSizePhase(cells, total); err != nil {
+				debuglog.Renderf("nativewarm init phase err=%v", err)
+			}
+		}
+		s.prepareQueueAtCells(ctx)
+		if s.totalN.Load() == 0 {
+			if s.cfg.Manifest != nil {
+				_ = s.cfg.Manifest.MarkNativeSizeComplete(cells, total)
+			}
+		}
 	}
+}
+
+// WarmAllSizes encodes every bucket in order (typically max-first). Blocks until done.
+func (s *Service) WarmAllSizes(ctx context.Context, sizes []int) error {
+	if s == nil {
+		return nil
+	}
+	total := len(s.cfg.Index)
+	if s.cfg.Manifest != nil {
+		if err := s.cfg.Manifest.EnsureManifest(s.cfg.Protocol); err != nil {
+			return err
+		}
+	}
+	for _, cells := range sizes {
+		cells = sprite.ClampFrameSide(cells)
+		if s.cfg.Manifest != nil && s.cfg.Manifest.NativeSizeComplete(cells, total) {
+			continue
+		}
+		if err := s.runSizePhase(ctx, cells, total); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) runSizePhase(ctx context.Context, cells, total int) error {
+	s.mu.Lock()
+	s.cells = cells
+	s.mu.Unlock()
+
+	if s.cfg.Manifest != nil {
+		if err := s.cfg.Manifest.InitNativeSizePhase(cells, total); err != nil {
+			return err
+		}
+	}
+
+	s.prepareQueueAtCells(ctx)
+	if s.totalN.Load() == 0 {
+		if s.cfg.Manifest != nil {
+			return s.cfg.Manifest.MarkNativeSizeComplete(cells, total)
+		}
+		return nil
+	}
+
+	if !s.started.Load() {
+		if !s.started.CompareAndSwap(false, true) {
+			s.signal()
+		} else {
+			runCtx, cancel := context.WithCancel(ctx)
+			s.cancel = cancel
+			for i := 0; i < s.cfg.Workers; i++ {
+				s.wg.Add(1)
+				go s.worker(runCtx)
+			}
+		}
+	} else {
+		s.signal()
+	}
+
+	if err := s.Wait(ctx); err != nil {
+		return err
+	}
+	if s.cfg.Manifest != nil {
+		if _, err := s.cfg.Manifest.RecountNativeSize(cells); err != nil {
+			return err
+		}
+		return s.cfg.Manifest.MarkNativeSizeComplete(cells, total)
+	}
+	return nil
 }
 
 // Stop cancels workers and waits for them to exit.
@@ -117,27 +260,12 @@ func (s *Service) Stop() {
 	s.wg.Wait()
 }
 
-// SetCells updates the frame bucket for subsequent jobs.
+// SetCells updates the frame bucket and re-queues only species missing disk cache.
 func (s *Service) SetCells(cells int) {
 	if s == nil {
 		return
 	}
-	cells = sprite.ClampFrameSide(cells)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if cells == s.cells {
-		return
-	}
-	s.cells = cells
-	s.done = make(map[int]bool)
-	s.doneN.Store(0)
-	for _, sum := range s.cfg.Index {
-		if s.shouldEnqueue(sum.ID) && !s.queued[sum.ID] {
-			s.pushLocked(job{speciesID: sum.ID, priority: PriorityBackground})
-		}
-	}
-	s.totalN.Store(int64(s.countEnqueueable()))
-	s.signal()
+	s.EnsureStarted(context.Background(), cells)
 }
 
 // Prioritize bumps the selected species to P0.
@@ -184,17 +312,68 @@ func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, rad
 	s.signal()
 }
 
-func (s *Service) enqueueAll(priority int) {
+func (s *Service) prepareQueueAtCells(ctx context.Context) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.pq = priorityQueue{}
+	s.queued = make(map[int]bool)
+	s.done = make(map[int]bool)
+	s.doneN.Store(0)
+	s.mu.Unlock()
+
+	s.seedDoneFromDisk(ctx)
+
+	s.mu.Lock()
 	for _, sum := range s.cfg.Index {
 		if !s.shouldEnqueue(sum.ID) || s.done[sum.ID] || s.queued[sum.ID] {
 			continue
 		}
-		s.pushLocked(job{speciesID: sum.ID, priority: priority})
+		s.pushLocked(job{speciesID: sum.ID, priority: PriorityBackground})
 	}
-	s.totalN.Store(int64(s.countEnqueueable()))
-	s.signal()
+	remaining := s.countRemainingLocked()
+	s.totalN.Store(int64(remaining))
+	s.mu.Unlock()
+	if remaining > 0 {
+		s.signal()
+	}
+}
+
+func (s *Service) seedDoneFromDisk(ctx context.Context) {
+	if s.cfg.Renderer == nil {
+		return
+	}
+	cells := s.cells
+	for _, sum := range s.cfg.Index {
+		if !s.shouldEnqueue(sum.ID) {
+			continue
+		}
+		poke := s.indexPokemon(sum.ID)
+		if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
+			s.mu.Lock()
+			s.done[sum.ID] = true
+			s.mu.Unlock()
+		}
+	}
+}
+
+func (s *Service) indexPokemon(speciesID int) domain.Pokemon {
+	if sum, ok := s.indexByID[speciesID]; ok {
+		return domain.Pokemon{ID: sum.ID, Slug: sum.Slug, DisplayName: sum.DisplayName}
+	}
+	return domain.Pokemon{ID: speciesID}
+}
+
+func (s *Service) pokemonForJob(ctx context.Context, speciesID int) (domain.Pokemon, error) {
+	poke, err := s.cfg.Loader.Pokemon(ctx, speciesID)
+	if err != nil {
+		return domain.Pokemon{}, err
+	}
+	if sum, ok := s.indexByID[speciesID]; ok && sum.Slug != "" {
+		poke.Slug = sum.Slug
+	}
+	if poke.ID == 0 {
+		poke.ID = speciesID
+	}
+	return poke, nil
 }
 
 func (s *Service) shouldEnqueue(speciesID int) bool {
@@ -205,13 +384,10 @@ func (s *Service) shouldEnqueue(speciesID int) bool {
 	return ok
 }
 
-func (s *Service) countEnqueueable() int {
-	if len(s.cfg.OnlyIDs) == 0 {
-		return len(s.cfg.Index)
-	}
+func (s *Service) countRemainingLocked() int {
 	n := 0
 	for _, sum := range s.cfg.Index {
-		if s.shouldEnqueue(sum.ID) {
+		if s.shouldEnqueue(sum.ID) && !s.done[sum.ID] {
 			n++
 		}
 	}
@@ -271,7 +447,7 @@ func (s *Service) pop() (job, bool) {
 
 func (s *Service) runJob(ctx context.Context, j job) {
 	cells := s.cells
-	poke, err := s.cfg.Loader.Pokemon(ctx, j.speciesID)
+	poke, err := s.pokemonForJob(ctx, j.speciesID)
 	if err != nil {
 		debuglog.Renderf("nativewarm skip species=%d err=%v", j.speciesID, err)
 		s.markDone(j.speciesID)
@@ -304,19 +480,31 @@ func (s *Service) markDone(speciesID int) {
 }
 
 func (s *Service) report(speciesID int) {
+	done := int(s.doneN.Load())
+	total := int(s.totalN.Load())
+	if total <= 0 {
+		return
+	}
+	if done >= total {
+		if s.cfg.Manifest != nil {
+			_ = s.cfg.Manifest.MarkNativeSizeComplete(s.cells, len(s.cfg.Index))
+		}
+		return
+	}
 	if s.cfg.Progress == nil {
 		return
 	}
 	s.cfg.Progress(cache.Progress{
 		Stage:     "native",
-		Done:      int(s.doneN.Load()),
-		Total:     int(s.totalN.Load()),
+		Done:      done,
+		Total:     total,
+		Cells:     s.cells,
 		Message:   "Building image cache",
 		SpeciesID: speciesID,
 	})
 }
 
-// Snapshot returns current done/total counts.
+// Snapshot returns current done/total counts for in-flight warm work.
 func (s *Service) Snapshot() (done, total int) {
 	if s == nil {
 		return 0, 0
@@ -334,10 +522,7 @@ func (s *Service) Wait(ctx context.Context) error {
 			return err
 		}
 		done, total := s.Snapshot()
-		if total > 0 && done >= total {
-			return nil
-		}
-		if total == 0 && len(s.cfg.Index) == 0 {
+		if total == 0 || done >= total {
 			return nil
 		}
 		select {

@@ -122,6 +122,7 @@ func (d *DetailService) PokemonForSprite(ctx context.Context, speciesID int) (do
 	// that id, so we avoid a Species round-trip on the warm/artwork path.
 	if p, err := d.cache.Pokemon(ctx, speciesID); err == nil && (p.Sprites.FrontDefault != "" || p.Sprites.OfficialArtwork != "") {
 		stampArtworkCDN(&p)
+		stampSpeciesSlug(ctx, d.cache, speciesID, &p)
 		return p, nil
 	}
 	detail, err := d.loadSpeciesPokemon(ctx, speciesID)
@@ -129,7 +130,19 @@ func (d *DetailService) PokemonForSprite(ctx context.Context, speciesID int) (do
 		return domain.Pokemon{}, err
 	}
 	stampArtworkCDN(&detail.Pokemon)
+	if detail.Pokemon.Slug == "" {
+		detail.Pokemon.Slug = detail.Species.Slug
+	}
 	return detail.Pokemon, nil
+}
+
+func stampSpeciesSlug(ctx context.Context, cache detailCache, speciesID int, p *domain.Pokemon) {
+	if p == nil || p.Slug != "" || speciesID < 1 {
+		return
+	}
+	if sp, err := cache.Species(ctx, speciesID); err == nil && sp.Slug != "" {
+		p.Slug = sp.Slug
+	}
 }
 
 // stampArtworkCDN ensures interactive resolve prefers official artwork CDN even

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	stdimage "image"
+	"image/color"
 	_ "image/png"
 	"os"
 	"strings"
@@ -321,4 +322,36 @@ func ClearBestEffort() {
 	restore := bypassDetection(proto)
 	defer restore()
 	_ = termimg.ClearAll()
+}
+
+// ClearNativeRegion returns a scoped clear sequence for a WxH cell region.
+// Sixel fills the region with theme background; Kitty/iTerm returns empty (caller uses spaces).
+func ClearNativeRegion(cellsW, cellsH int, bg color.RGBA) string {
+	if cellsW < 1 || cellsH < 1 {
+		return ""
+	}
+	proto := detectProtocol()
+	if proto != protocolSixel {
+		return ""
+	}
+	seq, err := clearSixelRegion(cellsW, cellsH, bg)
+	if err != nil {
+		return ""
+	}
+	return seq
+}
+
+func clearSixelRegion(cellsW, cellsH int, bg color.RGBA) (string, error) {
+	if bg.A == 0 {
+		bg = sprite.DefaultBackground
+	}
+	pxW := cellsW * sixelCellPxW
+	pxH := cellsH * sixelCellPxH
+	img := stdimage.NewRGBA(stdimage.Rect(0, 0, pxW, pxH))
+	for y := 0; y < pxH; y++ {
+		for x := 0; x < pxW; x++ {
+			img.Set(x, y, bg)
+		}
+	}
+	return encodeSixel(img, cellsW, cellsH, sprite.RenderOptions{BackgroundColor: bg})
 }

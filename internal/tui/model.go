@@ -54,6 +54,7 @@ type ArtworkWarmer interface {
 
 // NativeWarmer pre-encodes native graphics frames into the disk cache.
 type NativeWarmer interface {
+	EnsureStarted(ctx context.Context, cells int)
 	Prioritize(speciesID int)
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
 	SetCells(cells int)
@@ -67,6 +68,7 @@ type WarmProgress struct {
 	Message   string
 	SpeciesID int    // species that just finished a warm unit (0 if unknown)
 	Stage     string // artwork | sprites_render | dossier | …
+	Cells     int    // native frame longest-side bucket
 }
 
 // Model is the Bubble Tea browse state machine.
@@ -371,11 +373,12 @@ func (m *Model) bumpSelection() {
 	m.showDialog = false
 	m.dialogVP.GotoTop()
 	m.cancelSprite()
+	m.nativePaintPending = false
+	m.nativeNeedsFollowUp = false
 	if m.sprites != nil {
 		m.sprites.ClearNative()
 	}
-	// Sixel ClearNative is a no-op — dirty so scheduleNativeOverlay wipes the
-	// previous species' graphics when the new selection has no frame yet.
+	// Dirty overlay so scheduleNativeOverlay wipes previous species graphics.
 	m.markNativeOverlayDirtyFollowUp()
 }
 

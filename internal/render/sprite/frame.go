@@ -68,6 +68,16 @@ func FrameSteps() []int {
 	return steps
 }
 
+// FrameStepsMaxFirst returns FrameSteps from largest to smallest bucket.
+func FrameStepsMaxFirst() []int {
+	steps := FrameSteps()
+	out := make([]int, len(steps))
+	for i, s := range steps {
+		out[len(steps)-1-i] = s
+	}
+	return out
+}
+
 // OuterFor returns padded outer width×height for a longest-side step.
 // Padding is aspect-corrected so visual margins match on ~1:2 cells.
 func OuterFor(side int) (w, h int) {

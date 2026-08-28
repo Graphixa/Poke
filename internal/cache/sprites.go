@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -67,7 +69,10 @@ func (s *Service) InvalidateNativeSpecies(speciesID int) error {
 	if speciesID < 1 {
 		return nil
 	}
-	return s.store.DeleteNativeForSpecies(speciesID)
+	if err := s.store.DeleteNativeForSpecies(speciesID); err != nil {
+		return err
+	}
+	return s.store.InvalidateNativeManifestSizes()
 }
 
 func sha256HexBytes(data []byte) string {
@@ -127,7 +132,65 @@ func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
 	if _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(key); err != nil {
 		return err
 	}
-	return s.store.StoreNative(ctx, key, []byte(frame))
+	if err := s.store.StoreNative(ctx, key, []byte(frame)); err != nil {
+		return err
+	}
+	s.recordNativeFrameManifest(key)
+	return nil
+}
+
+func (s *Service) recordNativeFrameManifest(key string) {
+	hash, _, w, h, _, ver, err := sprite.ParseNativeCacheKey(key)
+	if err != nil || ver != sprite.AlgorithmVersion {
+		return
+	}
+	cells := w
+	if h > 0 && w/h == sprite.CellAspectY {
+		cells = w
+	}
+	if cells < sprite.MinFrameSize {
+		return
+	}
+	m, err := s.store.ReadNativeManifest()
+	if err != nil || m.Version != sprite.AlgorithmVersion {
+		return
+	}
+	if m.Sizes == nil {
+		m.Sizes = map[int]NativeSizeStatus{}
+	}
+	entry := m.Sizes[cells]
+	if entry.Complete {
+		return
+	}
+	id := speciesIDFromNamedAssetHash(hash)
+	if id < 1 {
+		return
+	}
+	// Recount is accurate; hook keeps manifest fresh during interactive encodes.
+	done, err := s.store.CountNativeSpeciesForCells(cells, m.Protocol)
+	if err != nil {
+		return
+	}
+	entry.Done = done
+	entry.Complete = entry.Total > 0 && done >= entry.Total
+	m.Sizes[cells] = entry
+	_ = s.store.WriteNativeManifest(m)
+}
+
+func speciesIDFromNamedAssetHash(hash string) int {
+	if !strings.HasPrefix(hash, "named-") {
+		return 0
+	}
+	rest := hash[len("named-"):]
+	i := strings.IndexByte(rest, '-')
+	if i <= 0 {
+		return 0
+	}
+	id, err := strconv.Atoi(rest[:i])
+	if err != nil || id < 1 {
+		return 0
+	}
+	return id
 }
 
 func sha256Hex(s string) string {

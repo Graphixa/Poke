@@ -23,6 +23,7 @@ type Progress struct {
 	Total     int
 	Message   string
 	SpeciesID int // optional: species that just finished (warmers)
+	Cells     int // native frame longest-side bucket (warmers)
 }
 
 // ProgressFunc receives progress updates during refresh. It must be safe for

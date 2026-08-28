@@ -182,10 +182,10 @@ func Footer(verbose bool, width int, warmHint string) string {
 func FooterSplit(verbose bool, width int, rightStatus string) string {
 	const footerRightWidth = 38
 	right := strings.TrimSpace(rightStatus)
-	if len(right) > footerRightWidth {
-		right = right[:footerRightWidth]
+	right = textwidth.Truncate(right, footerRightWidth)
+	if w := textwidth.Width(right); w < footerRightWidth {
+		right = strings.Repeat(" ", footerRightWidth-w) + right
 	}
-	right = padLeft(padRight(right, footerRightWidth), footerRightWidth)
 
 	leftW := width - footerRightWidth
 	if leftW < 10 {
