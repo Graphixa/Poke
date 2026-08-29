@@ -143,7 +143,7 @@ func (s *Store) LoadAggregateEncounters(datasetID string) (map[int][]dataset.Dat
 	return records, nil
 }
 
-// StoreAggregateBuilder writes all v3 aggregate files from a completed builder.
+// StoreAggregateBuilder writes all aggregate files from a completed builder.
 func (s *Store) StoreAggregateBuilder(datasetID string, b *dataset.Builder) error {
 	if b == nil {
 		return errors.New("cache: nil dataset builder")

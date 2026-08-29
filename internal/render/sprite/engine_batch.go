@@ -10,8 +10,11 @@ import (
 
 // NativeWarmBatchResult summarizes batch native warm encoding.
 type NativeWarmBatchResult struct {
-	Encoded int
-	Last    RenderResult
+	ReadySizes   []int
+	EncodedSizes []int
+	FailedSizes  []int
+	Encoded      int
+	Last         RenderResult
 }
 
 // NativeWarmBatch encodes multiple missing native sizes from one PNG decode.
@@ -19,39 +22,54 @@ func (e *Engine) NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, si
 	if e == nil || len(sizes) == 0 {
 		return NativeWarmBatchResult{}
 	}
-	var missing []int
+	var ready, missing []int
 	for _, cells := range sizes {
 		cells = ClampFrameSide(cells)
 		if cells < MinFrameSize {
 			continue
 		}
-		if !e.HasNativeCache(ctx, pokemon, cells) {
-			missing = append(missing, cells)
+		if e.HasNativeCache(ctx, pokemon, cells) {
+			ready = append(ready, cells)
+			continue
 		}
+		missing = append(missing, cells)
 	}
+	out := NativeWarmBatchResult{ReadySizes: ready}
 	if len(missing) == 0 {
-		return NativeWarmBatchResult{}
+		return out
 	}
 	if len(missing) == 1 {
 		res := e.NativeWarmRender(ctx, pokemon, missing[0])
-		n := 0
 		if res.Native {
-			n = 1
+			out.EncodedSizes = []int{missing[0]}
+			out.Encoded = 1
+		} else {
+			out.FailedSizes = []int{missing[0]}
 		}
-		return NativeWarmBatchResult{Encoded: n, Last: res}
+		out.Last = res
+		return out
 	}
 
 	rend := e.nativeRenderer()
 	if rend == nil {
 		res := e.NativeWarmRender(ctx, pokemon, missing[0])
-		return NativeWarmBatchResult{Last: res}
+		out.Last = res
+		if res.Native {
+			out.EncodedSizes = []int{missing[0]}
+			out.Encoded = 1
+		} else {
+			out.FailedSizes = []int{missing[0]}
+		}
+		return out
 	}
 
 	ref := e.resolveNativeAssetRef(ctx, pokemon)
 	if !ref.Ready {
 		res, _ := e.resolveNativeAsset(ctx, pokemon, pokemon.ID)
 		if res.UsePlaceholder || len(res.PNG) == 0 {
-			return NativeWarmBatchResult{Last: e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)}
+			out.Last = e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)
+			out.FailedSizes = append(out.FailedSizes, missing...)
+			return out
 		}
 		ref.Hash = res.ContentHash
 		ref.Ready = true
@@ -60,11 +78,15 @@ func (e *Engine) NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, si
 
 	png, err := e.readNativePNG(ctx, pokemon, ref)
 	if err != nil || len(png) == 0 {
-		return NativeWarmBatchResult{Last: e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)}
+		out.Last = e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)
+		out.FailedSizes = append(out.FailedSizes, missing...)
+		return out
 	}
 	hash := e.ensureCanonicalHash(ctx, pokemon, ref, png)
 	if !IsHexSHA256(hash) {
-		return NativeWarmBatchResult{Last: e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)}
+		out.Last = e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)
+		out.FailedSizes = append(out.FailedSizes, missing...)
+		return out
 	}
 
 	endDecode := debuglog.Trace(debuglog.Render, "png.decode")
@@ -72,7 +94,9 @@ func (e *Engine) NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, si
 	endDecode()
 	if err != nil {
 		debuglog.Renderf("nativewarm batch decode fail pokemon=%d err=%v", pokemon.ID, err)
-		return NativeWarmBatchResult{Last: e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)}
+		out.Last = e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)
+		out.FailedSizes = append(out.FailedSizes, missing...)
+		return out
 	}
 
 	label := displayName(pokemon)
@@ -81,16 +105,18 @@ func (e *Engine) NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, si
 		assetKind = namedKindForTier(AssetTierHD)
 	}
 
-	var out NativeWarmBatchResult
 	for _, cells := range missing {
 		if err := ctx.Err(); err != nil {
 			break
 		}
 		fw, fh := FrameSizeFor(cells)
 		opts := e.renderOptions(label, fw, fh, hash, QualityInteractive)
-		if res, ok := e.encodeNativeFrame(ctx, rend, img, opts, hash, assetKind, pokemon.ID); ok {
+		if res, ok := e.encodeNativeFrameDirect(ctx, rend, img, opts, hash, assetKind, pokemon.ID); ok {
+			out.EncodedSizes = append(out.EncodedSizes, cells)
 			out.Encoded++
 			out.Last = res
+		} else {
+			out.FailedSizes = append(out.FailedSizes, cells)
 		}
 	}
 	return out
@@ -118,6 +144,10 @@ func (e *Engine) encodeNativeFrame(ctx context.Context, rend Renderer, img image
 	if hit, result := e.lookupNativeFrame(ctx, rend, opts, hash, "", assetKind, true); hit {
 		return result, true
 	}
+	return e.encodeNativeFrameDirect(ctx, rend, img, opts, hash, assetKind, pokemonID)
+}
+
+func (e *Engine) encodeNativeFrameDirect(ctx context.Context, rend Renderer, img image.Image, opts RenderOptions, hash, assetKind string, pokemonID int) (RenderResult, bool) {
 	key := nativeCacheKey(hash, rend, opts.Width, opts.Height, opts.BackgroundColor)
 	endEncode := debuglog.Trace(debuglog.Render, "native.encode")
 	frame, err := rend.Render(ctx, img, opts)

@@ -328,15 +328,24 @@ func TestWarmOfflineDetailRead(t *testing.T) {
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
-	pokemon := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90}}
-	if err := store.StorePokemon(context.Background(), pokemon, clock.Now()); err != nil {
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	api := &fakeAPI{pokemonFn: func(int) (domain.Pokemon, error) {
+	failAPI := &fakeAPI{pokemonFn: func(int) (domain.Pokemon, error) {
 		return domain.Pokemon{}, pokeapi.ErrOffline
 	}}
-	svc := cache.NewService(store, api, testConfig(), clock)
-	got, err := svc.Pokemon(context.Background(), 25)
+	svc2 := cache.NewService(store, failAPI, testConfig(), clock)
+	got, err := svc2.Pokemon(context.Background(), 25)
 	if err != nil || got.Stats.Speed != 90 {
 		t.Fatalf("got=%#v err=%v", got, err)
 	}
@@ -345,11 +354,11 @@ func TestWarmOfflineDetailRead(t *testing.T) {
 func TestEnvelopeRoundTripJSON(t *testing.T) {
 	root := t.TempDir()
 	store := cache.NewStore(root, nil)
-	move := domain.Move{ID: 1, Slug: "pound", DisplayName: "Pound", PP: 35}
-	if err := store.StoreMove(context.Background(), move, time.Now().UTC()); err != nil {
+	index := []domain.SpeciesSummary{{ID: 1, Slug: "bulbasaur", DisplayName: "Bulbasaur"}}
+	if err := store.StoreSpeciesIndex(context.Background(), index, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(root, "moves", "1.json"))
+	raw, err := os.ReadFile(filepath.Join(root, "index", "species.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

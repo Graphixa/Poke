@@ -108,7 +108,7 @@ func TestBootstrapEncountersUseWorkers(t *testing.T) {
 		t.Fatalf("max in-flight=%d want >= 2", api.maxFlight.Load())
 	}
 	// 4 species × 3 delayed calls each, 2 workers → well under fully serial 12× delay.
-	// v3 aggregate flush adds a small fixed cost on Windows.
+	// Aggregate flush adds a small fixed cost on Windows.
 	if elapsed := time.Since(start); elapsed >= 16*api.delay {
 		t.Fatalf("bootstrap too slow: %v", elapsed)
 	}

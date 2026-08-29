@@ -7,9 +7,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
+	"github.com/Graphixa/Pokedex/internal/domain"
 )
+
+var namedAssetMetaCalls atomic.Int64
+
+// NamedAssetMetaCount returns test-visible NamedAssetMeta invocations.
+func NamedAssetMetaCount() int64 { return namedAssetMetaCalls.Load() }
+
+// ResetNamedAssetMetaCount clears the NamedAssetMeta test counter.
+func ResetNamedAssetMetaCount() { namedAssetMetaCalls.Store(0) }
 
 // AssetMapping is the Pokémon → content-hash pointer (no PNG bytes).
 type AssetMapping struct {
@@ -33,6 +44,7 @@ func (s *Store) artworkMappingPath(pokemonID int, source string) string {
 
 // NamedAssetMeta returns hash/path for a named sprite without reading PNG bytes.
 func (s *Store) NamedAssetMeta(_ context.Context, id int, slug, kind string) (hash, path string, ready bool, err error) {
+	namedAssetMetaCalls.Add(1)
 	if id < 1 {
 		return "", "", false, nil
 	}
@@ -138,4 +150,72 @@ func (s *Store) ReadAssetBytes(path string) ([]byte, error) {
 
 func (s *Service) StoreContentAsset(pokemonID int, source, url, hash string, data []byte) error {
 	return s.store.StoreContentAsset(pokemonID, source, url, hash, data)
+}
+
+// NamedSprite reads sprites/ or official-artwork/ PNG bytes.
+func (s *Store) NamedSprite(_ context.Context, id int, slug, kind string) ([]byte, error) {
+	path, err := s.namedSpritePath(id, slug, kind)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// StoreNamedSprite writes a named PNG under sprites/ or official-artwork/.
+func (s *Store) StoreNamedSprite(_ context.Context, id int, slug, kind string, data []byte) error {
+	if len(data) == 0 {
+		return fmt.Errorf("cache: refuse to store empty named sprite")
+	}
+	path, err := s.namedSpritePath(id, slug, kind)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(path, data, 0o600)
+}
+
+// StoreNamedSpriteWithMeta writes PNG bytes and provenance sidecar.
+func (s *Store) StoreNamedSpriteWithMeta(ctx context.Context, id int, slug, kind string, url, sha256 string, data []byte) error {
+	if err := s.StoreNamedSprite(ctx, id, slug, kind, data); err != nil {
+		return err
+	}
+	_ = s.StoreContentAsset(id, kind, url, sha256, data)
+	return s.writeNamedSpriteMeta(id, slug, kind, NamedSpriteMeta{
+		URL:       url,
+		SHA256:    sha256,
+		UpdatedAt: s.clock.Now(),
+	})
+}
+
+func (s *Store) namedSpritePath(id int, slug, kind string) (string, error) {
+	key := PokemonFolderKey(id, slug)
+	switch kind {
+	case SpriteKindPixel, "":
+		return filepath.Join(s.root, "sprites", key, SpriteFileFrontDefault), nil
+	case SpriteKindArtwork:
+		return filepath.Join(s.root, "official-artwork", key, SpriteFileFrontDefault), nil
+	default:
+		return "", fmt.Errorf("unknown sprite kind %q", kind)
+	}
+}
+
+// fillIndexSpritePaths sets SpritePath on summaries when empty.
+func fillIndexSpritePaths(index []domain.SpeciesSummary) {
+	for i := range index {
+		if index[i].SpritePath == "" && index[i].ID != 0 {
+			index[i].SpritePath = SpriteRelPath(index[i].ID, index[i].Slug)
+		}
+	}
+}
+
+// stripUnsafeRel rejects paths that escape the cache root via ..
+func stripUnsafeRel(rel string) bool {
+	clean := filepath.Clean(rel)
+	return strings.Contains(clean, "..") || filepath.IsAbs(clean)
 }

@@ -490,12 +490,13 @@ func (s *Service) runJob(ctx context.Context, j job) {
 			NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult
 		}); ok {
 			res := batch.NativeWarmBatch(ctx, poke, sizes)
-			for _, cells := range sizes {
-				if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
-					s.noteVariant(j.speciesID, cells)
-				}
+			for _, cells := range res.ReadySizes {
+				s.noteVariant(j.speciesID, cells)
 			}
-			if res.Encoded == 0 && (res.Last.UsePlaceholder || !res.Last.Native) {
+			for _, cells := range res.EncodedSizes {
+				s.noteVariant(j.speciesID, cells)
+			}
+			if res.Encoded == 0 && len(res.ReadySizes) == 0 && (res.Last.UsePlaceholder || !res.Last.Native) {
 				debuglog.Renderf("nativewarm batch miss species=%d backend=%s", j.speciesID, res.Last.Backend)
 			}
 		} else {

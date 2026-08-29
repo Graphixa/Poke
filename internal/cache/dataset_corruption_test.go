@@ -78,7 +78,7 @@ func TestMissingAggregateFileResetsActive(t *testing.T) {
 		t.Fatal(err)
 	}
 	if store.HasActiveDataset() {
-		t.Fatal("v3 manifest without aggregates must reset")
+		t.Fatal("manifest without aggregates must reset")
 	}
 }
 
@@ -103,7 +103,7 @@ func TestActiveAggregateCorruptionReturnsError(t *testing.T) {
 	if err := os.WriteFile(store.AggregatePokemonPath(activeID), []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store.InvalidateV3DatasetForTest()
+	store.InvalidateLoadedSnapshotForTest()
 	_, err := svc.Pokemon(t.Context(), 25)
 	if err == nil {
 		t.Fatal("corrupt active aggregate must return error")

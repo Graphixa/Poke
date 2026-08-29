@@ -32,11 +32,6 @@ type Cache interface {
 	Sprite(context.Context, string) ([]byte, error)
 
 	StoreSpeciesIndex(context.Context, []domain.SpeciesSummary, time.Time) error
-	StorePokemon(context.Context, domain.Pokemon, time.Time) error
-	StoreSpecies(context.Context, domain.Species, time.Time) error
-	StoreEvolutionChain(context.Context, int, domain.EvolutionTree, time.Time) error
-	StoreEncounters(context.Context, int, []domain.Encounter, time.Time) error
-	StoreMove(context.Context, domain.Move, time.Time) error
 	StoreSprite(context.Context, string, []byte) error
 }
 

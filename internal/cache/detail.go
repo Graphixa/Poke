@@ -33,39 +33,26 @@ func (s *Service) Pokemon(ctx context.Context, id int) (domain.Pokemon, error) {
 }
 
 func (s *Service) getPokemon(ctx context.Context, id int) (domain.Pokemon, error) {
-	cached, cacheErr := s.store.Pokemon(ctx, id)
-	haveCache := cacheErr == nil
-	if haveCache {
-		debuglog.Cachef("detail.cache.hit pokemon id=%d", id)
-		return cached, nil
-	}
-	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
-		return domain.Pokemon{}, cacheErr
-	}
-	if s.localOnly.Load() {
-		if haveCache {
-			return cached, nil
+	if s.datasetReadsOnly() {
+		p, err := s.store.Pokemon(ctx, id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return domain.Pokemon{}, fmt.Errorf("%w: pokemon %d missing from active dataset", ErrCorrupt, id)
+			}
+			return domain.Pokemon{}, err
 		}
-		return domain.Pokemon{}, cacheErr
+		debuglog.Cachef("detail.cache.hit pokemon id=%d", id)
+		return p, nil
 	}
 	if err := s.acquire(ctx); err != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return domain.Pokemon{}, err
 	}
 	fresh, fetchErr := s.api.GetPokemon(ctx, id)
 	s.release()
 	if fetchErr != nil {
-		if haveCache {
-			debuglog.Cachef("stale-serve pokemon id=%d err=%v", id, fetchErr)
-			return cached, nil
-		}
 		debuglog.Cachef("detail.cache.miss pokemon id=%d err=%v", id, fetchErr)
 		return domain.Pokemon{}, fetchErr
 	}
-	debuglog.Cachef("store pokemon id=%d", id)
-	_ = s.store.StorePokemon(ctx, fresh, s.clock.Now())
 	return fresh, nil
 }
 
@@ -80,32 +67,24 @@ func (s *Service) Species(ctx context.Context, id int) (domain.Species, error) {
 }
 
 func (s *Service) getSpecies(ctx context.Context, id int) (domain.Species, error) {
-	cached, cacheErr := s.store.Species(ctx, id)
-	haveCache := cacheErr == nil
-	if haveCache {
-		return cached, nil
-	}
-	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
-		return domain.Species{}, cacheErr
-	}
-	if s.localOnly.Load() {
-		return domain.Species{}, cacheErr
+	if s.datasetReadsOnly() {
+		sp, err := s.store.Species(ctx, id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return domain.Species{}, fmt.Errorf("%w: species %d missing from active dataset", ErrCorrupt, id)
+			}
+			return domain.Species{}, err
+		}
+		return sp, nil
 	}
 	if err := s.acquire(ctx); err != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return domain.Species{}, err
 	}
 	fresh, fetchErr := s.api.GetSpecies(ctx, id)
 	s.release()
 	if fetchErr != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return domain.Species{}, fetchErr
 	}
-	_ = s.store.StoreSpecies(ctx, fresh, s.clock.Now())
 	return fresh, nil
 }
 
@@ -120,16 +99,15 @@ func (s *Service) EvolutionChain(ctx context.Context, id int) (domain.EvolutionT
 }
 
 func (s *Service) getEvolution(ctx context.Context, id int) (domain.EvolutionTree, error) {
-	cached, cacheErr := s.store.EvolutionChain(ctx, id)
-	haveCache := cacheErr == nil
-	if haveCache {
-		return cached, nil
-	}
-	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
-		return domain.EvolutionTree{}, cacheErr
-	}
-	if s.localOnly.Load() {
-		return domain.EvolutionTree{}, cacheErr
+	if s.datasetReadsOnly() {
+		tree, err := s.store.EvolutionChain(ctx, id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return domain.EvolutionTree{}, fmt.Errorf("%w: evolution %d missing from active dataset", ErrCorrupt, id)
+			}
+			return domain.EvolutionTree{}, err
+		}
+		return tree, nil
 	}
 	if err := s.acquire(ctx); err != nil {
 		return domain.EvolutionTree{}, err
@@ -139,7 +117,6 @@ func (s *Service) getEvolution(ctx context.Context, id int) (domain.EvolutionTre
 	if fetchErr != nil {
 		return domain.EvolutionTree{}, fetchErr
 	}
-	_ = s.store.StoreEvolutionChain(ctx, id, fresh, s.clock.Now())
 	return fresh, nil
 }
 
@@ -154,13 +131,15 @@ func (s *Service) Encounters(ctx context.Context, pokemonID int) ([]domain.Encou
 }
 
 func (s *Service) getEncounters(ctx context.Context, pokemonID int) ([]domain.Encounter, error) {
-	cached, cacheErr := s.store.Encounters(ctx, pokemonID)
-	haveCache := cacheErr == nil
-	if haveCache {
-		return cached, nil
-	}
-	if s.localOnly.Load() {
-		return nil, cacheErr
+	if s.datasetReadsOnly() {
+		enc, err := s.store.Encounters(ctx, pokemonID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: encounters for pokemon %d missing from active dataset", ErrCorrupt, pokemonID)
+			}
+			return nil, err
+		}
+		return enc, nil
 	}
 	if err := s.acquire(ctx); err != nil {
 		return nil, err
@@ -170,7 +149,6 @@ func (s *Service) getEncounters(ctx context.Context, pokemonID int) ([]domain.En
 	if fetchErr != nil {
 		return nil, fetchErr
 	}
-	_ = s.store.StoreEncounters(ctx, pokemonID, fresh, s.clock.Now())
 	return fresh, nil
 }
 
@@ -185,13 +163,15 @@ func (s *Service) Move(ctx context.Context, id int) (domain.Move, error) {
 }
 
 func (s *Service) getMove(ctx context.Context, id int) (domain.Move, error) {
-	cached, cacheErr := s.store.Move(ctx, id)
-	haveCache := cacheErr == nil
-	if haveCache {
-		return cached, nil
-	}
-	if s.localOnly.Load() {
-		return domain.Move{}, cacheErr
+	if s.datasetReadsOnly() {
+		mv, err := s.store.Move(ctx, id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return domain.Move{}, fmt.Errorf("%w: move %d missing from active dataset", ErrCorrupt, id)
+			}
+			return domain.Move{}, err
+		}
+		return mv, nil
 	}
 	if err := s.acquire(ctx); err != nil {
 		return domain.Move{}, err
@@ -201,8 +181,11 @@ func (s *Service) getMove(ctx context.Context, id int) (domain.Move, error) {
 	if fetchErr != nil {
 		return domain.Move{}, fetchErr
 	}
-	_ = s.store.StoreMove(ctx, fresh, s.clock.Now())
 	return fresh, nil
+}
+
+func (s *Service) datasetReadsOnly() bool {
+	return s.localOnly.Load() || s.store.HasActiveDataset()
 }
 
 // ReadSpriteBytes downloads sprite bytes through the API client.

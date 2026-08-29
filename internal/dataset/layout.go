@@ -1,4 +1,4 @@
-// Package dataset defines the v3 aggregate snapshot layout and compact persisted models.
+// Package dataset defines the aggregate snapshot layout and compact persisted models.
 package dataset
 
 // SchemaVersion is the dataset snapshot layout version (aggregate files, no per-record envelopes).
@@ -17,7 +17,7 @@ const (
 	FileEncounters = "encounters.json"
 )
 
-// Layout is the v3 on-disk snapshot structure:
+// Layout is the on-disk snapshot structure:
 //
 //	datasets/
 //	  <dataset-version>/

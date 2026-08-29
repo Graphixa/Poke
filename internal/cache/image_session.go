@@ -64,36 +64,77 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 	if err != nil {
 		return nil, err
 	}
+	versionInvalid := man.Version != "" && man.Version != ImageCacheManifestVersion
 	specChanged := man.SpecID != "" && man.SpecID != specID
-	datasetChanged := datasetID != "" && man.DatasetID != "" && man.DatasetID != datasetID
-	if specChanged || datasetChanged {
+	if versionInvalid || specChanged {
 		man = ImageCacheManifest{
 			Version: ImageCacheManifestVersion,
 			SpecID:  specID,
 			Pokemon: map[int]PokemonImageCacheState{},
 		}
-	} else if man.SpecID == "" {
-		man.SpecID = specID
+	} else {
+		if man.Version == "" {
+			man.Version = ImageCacheManifestVersion
+		}
+		if man.SpecID == "" {
+			man.SpecID = specID
+		}
+		pruneManifestToIndex(&man, index)
 	}
 	if datasetID != "" {
 		man.DatasetID = datasetID
 	}
 	man.PokemonCount = len(index)
 
-	trusted := deferAudit && imageManifestTrusted(man, index, specID, datasetID)
+	trusted := deferAudit && imageManifestTrusted(man, index, specID)
 
 	pending := make(map[int]*PokemonCacheWork)
+
+	if deferAudit && trusted {
+		writer := newImageManifestWriter(store, man)
+		for _, st := range man.Pokemon {
+			if st.Complete {
+				writer.set(st)
+			}
+		}
+		return &ImageCacheCoordinator{
+			store: store, spec: spec, specID: specID, datasetID: datasetID,
+			pending: pending, writer: writer,
+		}, nil
+	}
+
+	if deferAudit && !trusted {
+		for _, sum := range index {
+			if sum.ID < 1 {
+				continue
+			}
+			if st, ok := man.Pokemon[sum.ID]; ok && st.Complete && st.SpecID == specID {
+				continue
+			}
+			pending[sum.ID] = &PokemonCacheWork{
+				SpeciesID: sum.ID, Slug: sum.Slug, NativeReady: map[int]bool{},
+			}
+		}
+		writer := newImageManifestWriter(store, man)
+		for _, st := range man.Pokemon {
+			if st.Complete {
+				writer.set(st)
+			}
+		}
+		return &ImageCacheCoordinator{
+			store: store, spec: spec, specID: specID, datasetID: datasetID,
+			pending: pending, total: len(pending), writer: writer, deferAudit: true,
+		}, nil
+	}
+
 	for _, sum := range index {
 		if sum.ID < 1 {
 			continue
 		}
-		work := auditPokemonImageWork(store, spec, specID, sum, man.Pokemon[sum.ID], specChanged, trusted)
+		work := auditPokemonImageWork(store, spec, specID, sum, man.Pokemon[sum.ID], specChanged, false)
 		if work.Complete {
 			man.Pokemon[sum.ID] = PokemonImageCacheState{
-				SpeciesID:  sum.ID,
-				SourceHash: work.SourceHash,
-				SpecID:     specID,
-				Complete:   true,
+				SpeciesID: sum.ID, SourceHash: work.SourceHash, SpecID: specID, Complete: true,
 			}
 			continue
 		}
@@ -107,27 +148,35 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 			writer.set(st)
 		}
 	}
-	if specChanged || datasetChanged || len(pending) < len(index) {
-		if err := writer.flush(); err != nil {
-			return nil, err
-		}
+	if err := writer.flush(); err != nil {
+		return nil, err
 	}
 
-	c := &ImageCacheCoordinator{
-		store:      store,
-		spec:       spec,
-		specID:     specID,
-		datasetID:  datasetID,
-		pending:    pending,
-		total:      len(pending),
-		writer:     writer,
-		deferAudit: deferAudit && !trusted,
-	}
-	return c, nil
+	return &ImageCacheCoordinator{
+		store: store, spec: spec, specID: specID, datasetID: datasetID,
+		pending: pending, total: len(pending), writer: writer,
+	}, nil
 }
 
-func imageManifestTrusted(man ImageCacheManifest, index []domain.SpeciesSummary, specID, datasetID string) bool {
-	if datasetID == "" || man.DatasetID != datasetID || man.SpecID != specID {
+func pruneManifestToIndex(man *ImageCacheManifest, index []domain.SpeciesSummary) {
+	if man == nil || man.Pokemon == nil {
+		return
+	}
+	current := make(map[int]struct{}, len(index))
+	for _, sum := range index {
+		if sum.ID > 0 {
+			current[sum.ID] = struct{}{}
+		}
+	}
+	for id := range man.Pokemon {
+		if _, ok := current[id]; !ok {
+			delete(man.Pokemon, id)
+		}
+	}
+}
+
+func imageManifestTrusted(man ImageCacheManifest, index []domain.SpeciesSummary, specID string) bool {
+	if man.SpecID != specID || man.Version != ImageCacheManifestVersion {
 		return false
 	}
 	if man.PokemonCount != len(index) {
@@ -176,7 +225,7 @@ func auditPokemonImageWork(store *Store, spec ImageCacheSpec, specID string, sum
 		_ = store.DeleteNativeForSpecies(sum.ID)
 	}
 
-	if work.SourceReady {
+	if work.SourceReady && !specChanged {
 		for _, cells := range spec.RequiredSizes {
 			if store.HasNativeFile(spec.nativeKey(work.SourceHash, cells)) {
 				work.NativeReady[cells] = true
@@ -444,44 +493,51 @@ func (c *ImageCacheCoordinator) CompletePokemonIDs() []int {
 
 // ReconcileImageCacheSession verifies outstanding image-cache work after deferred startup.
 func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.SpeciesSummary) {
-	if c == nil || c.store == nil || !c.deferAudit {
+	if c == nil || c.store == nil {
 		return
 	}
 	c.mu.Lock()
+	if !c.deferAudit {
+		c.mu.Unlock()
+		return
+	}
 	c.deferAudit = false
 	c.mu.Unlock()
 
+	newPending := make(map[int]*PokemonCacheWork)
+	done := 0
 	for _, sum := range index {
 		if sum.ID < 1 {
 			continue
 		}
-		c.mu.Lock()
-		w := c.pending[sum.ID]
-		if w == nil || w.Complete {
-			c.mu.Unlock()
-			continue
-		}
-		c.mu.Unlock()
-
 		st := c.writer.snapshot().Pokemon[sum.ID]
 		work := auditPokemonImageWork(c.store, c.spec, c.specID, sum, st, false, false)
-		c.mu.Lock()
 		if work.Complete {
-			delete(c.pending, sum.ID)
-			c.done++
+			done++
 			if c.writer != nil {
 				c.writer.set(PokemonImageCacheState{
 					SpeciesID: sum.ID, SourceHash: work.SourceHash,
 					SpecID: c.specID, Complete: true,
 				})
 			}
-		} else {
-			c.pending[sum.ID] = work
+			continue
 		}
-		c.mu.Unlock()
+		newPending[sum.ID] = work
 	}
+
+	c.mu.Lock()
+	c.pending = newPending
+	c.done = done
+	c.total = len(newPending) + done
+	fn := c.progress
+	p := c.snapshotLocked()
+	c.mu.Unlock()
+
 	if c.writer != nil {
 		_ = c.writer.flush()
+	}
+	if fn != nil && p.Total > 0 {
+		fn(Progress{Stage: "native", Done: p.Done, Total: p.Total, Message: "Building image cache"})
 	}
 }
 

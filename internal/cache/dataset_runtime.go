@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/Graphixa/Pokedex/internal/dataset"
@@ -11,60 +12,61 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-type v3Dataset struct {
+type loadedSnapshot struct {
 	store *Store
 	id    string
 
 	mu sync.Mutex
 
-	pokemon    map[int]domain.Pokemon
-	pokemonErr error
-	species    map[int]domain.Species
-	speciesErr error
-	moves      map[int]domain.Move
-	movesErr   error
-	evolutions map[int]domain.EvolutionTree
+	pokemon       map[int]domain.Pokemon
+	pokemonErr    error
+	species       map[int]domain.Species
+	speciesErr    error
+	moves         map[int]domain.Move
+	movesErr      error
+	evolutions    map[int]domain.EvolutionTree
 	evolutionsErr error
-	encounters map[int][]domain.Encounter
+	encounters    map[int][]domain.Encounter
 	encountersErr error
-	learnsets  map[int][]dataset.DatasetLearn
-	learnsetsErr error
+	learnsets     map[int][]dataset.DatasetLearn
+	learnsetsErr  error
 }
 
-func (s *Store) invalidateV3Dataset() {
-	s.v3Mu.Lock()
-	defer s.v3Mu.Unlock()
-	s.v3 = nil
-	s.v3LoadErr = nil
+func (s *Store) invalidateLoadedSnapshot() {
+	s.snapshotMu.Lock()
+	defer s.snapshotMu.Unlock()
+	s.loaded = nil
+	s.loadedErr = nil
 }
 
-func (s *Store) v3DatasetLoaded() (*v3Dataset, error) {
-	s.v3Mu.RLock()
-	if s.v3 != nil || s.v3LoadErr != nil {
-		ds, err := s.v3, s.v3LoadErr
-		s.v3Mu.RUnlock()
+func (s *Store) getLoadedSnapshot() (*loadedSnapshot, error) {
+	s.snapshotMu.RLock()
+	if s.loaded != nil || s.loadedErr != nil {
+		ds, err := s.loaded, s.loadedErr
+		s.snapshotMu.RUnlock()
 		return ds, err
 	}
-	s.v3Mu.RUnlock()
+	s.snapshotMu.RUnlock()
 
-	s.v3Mu.Lock()
-	defer s.v3Mu.Unlock()
-	if s.v3 != nil || s.v3LoadErr != nil {
-		return s.v3, s.v3LoadErr
+	activeID, activeErr := s.getActiveDatasetID()
+
+	s.snapshotMu.Lock()
+	defer s.snapshotMu.Unlock()
+	if s.loaded != nil || s.loadedErr != nil {
+		return s.loaded, s.loadedErr
 	}
-	ds, err := s.openV3DatasetLocked()
-	s.v3 = ds
-	s.v3LoadErr = err
+	ds, err := s.openSnapshotWithID(activeID, activeErr)
+	s.loaded = ds
+	s.loadedErr = err
 	return ds, err
 }
 
-func (s *Store) openV3DatasetLocked() (*v3Dataset, error) {
-	id, err := s.getActiveDatasetID()
-	if errors.Is(err, ErrNotFound) {
+func (s *Store) openSnapshotWithID(id string, idErr error) (*loadedSnapshot, error) {
+	if errors.Is(idErr, ErrNotFound) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
+	if idErr != nil {
+		return nil, idErr
 	}
 	man, err := s.ReadDatasetManifest(id)
 	if err != nil {
@@ -73,10 +75,10 @@ func (s *Store) openV3DatasetLocked() (*v3Dataset, error) {
 	if man.SchemaVersion != dataset.SchemaVersion {
 		return nil, nil
 	}
-	return &v3Dataset{store: s, id: id}, nil
+	return &loadedSnapshot{store: s, id: id}, nil
 }
 
-func (d *v3Dataset) ensurePokemon() error {
+func (d *loadedSnapshot) ensurePokemon() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.pokemon != nil || d.pokemonErr != nil {
@@ -87,38 +89,15 @@ func (d *v3Dataset) ensurePokemon() error {
 		d.pokemonErr = err
 		return err
 	}
-	if d.learnsets == nil && d.learnsetsErr == nil {
-		d.learnsets, d.learnsetsErr = d.store.LoadAggregateLearnsets(d.id)
-	}
-	if d.learnsetsErr != nil {
-		d.pokemonErr = d.learnsetsErr
-		return d.learnsetsErr
-	}
-	if d.moves == nil && d.movesErr == nil {
-		if err := d.loadMovesLocked(); err != nil {
-			d.pokemonErr = err
-			return err
-		}
-	}
-	if d.movesErr != nil {
-		d.pokemonErr = d.movesErr
-		return d.movesErr
-	}
-	moveSlugs := make(map[int]string, len(d.moves))
-	for moveID, move := range d.moves {
-		moveSlugs[moveID] = move.Slug
-	}
 	pokemon := make(map[int]domain.Pokemon, len(pokemonFile))
 	for pokemonID, compact := range pokemonFile {
-		rows := d.learnsets[pokemonID]
-		stubs := dataset.LearnedMovesFromLearnset(rows, moveSlugs)
-		pokemon[pokemonID] = dataset.PokemonToDomain(compact, stubs)
+		pokemon[pokemonID] = dataset.PokemonToDomain(compact, nil)
 	}
 	d.pokemon = pokemon
 	return nil
 }
 
-func (d *v3Dataset) ensureSpecies() error {
+func (d *loadedSnapshot) ensureSpecies() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.species != nil || d.speciesErr != nil {
@@ -137,7 +116,7 @@ func (d *v3Dataset) ensureSpecies() error {
 	return nil
 }
 
-func (d *v3Dataset) loadMovesLocked() error {
+func (d *loadedSnapshot) loadMovesLocked() error {
 	movesFile, err := d.store.LoadAggregateMoves(d.id)
 	if err != nil {
 		d.movesErr = err
@@ -151,7 +130,7 @@ func (d *v3Dataset) loadMovesLocked() error {
 	return nil
 }
 
-func (d *v3Dataset) ensureMoves() error {
+func (d *loadedSnapshot) ensureMoves() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.moves != nil || d.movesErr != nil {
@@ -160,7 +139,7 @@ func (d *v3Dataset) ensureMoves() error {
 	return d.loadMovesLocked()
 }
 
-func (d *v3Dataset) ensureEvolutions() error {
+func (d *loadedSnapshot) ensureEvolutions() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.evolutions != nil || d.evolutionsErr != nil {
@@ -179,7 +158,7 @@ func (d *v3Dataset) ensureEvolutions() error {
 	return nil
 }
 
-func (d *v3Dataset) ensureEncounters() error {
+func (d *loadedSnapshot) ensureEncounters() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.encounters != nil || d.encountersErr != nil {
@@ -198,7 +177,7 @@ func (d *v3Dataset) ensureEncounters() error {
 	return nil
 }
 
-func (d *v3Dataset) ensureLearnsets() error {
+func (d *loadedSnapshot) ensureLearnsets() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.learnsets != nil || d.learnsetsErr != nil {
@@ -208,17 +187,17 @@ func (d *v3Dataset) ensureLearnsets() error {
 	return d.learnsetsErr
 }
 
-func (s *Store) activeV3() (*v3Dataset, error) {
-	ds, err := s.v3DatasetLoaded()
+func (s *Store) activeSnapshot() (*loadedSnapshot, error) {
+	ds, err := s.getLoadedSnapshot()
 	if err != nil {
 		return nil, err
 	}
 	return ds, nil
 }
 
-// Learnset returns the persisted level-up learnset for a Pokémon when v3 is active.
+// Learnset returns the persisted level-up learnset for a Pokémon from the active snapshot.
 func (s *Store) Learnset(pokemonID int) ([]dataset.DatasetLearn, bool) {
-	ds, err := s.activeV3()
+	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return nil, false
 	}
@@ -229,9 +208,9 @@ func (s *Store) Learnset(pokemonID int) ([]dataset.DatasetLearn, bool) {
 	return rows, ok
 }
 
-// LevelUpMoves resolves level-up moves from the v3 learnset and move map.
+// LevelUpMoves resolves level-up moves from the active learnset and move map.
 func (s *Store) LevelUpMoves(pokemonID int) ([]domain.LevelUpMove, error) {
-	ds, err := s.activeV3()
+	ds, err := s.activeSnapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -257,8 +236,8 @@ func (s *Store) LevelUpMoves(pokemonID int) ([]domain.LevelUpMove, error) {
 	})
 }
 
-func (s *Store) pokemonV3(id int) (domain.Pokemon, bool, error) {
-	ds, err := s.activeV3()
+func (s *Store) lookupPokemon(id int) (domain.Pokemon, bool, error) {
+	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return domain.Pokemon{}, false, err
 	}
@@ -269,8 +248,8 @@ func (s *Store) pokemonV3(id int) (domain.Pokemon, bool, error) {
 	return value, ok, nil
 }
 
-func (s *Store) speciesV3(id int) (domain.Species, bool, error) {
-	ds, err := s.activeV3()
+func (s *Store) lookupSpecies(id int) (domain.Species, bool, error) {
+	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return domain.Species{}, false, err
 	}
@@ -281,8 +260,8 @@ func (s *Store) speciesV3(id int) (domain.Species, bool, error) {
 	return value, ok, nil
 }
 
-func (s *Store) evolutionV3(id int) (domain.EvolutionTree, bool, error) {
-	ds, err := s.activeV3()
+func (s *Store) lookupEvolution(id int) (domain.EvolutionTree, bool, error) {
+	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return domain.EvolutionTree{}, false, err
 	}
@@ -293,8 +272,8 @@ func (s *Store) evolutionV3(id int) (domain.EvolutionTree, bool, error) {
 	return value, ok, nil
 }
 
-func (s *Store) encountersV3(id int) ([]domain.Encounter, bool, error) {
-	ds, err := s.activeV3()
+func (s *Store) lookupEncounters(id int) ([]domain.Encounter, bool, error) {
+	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return nil, false, err
 	}
@@ -308,8 +287,8 @@ func (s *Store) encountersV3(id int) ([]domain.Encounter, bool, error) {
 	return value, true, nil
 }
 
-func (s *Store) moveV3(id int) (domain.Move, bool, error) {
-	ds, err := s.activeV3()
+func (s *Store) lookupMove(id int) (domain.Move, bool, error) {
+	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return domain.Move{}, false, err
 	}
@@ -337,16 +316,15 @@ func supportedDatasetSchema(v int) bool {
 	return v == dataset.SchemaVersion
 }
 
-// EnsureCompatibleDataset removes an active pointer when the snapshot uses an
-// unsupported schema. Pre-release policy: discard incompatible data and rebuild
-// rather than migrate v2→v3.
+// EnsureCompatibleDataset clears incompatible prototype cache data.
+// Pre-release policy: discard incompatible data and rebuild rather than migrate older schemas.
 func (s *Store) EnsureCompatibleDataset() error {
 	if err := s.EnsureRoot(); err != nil {
 		return err
 	}
 	id, err := s.ActiveDatasetID()
 	if errors.Is(err, ErrNotFound) {
-		return nil
+		return s.resetLegacyMetadataIfPresent()
 	}
 	if err != nil {
 		return s.resetIncompatibleDataset("corrupt active pointer")
@@ -356,23 +334,30 @@ func (s *Store) EnsureCompatibleDataset() error {
 		return s.resetIncompatibleDataset(fmt.Sprintf("schema=%d id=%s", man.SchemaVersion, id))
 	}
 	if _, err := os.Stat(s.AggregatePokemonPath(id)); errors.Is(err, os.ErrNotExist) {
-		return s.resetIncompatibleDataset(fmt.Sprintf("missing v3 aggregates id=%s", id))
+		return s.resetIncompatibleDataset(fmt.Sprintf("missing aggregate files id=%s", id))
+	}
+	return s.resetLegacyMetadataIfPresent()
+}
+
+func (s *Store) resetLegacyMetadataIfPresent() error {
+	legacyDirs := []string{"pokemon", "species", "moves", "evolution", "encounters"}
+	for _, dir := range legacyDirs {
+		path := filepath.Join(s.root, dir)
+		if _, err := os.Stat(path); err == nil {
+			return s.resetIncompatibleDataset("legacy metadata tree present")
+		}
 	}
 	return nil
 }
 
 func (s *Store) resetIncompatibleDataset(reason string) error {
 	debuglog.Cachef("dataset.reset incompatible: %s", reason)
-	if err := os.Remove(s.activePath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	s.invalidateActiveDatasetCache()
-	return nil
+	return s.Clear()
 }
 
-// PreloadV3Dataset loads all v3 aggregate files into memory (optional warm path).
-func (s *Store) PreloadV3Dataset() error {
-	ds, err := s.activeV3()
+// PreloadDataset loads core aggregate files into memory (optional warm path).
+func (s *Store) PreloadDataset() error {
+	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return err
 	}

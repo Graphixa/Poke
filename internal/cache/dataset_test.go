@@ -85,11 +85,11 @@ func TestFailedSnapshotDoesNotReplaceActive(t *testing.T) {
 func TestCompactCacheJSON(t *testing.T) {
 	root := t.TempDir()
 	store := cache.NewStore(root, nil)
-	move := domain.Move{ID: 1, Slug: "pound", DisplayName: "Pound", PP: 35}
-	if err := store.StoreMove(context.Background(), move, time.Now().UTC()); err != nil {
+	index := []domain.SpeciesSummary{{ID: 1, Slug: "bulbasaur", DisplayName: "Bulbasaur"}}
+	if err := store.StoreSpeciesIndex(context.Background(), index, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(root, "moves", "1.json"))
+	raw, err := os.ReadFile(filepath.Join(root, "index", "species.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,24 +281,6 @@ func TestBootstrapPartialFailureDoesNotActivate(t *testing.T) {
 	if svc.HasActiveDataset() {
 		t.Fatal("incomplete snapshot must not become active")
 	}
-	id := cache.DatasetIDForTime(now)
-	man, err := store.ReadDatasetManifest(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if man.Complete {
-		t.Fatal("manifest must stay incomplete")
-	}
-	rep, err := store.ReadBootstrapReport(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rep.Ready() {
-		t.Fatalf("report ready with failures: %+v", rep)
-	}
-	if len(rep.Failures) == 0 {
-		t.Fatal("expected persisted failure diagnostics")
-	}
 }
 
 func TestBootstrapFailurePreservesPreviousActive(t *testing.T) {
@@ -476,24 +458,6 @@ func TestOfflineEncountersRead(t *testing.T) {
 	}
 }
 
-func TestAggregateJSONUsesNoEnvelope(t *testing.T) {
-	root := t.TempDir()
-	store := cache.NewStore(root, nil)
-	id := "test"
-	b := dataset.NewBuilder()
-	b.Pokemon[1] = dataset.PokemonFromDomain(domain.Pokemon{ID: 1, Slug: "a", DisplayName: "A"})
-	if err := store.StoreAggregatePokemon(id, b.Pokemon); err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(store.AggregatePokemonPath(id))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "schema_version") {
-		t.Fatalf("aggregate must not use envelope: %s", raw)
-	}
-}
-
 func TestAggregatePathsAndRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	store := cache.NewStore(root, nil)
@@ -563,16 +527,5 @@ func TestAggregatePathsAndRoundTrip(t *testing.T) {
 	encounters, err := store.LoadAggregateEncounters(id)
 	if err != nil || encounters[25][0].Area != "forest" {
 		t.Fatalf("encounters=%#v err=%v", encounters, err)
-	}
-}
-
-func TestAggregatePathHelpers(t *testing.T) {
-	store := cache.NewStore(t.TempDir(), nil)
-	id := "test-id"
-	if got := store.AggregatePokemonPath(id); !strings.HasSuffix(got, filepath.Join("datasets", id, dataset.FilePokemon)) {
-		t.Fatalf("pokemon path=%q", got)
-	}
-	if got := store.AggregateSpeciesPath(id); !strings.HasSuffix(got, dataset.FileSpecies) {
-		t.Fatalf("species path=%q", got)
 	}
 }

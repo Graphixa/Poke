@@ -74,16 +74,19 @@ func (f *fakeNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.
 }
 
 func (f *fakeNativeRenderer) NativeWarmBatch(_ context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult {
+	var ready, encoded []int
 	var last sprite.RenderResult
-	encoded := 0
 	for _, cells := range sizes {
 		if f.HasNativeCache(context.Background(), pokemon, cells) {
+			ready = append(ready, cells)
 			continue
 		}
 		last = f.NativeWarmRender(context.Background(), pokemon, cells)
-		encoded++
+		if last.Native {
+			encoded = append(encoded, cells)
+		}
 	}
-	return sprite.NativeWarmBatchResult{Encoded: encoded, Last: last}
+	return sprite.NativeWarmBatchResult{ReadySizes: ready, EncodedSizes: encoded, Encoded: len(encoded), Last: last}
 }
 
 func (f *fakeNativeRenderer) renders() int {
@@ -481,16 +484,19 @@ func (f *gatingNativeRenderer) NativeWarmRender(_ context.Context, pokemon domai
 }
 
 func (f *gatingNativeRenderer) NativeWarmBatch(_ context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult {
+	var ready, encoded []int
 	var last sprite.RenderResult
-	encoded := 0
 	for _, cells := range sizes {
 		if f.HasNativeCache(context.Background(), pokemon, cells) {
+			ready = append(ready, cells)
 			continue
 		}
 		last = f.NativeWarmRender(context.Background(), pokemon, cells)
-		encoded++
+		if last.Native {
+			encoded = append(encoded, cells)
+		}
 	}
-	return sprite.NativeWarmBatchResult{Encoded: encoded, Last: last}
+	return sprite.NativeWarmBatchResult{ReadySizes: ready, EncodedSizes: encoded, Encoded: len(encoded), Last: last}
 }
 
 func TestP2DoesNotAbandonIncompletePokemon(t *testing.T) {

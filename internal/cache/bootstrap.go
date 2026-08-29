@@ -175,7 +175,7 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 		return err
 	}
 
-	if err := dataset.Validate(builder, total); err != nil {
+	if err := dataset.Validate(builder, total, entries); err != nil {
 		rep.add("validate", 0, err, true)
 		s.finalizeIncomplete(id, staging, rep, err)
 		return err
@@ -315,39 +315,19 @@ func (s *Service) fetchRecord(ctx context.Context, sum domain.SpeciesSummary) re
 	}
 }
 
+type evolutionFetchResult struct {
+	id   int
+	tree domain.EvolutionTree
+	err  error
+}
+
+type moveFetchResult struct {
+	id   int
+	move domain.Move
+	err  error
+}
+
 func (s *Service) parallelEvolutionFetch(ctx context.Context, ids []int, progress ProgressFunc, rep *DatasetBootstrapReport, builder *dataset.Builder) error {
-	var mu sync.Mutex
-	return s.parallelIntFetch(ctx, ids, "evolution", progress, func(ctx context.Context, id int) error {
-		tree, err := s.fetchEvolution(ctx, id)
-		if err != nil {
-			rep.add("evolution", id, err, true)
-			return nil
-		}
-		mu.Lock()
-		builder.Evolutions[id] = dataset.EvolutionFromDomain(tree)
-		mu.Unlock()
-		rep.EvolutionOK++
-		return nil
-	})
-}
-
-func (s *Service) parallelMoveFetch(ctx context.Context, ids []int, progress ProgressFunc, rep *DatasetBootstrapReport, builder *dataset.Builder) error {
-	var mu sync.Mutex
-	return s.parallelIntFetch(ctx, ids, "moves", progress, func(ctx context.Context, id int) error {
-		mv, err := s.fetchMove(ctx, id)
-		if err != nil {
-			rep.add("move", id, err, true)
-			return nil
-		}
-		mu.Lock()
-		builder.Moves[id] = dataset.MoveFromDomain(mv)
-		mu.Unlock()
-		rep.MoveOK++
-		return nil
-	})
-}
-
-func (s *Service) parallelIntFetch(ctx context.Context, ids []int, stage string, progress ProgressFunc, fn func(context.Context, int) error) error {
 	total := len(ids)
 	if total == 0 {
 		return nil
@@ -357,38 +337,105 @@ func (s *Service) parallelIntFetch(ctx context.Context, ids []int, stage string,
 		workers = total
 	}
 	jobs := make(chan int, workers*2)
+	results := make(chan evolutionFetchResult, workers*2)
 	var wg sync.WaitGroup
-	var done int
-	var doneMu sync.Mutex
-
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for id := range jobs {
 				if ctx.Err() != nil {
-					return
+					results <- evolutionFetchResult{id: id, err: ctx.Err()}
+					continue
 				}
-				_ = fn(ctx, id)
-				doneMu.Lock()
-				done++
-				current := done
-				doneMu.Unlock()
-				report(progress, Progress{Stage: stage, Done: current, Total: total})
+				tree, err := s.fetchEvolution(ctx, id)
+				results <- evolutionFetchResult{id: id, tree: tree, err: err}
 			}
 		}()
 	}
-	for _, id := range ids {
-		select {
-		case <-ctx.Done():
-			close(jobs)
-			wg.Wait()
-			return ctx.Err()
-		case jobs <- id:
+	go func() {
+		for _, id := range ids {
+			select {
+			case <-ctx.Done():
+				close(jobs)
+				return
+			case jobs <- id:
+			}
 		}
+		close(jobs)
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	done := 0
+	for res := range results {
+		done++
+		report(progress, Progress{Stage: "evolution", Done: done, Total: total})
+		if res.err != nil {
+			rep.add("evolution", res.id, res.err, true)
+			continue
+		}
+		builder.Evolutions[res.id] = dataset.EvolutionFromDomain(res.tree)
+		rep.EvolutionOK++
 	}
-	close(jobs)
-	wg.Wait()
+	return ctx.Err()
+}
+
+func (s *Service) parallelMoveFetch(ctx context.Context, ids []int, progress ProgressFunc, rep *DatasetBootstrapReport, builder *dataset.Builder) error {
+	total := len(ids)
+	if total == 0 {
+		return nil
+	}
+	workers := s.datasetWorkers()
+	if workers > total {
+		workers = total
+	}
+	jobs := make(chan int, workers*2)
+	results := make(chan moveFetchResult, workers*2)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range jobs {
+				if ctx.Err() != nil {
+					results <- moveFetchResult{id: id, err: ctx.Err()}
+					continue
+				}
+				mv, err := s.fetchMove(ctx, id)
+				results <- moveFetchResult{id: id, move: mv, err: err}
+			}
+		}()
+	}
+	go func() {
+		for _, id := range ids {
+			select {
+			case <-ctx.Done():
+				close(jobs)
+				return
+			case jobs <- id:
+			}
+		}
+		close(jobs)
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	done := 0
+	for res := range results {
+		done++
+		report(progress, Progress{Stage: "moves", Done: done, Total: total})
+		if res.err != nil {
+			rep.add("move", res.id, res.err, true)
+			continue
+		}
+		builder.Moves[res.id] = dataset.MoveFromDomain(res.move)
+		rep.MoveOK++
+	}
 	return ctx.Err()
 }
 
@@ -423,6 +470,9 @@ func (s *Service) finalizeIncomplete(id string, staging DatasetManifest, rep Dat
 	}
 	if err := s.store.WriteDatasetManifest(staging); err != nil {
 		debuglog.Cachef("dataset.bootstrap.manifest err=%v", err)
+	}
+	if err := s.store.RemoveDatasetDir(id); err != nil {
+		debuglog.Cachef("dataset.bootstrap.cleanup err=%v", err)
 	}
 }
 

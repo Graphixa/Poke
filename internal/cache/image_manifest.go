@@ -20,6 +20,7 @@ type PokemonImageCacheState struct {
 
 // ImageCacheManifest answers which Pokémon are fully image-cache complete
 // without scanning every .frame file on the UI hot path.
+// This is the runtime source of truth for Pokémon-level image-cache completeness.
 type ImageCacheManifest struct {
 	Version      string                         `json:"version"`
 	SpecID       string                         `json:"spec_id"`

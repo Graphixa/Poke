@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
-	"time"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/output"
 )
 
 // DossierCoreResult is the fast Enter path: species+pokemon, optionally complete.
@@ -19,7 +16,7 @@ type DossierCoreResult struct {
 	Complete bool // true when evolution, encounters, and moves are included
 }
 
-// Dossier returns a cache-first species dossier (disk, migrate, or assemble from API).
+// Dossier returns a species dossier assembled from the active dataset.
 func (s *Service) Dossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
 	v, err := s.group.Do(fmt.Sprintf("dossier:%d", speciesID), func() (any, error) {
 		return s.getDossier(ctx, speciesID, "")
@@ -30,7 +27,7 @@ func (s *Service) Dossier(ctx context.Context, speciesID int) (domain.Dossier, e
 	return v.(domain.Dossier), nil
 }
 
-// DossierWithSlug is like Dossier but prefers a known slug for the on-disk path.
+// DossierWithSlug is like Dossier but accepts a known slug for logging.
 func (s *Service) DossierWithSlug(ctx context.Context, speciesID int, slug string) (domain.Dossier, error) {
 	v, err := s.group.Do(fmt.Sprintf("dossier:%d", speciesID), func() (any, error) {
 		return s.getDossier(ctx, speciesID, slug)
@@ -42,7 +39,6 @@ func (s *Service) DossierWithSlug(ctx context.Context, speciesID int, slug strin
 }
 
 // DossierCore loads species+pokemon quickly for the dialog Summary tab.
-// When Complete is true the dossier already includes extras (disk hit or migrate).
 func (s *Service) DossierCore(ctx context.Context, speciesID int, slug string) (DossierCoreResult, error) {
 	v, err := s.group.Do(fmt.Sprintf("dossier-core:%d", speciesID), func() (any, error) {
 		return s.getDossierCore(ctx, speciesID, slug)
@@ -76,49 +72,22 @@ func (s *Service) getDossier(ctx context.Context, speciesID int, slug string) (d
 }
 
 func (s *Service) getDossierCore(ctx context.Context, speciesID int, slug string) (DossierCoreResult, error) {
-	cached, _, cacheErr := s.store.Dossier(ctx, speciesID, slug)
-	haveCache := cacheErr == nil
-	if haveCache {
-		debuglog.Cachef("detail.cache.hit dossier id=%d", speciesID)
-		return DossierCoreResult{Dossier: cached, Complete: dossierComplete(cached)}, nil
-	}
-	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
-		return DossierCoreResult{}, cacheErr
-	}
-
-	if !haveCache {
-		if migrated, ok := s.store.TryMigrateDossier(ctx, speciesID); ok {
-			debuglog.Cachef("migrate dossier id=%d", speciesID)
-			if slugOr(migrated, slug) != "" {
-				_ = s.store.StoreDossier(ctx, migrated, s.clock.Now())
-			}
-			return DossierCoreResult{
-				Dossier:  migrated,
-				Complete: dossierComplete(migrated),
-			}, nil
-		}
-	}
-
-	if haveCache {
-		// Stale-serve core immediately; extras refresh separately.
-		return DossierCoreResult{Dossier: cached, Complete: dossierComplete(cached)}, nil
-	}
-	if s.localOnly.Load() {
+	_ = slug
+	if s.store.HasActiveDataset() || s.localOnly.Load() {
 		d, err := s.assembleCore(ctx, speciesID)
 		if err != nil {
 			return DossierCoreResult{}, err
 		}
-		complete := dossierComplete(d)
-		if !complete {
-			extras, err := s.assembleExtras(ctx, d)
-			if err == nil {
-				d = extras
-				complete = dossierComplete(d)
-			}
+		extras, err := s.assembleExtras(ctx, d)
+		if err != nil {
+			return DossierCoreResult{Dossier: d, Complete: false}, nil
 		}
-		return DossierCoreResult{Dossier: d, Complete: complete}, nil
+		complete, err := s.dossierComplete(ctx, extras)
+		if err != nil {
+			return DossierCoreResult{}, err
+		}
+		return DossierCoreResult{Dossier: extras, Complete: complete}, nil
 	}
-
 	d, err := s.assembleCore(ctx, speciesID)
 	if err != nil {
 		return DossierCoreResult{}, err
@@ -127,81 +96,52 @@ func (s *Service) getDossierCore(ctx context.Context, speciesID int, slug string
 }
 
 func (s *Service) getDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
-	if dossierComplete(core) {
+	_ = slug
+	complete, err := s.dossierComplete(ctx, core)
+	if err != nil {
+		return domain.Dossier{}, err
+	}
+	if complete {
 		return core, nil
 	}
-
-	cached, _, cacheErr := s.store.Dossier(ctx, speciesID, slug)
-	haveCache := cacheErr == nil
-	if haveCache && dossierComplete(cached) {
-		debuglog.Cachef("hit dossier extras id=%d", speciesID)
-		return cached, nil
-	}
-	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
-		return domain.Dossier{}, cacheErr
-	}
-
-	d := core
-	if haveCache && dossierComplete(cached) {
-		return cached, nil
-	}
-	if s.localOnly.Load() {
-		fresh, fetchErr := s.assembleExtras(ctx, d)
-		if fetchErr != nil {
-			if haveCache {
-				return cached, nil
-			}
-			return d, fetchErr
-		}
-		return fresh, nil
-	}
-
-	fresh, fetchErr := s.assembleExtras(ctx, d)
-	if fetchErr != nil {
-		if haveCache {
-			debuglog.Cachef("stale-serve dossier extras id=%d err=%v", speciesID, fetchErr)
-			return cached, nil
-		}
-		return domain.Dossier{}, fetchErr
-	}
-
-	now := s.clock.Now()
-	_ = s.store.StoreDossier(ctx, fresh, now)
-	s.storeLegacySplits(fresh, now)
-	debuglog.Cachef("store dossier id=%d", speciesID)
-	return fresh, nil
+	return s.assembleExtras(ctx, core)
 }
 
-func dossierComplete(d domain.Dossier) bool {
-	movesDone := len(d.LevelUpMoves) > 0 || !pokemonHasLevelUpMoves(d.Pokemon)
+func (s *Service) dossierComplete(ctx context.Context, d domain.Dossier) (bool, error) {
 	evoDone := d.Evolution != nil || d.Species.EvolutionChainID == 0
 	encDone := d.Encounters != nil
-	return movesDone && evoDone && encDone
-}
-
-func pokemonHasLevelUpMoves(p domain.Pokemon) bool {
-	for _, lm := range p.Moves {
-		for _, learn := range lm.Learnings {
-			if learn.Method == "level-up" {
-				return true
-			}
+	if !evoDone || !encDone {
+		return false, nil
+	}
+	pokemonID := d.Pokemon.ID
+	if pokemonID == 0 {
+		pokemonID = d.Species.DefaultPokemonID
+	}
+	if pokemonID == 0 {
+		pokemonID = d.Species.ID
+	}
+	if len(d.LevelUpMoves) > 0 {
+		return true, nil
+	}
+	rows, ok := s.store.Learnset(pokemonID)
+	if !ok {
+		return true, nil
+	}
+	if len(rows) == 0 {
+		return true, nil
+	}
+	moves, err := s.store.LevelUpMoves(pokemonID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return false, nil
 		}
+		return false, err
 	}
-	return false
-}
-
-func (s *Service) storeLegacySplits(fresh domain.Dossier, now time.Time) {
-	ctx := context.Background()
-	_ = s.store.StoreSpecies(ctx, fresh.Species, now)
-	_ = s.store.StorePokemon(ctx, fresh.Pokemon, now)
-	if fresh.Evolution != nil && fresh.Species.EvolutionChainID != 0 {
-		_ = s.store.StoreEvolutionChain(ctx, fresh.Species.EvolutionChainID, *fresh.Evolution, now)
-	}
-	_ = s.store.StoreEncounters(ctx, fresh.Pokemon.ID, fresh.Encounters, now)
+	_ = moves
+	return false, nil
 }
 
 // WarmCore fetches and caches pokemon+species only (no evolution/encounters/moves).
-// Used by window-mode dossier warm so browse headers stay snappy without API storms.
 func (s *Service) WarmCore(ctx context.Context, speciesID int) error {
 	if speciesID < 1 {
 		return fmt.Errorf("cache: invalid species id")
@@ -216,16 +156,6 @@ func (s *Service) WarmCore(ctx context.Context, speciesID int) error {
 	}
 	_, err = s.Pokemon(ctx, pokemonID)
 	return err
-}
-
-func slugOr(d domain.Dossier, slug string) string {
-	if d.Species.Slug != "" {
-		return d.Species.Slug
-	}
-	if d.Pokemon.Slug != "" {
-		return d.Pokemon.Slug
-	}
-	return slug
 }
 
 func (s *Service) assembleCore(ctx context.Context, speciesID int) (domain.Dossier, error) {
@@ -264,6 +194,7 @@ func (s *Service) assembleCore(ctx context.Context, speciesID int) (domain.Dossi
 	if species.DisplayName != "" {
 		pokemon.DisplayName = species.DisplayName
 	}
+	debuglog.Cachef("detail.cache.hit dossier-core id=%d", speciesID)
 	return domain.Dossier{Pokemon: pokemon, Species: species}, nil
 }
 
@@ -310,7 +241,7 @@ func (s *Service) assembleExtras(ctx context.Context, d domain.Dossier) (domain.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		rows, err := s.levelUpMovesForPokemon(ctx, pokemon)
+		rows, err := s.levelUpMovesForPokemon(ctx, pokemonID)
 		if err == nil {
 			moves = rows
 			movesOK = true
@@ -330,147 +261,13 @@ func (s *Service) assembleExtras(ctx context.Context, d domain.Dossier) (domain.
 	return d, nil
 }
 
-func (s *Service) assembleDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
-	d, err := s.assembleCore(ctx, speciesID)
-	if err != nil {
-		return domain.Dossier{}, err
-	}
-	return s.assembleExtras(ctx, d)
-}
-
-func (s *Service) moveWorkers() int {
-	n := s.maxConcurrency - interactiveReserve
-	if n < 2 {
-		n = 2
-	}
-	if n > 8 {
-		n = 8
-	}
-	return n
-}
-
-func (s *Service) ensureLevelUpMoves(ctx context.Context, d domain.Dossier) domain.Dossier {
-	if len(d.LevelUpMoves) > 0 {
-		return d
-	}
-	rows, err := s.levelUpMovesForPokemon(ctx, d.Pokemon)
-	if err != nil {
-		return d
-	}
-	d.LevelUpMoves = rows
-	return d
-}
-
-func (s *Service) levelUpMovesForPokemon(ctx context.Context, pokemon domain.Pokemon) ([]domain.LevelUpMove, error) {
-	if pokemon.ID != 0 {
-		if rows, err := s.store.LevelUpMoves(pokemon.ID); err == nil || !errors.Is(err, ErrNotFound) {
-			return rows, err
+func (s *Service) levelUpMovesForPokemon(ctx context.Context, pokemonID int) ([]domain.LevelUpMove, error) {
+	if pokemonID != 0 {
+		if rows, err := s.store.LevelUpMoves(pokemonID); err == nil {
+			return rows, nil
+		} else if !errors.Is(err, ErrNotFound) {
+			return nil, err
 		}
 	}
-	return resolveLevelUpMoves(ctx, pokemon, func(id int) (domain.Move, error) {
-		return s.Move(ctx, id)
-	}, s.moveWorkers())
-}
-
-func resolveLevelUpMoves(ctx context.Context, pokemon domain.Pokemon, getMove func(int) (domain.Move, error), workers int) ([]domain.LevelUpMove, error) {
-	bestOrder := -1
-	bestGroup := ""
-	for _, lm := range pokemon.Moves {
-		for _, learn := range lm.Learnings {
-			if learn.Method != "level-up" {
-				continue
-			}
-			if learn.VersionGroupOrder >= bestOrder {
-				bestOrder = learn.VersionGroupOrder
-				bestGroup = learn.VersionGroup
-			}
-		}
-	}
-	if bestOrder < 0 {
-		return nil, nil
-	}
-
-	type pending struct {
-		level  int
-		moveID int
-		slug   string
-	}
-	var rows []pending
-	for _, lm := range pokemon.Moves {
-		for _, learn := range lm.Learnings {
-			if learn.Method != "level-up" {
-				continue
-			}
-			if learn.VersionGroup != bestGroup && learn.VersionGroupOrder != bestOrder {
-				continue
-			}
-			if learn.VersionGroupOrder != bestOrder {
-				continue
-			}
-			rows = append(rows, pending{level: learn.Level, moveID: lm.MoveID, slug: lm.Slug})
-			break
-		}
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].level != rows[j].level {
-			return rows[i].level < rows[j].level
-		}
-		return rows[i].slug < rows[j].slug
-	})
-
-	if workers < 1 {
-		workers = 1
-	}
-	if workers > len(rows) && len(rows) > 0 {
-		workers = len(rows)
-	}
-
-	out := make([]domain.LevelUpMove, len(rows))
-	sem := make(chan struct{}, workers)
-	var wg sync.WaitGroup
-	var firstErr error
-	var errMu sync.Mutex
-
-	for i, row := range rows {
-		if err := ctx.Err(); err != nil {
-			return out[:0], err
-		}
-		wg.Add(1)
-		go func(i int, row pending) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			if err := ctx.Err(); err != nil {
-				errMu.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				errMu.Unlock()
-				return
-			}
-			move, err := getMove(row.moveID)
-			if err != nil {
-				move = domain.Move{
-					ID:          row.moveID,
-					Slug:        row.slug,
-					DisplayName: output.TitleFromSlug(row.slug),
-				}
-			}
-			if move.DisplayName == "" {
-				move.DisplayName = output.TitleFromSlug(move.Slug)
-			}
-			out[i] = domain.LevelUpMove{Level: row.level, Move: move}
-		}(i, row)
-	}
-	wg.Wait()
-	if firstErr != nil {
-		return out, firstErr
-	}
-	// Trim trailing zero entries if any goroutine was cancelled early.
-	trim := len(out)
-	for trim > 0 && out[trim-1].Move.Slug == "" && out[trim-1].Move.ID == 0 {
-		trim--
-	}
-	return out[:trim], nil
+	return nil, ErrNotFound
 }

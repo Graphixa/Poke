@@ -74,8 +74,12 @@ func NewService(store *Store, api pokeAPI, cfg config.Config, clock Clock) *Serv
 		sema:           make(chan struct{}, concurrency),
 		maxConcurrency: concurrency,
 	}
-	_ = store.EnsureCompatibleDataset()
 	return svc
+}
+
+// EnsureCompatibleCache resets incompatible prototype cache data before use.
+func EnsureCompatibleCache(store *Store) error {
+	return store.EnsureCompatibleDataset()
 }
 
 // MaxConcurrency returns the shared HTTP concurrency budget.

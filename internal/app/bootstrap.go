@@ -37,6 +37,9 @@ func BuildServices(paths config.Paths, cfg config.Config, httpClient *http.Clien
 		HTTPClient: httpClient,
 	})
 	store := cache.NewStore(paths.CacheDir, clock)
+	if err := cache.EnsureCompatibleCache(store); err != nil {
+		return nil, fmt.Errorf("cache compatibility: %w", err)
+	}
 	svc := cache.NewService(store, client, cfg, clock)
 	return &Services{Config: cfg, Paths: paths, Cache: svc, API: client}, nil
 }

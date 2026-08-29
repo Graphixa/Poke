@@ -33,6 +33,7 @@ type NativeSizeStatus struct {
 }
 
 // NativeManifest records per-size native frame cache completeness.
+// Diagnostic/integrity support only — runtime scheduling uses ImageCacheManifest.
 type NativeManifest struct {
 	Version  string                   `json:"version"`
 	Protocol string                   `json:"protocol"`

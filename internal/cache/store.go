@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,9 +34,9 @@ type Store struct {
 	activeID      string
 	activeIDKnown bool
 
-	v3Mu      sync.RWMutex
-	v3        *v3Dataset
-	v3LoadErr error
+	snapshotMu sync.RWMutex
+	loaded     *loadedSnapshot
+	loadedErr  error
 
 	speciesIndexWrites atomic.Uint32
 }
@@ -103,10 +102,10 @@ func (s *Store) setActiveDatasetID(id string) {
 
 func (s *Store) invalidateActiveDatasetCache() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.activeIDKnown = false
 	s.activeID = ""
-	s.invalidateV3Dataset()
+	s.mu.Unlock()
+	s.invalidateLoadedSnapshot()
 }
 
 func (s *Store) SpeciesIndex(context.Context) ([]domain.SpeciesSummary, error) {
@@ -131,66 +130,56 @@ func (s *Store) HasSpeciesIndex() bool {
 }
 
 func (s *Store) Pokemon(_ context.Context, id int) (domain.Pokemon, error) {
-	if value, ok, err := s.pokemonV3(id); err != nil {
+	value, ok, err := s.lookupPokemon(id)
+	if err != nil {
 		return domain.Pokemon{}, err
-	} else if ok {
-		return value, nil
 	}
-	var value domain.Pokemon
-	if _, err := s.readJSON(s.pokemonPath(id), &value); err != nil {
-		return domain.Pokemon{}, err
+	if !ok {
+		return domain.Pokemon{}, ErrNotFound
 	}
 	return value, nil
 }
 
 func (s *Store) Species(_ context.Context, id int) (domain.Species, error) {
-	if value, ok, err := s.speciesV3(id); err != nil {
+	value, ok, err := s.lookupSpecies(id)
+	if err != nil {
 		return domain.Species{}, err
-	} else if ok {
-		return value, nil
 	}
-	var value domain.Species
-	if _, err := s.readJSON(s.speciesPath(id), &value); err != nil {
-		return domain.Species{}, err
+	if !ok {
+		return domain.Species{}, ErrNotFound
 	}
 	return value, nil
 }
 
 func (s *Store) EvolutionChain(_ context.Context, id int) (domain.EvolutionTree, error) {
-	if value, ok, err := s.evolutionV3(id); err != nil {
+	value, ok, err := s.lookupEvolution(id)
+	if err != nil {
 		return domain.EvolutionTree{}, err
-	} else if ok {
-		return value, nil
 	}
-	var value domain.EvolutionTree
-	if _, err := s.readJSON(s.evolutionPath(id), &value); err != nil {
-		return domain.EvolutionTree{}, err
+	if !ok {
+		return domain.EvolutionTree{}, ErrNotFound
 	}
 	return value, nil
 }
 
 func (s *Store) Encounters(_ context.Context, pokemonID int) ([]domain.Encounter, error) {
-	if value, ok, err := s.encountersV3(pokemonID); err != nil {
+	value, ok, err := s.lookupEncounters(pokemonID)
+	if err != nil {
 		return nil, err
-	} else if ok {
-		return value, nil
 	}
-	var value []domain.Encounter
-	if _, err := s.readJSON(s.encountersPath(pokemonID), &value); err != nil {
-		return nil, err
+	if !ok {
+		return nil, ErrNotFound
 	}
 	return value, nil
 }
 
 func (s *Store) Move(_ context.Context, id int) (domain.Move, error) {
-	if value, ok, err := s.moveV3(id); err != nil {
+	value, ok, err := s.lookupMove(id)
+	if err != nil {
 		return domain.Move{}, err
-	} else if ok {
-		return value, nil
 	}
-	var value domain.Move
-	if _, err := s.readJSON(s.movePath(id), &value); err != nil {
-		return domain.Move{}, err
+	if !ok {
+		return domain.Move{}, ErrNotFound
 	}
 	return value, nil
 }
@@ -295,48 +284,8 @@ func (s *Store) StoreSpeciesIndex(_ context.Context, index []domain.SpeciesSumma
 	})
 }
 
-func (s *Store) StorePokemon(_ context.Context, pokemon domain.Pokemon, fetchedAt time.Time) error {
-	return s.writeJSON(s.pokemonPath(pokemon.ID), fetchedAt, pokemon)
-}
-
-func (s *Store) StoreSpecies(_ context.Context, species domain.Species, fetchedAt time.Time) error {
-	return s.writeJSON(s.speciesPath(species.ID), fetchedAt, species)
-}
-
-func (s *Store) StoreEvolutionChain(_ context.Context, id int, tree domain.EvolutionTree, fetchedAt time.Time) error {
-	return s.writeJSON(s.evolutionPath(id), fetchedAt, tree)
-}
-
-func (s *Store) StoreEncounters(_ context.Context, pokemonID int, encounters []domain.Encounter, fetchedAt time.Time) error {
-	return s.writeJSON(s.encountersPath(pokemonID), fetchedAt, encounters)
-}
-
-func (s *Store) StoreMove(_ context.Context, move domain.Move, fetchedAt time.Time) error {
-	return s.writeJSON(s.movePath(move.ID), fetchedAt, move)
-}
-
 func (s *Store) StoreSprite(_ context.Context, contentHash string, data []byte) error {
 	return writeAtomic(s.spritePath(contentHash), data, 0o600)
-}
-
-func (s *Store) ResourceFetchedAt(kind string, id int) (time.Time, error) {
-	path, err := s.resourcePath(kind, id)
-	if err != nil {
-		return time.Time{}, err
-	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return time.Time{}, ErrNotFound
-	}
-	if err != nil {
-		return time.Time{}, err
-	}
-	var env envelope
-	if err := json.Unmarshal(data, &env); err != nil {
-		_ = s.quarantine(path, data)
-		return time.Time{}, fmt.Errorf("%w: %v", ErrCorrupt, err)
-	}
-	return env.FetchedAt, nil
 }
 
 func (s *Store) writeJSON(path string, fetchedAt time.Time, value any) error {
@@ -410,21 +359,6 @@ func (s *Store) writeManifest(man manifest) error {
 
 func (s *Store) manifestPath() string { return filepath.Join(s.root, "manifest.json") }
 func (s *Store) indexPath() string    { return filepath.Join(s.root, "index", "species.json") }
-func (s *Store) pokemonPath(id int) string {
-	return s.legacyPokemonPath(id)
-}
-func (s *Store) speciesPath(id int) string {
-	return s.legacySpeciesPath(id)
-}
-func (s *Store) evolutionPath(id int) string {
-	return s.legacyEvolutionPath(id)
-}
-func (s *Store) encountersPath(id int) string {
-	return s.legacyEncountersPath(id)
-}
-func (s *Store) movePath(id int) string {
-	return filepath.Join(s.root, "moves", strconv.Itoa(id)+".json")
-}
 func (s *Store) spritePath(hash string) string {
 	return filepath.Join(s.root, "sprites", hash+".png")
 }
@@ -519,21 +453,4 @@ func (s *Store) collectSpeciesAssetHashes(speciesID int) map[string]struct{} {
 		}
 	}
 	return out
-}
-
-func (s *Store) resourcePath(kind string, id int) (string, error) {
-	switch kind {
-	case "pokemon":
-		return s.pokemonPath(id), nil
-	case "species":
-		return s.speciesPath(id), nil
-	case "evolution":
-		return s.evolutionPath(id), nil
-	case "encounters":
-		return s.encountersPath(id), nil
-	case "moves":
-		return s.movePath(id), nil
-	default:
-		return "", fmt.Errorf("unknown resource kind %q", kind)
-	}
 }

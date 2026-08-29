@@ -1,6 +1,7 @@
 package cache_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,15 +11,32 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-func TestIncompatibleSchemaReset(t *testing.T) {
+func TestIncompatibleSchemaDestructiveReset(t *testing.T) {
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
+
+	legacyPaths := []string{
+		filepath.Join("pokemon", "25.json"),
+		filepath.Join("species", "25.json"),
+		filepath.Join("moves", "1.json"),
+		filepath.Join("evolution", "10.json"),
+		filepath.Join("encounters", "25.json"),
+		filepath.Join("pokemon", "025-pikachu", "dossier.json"),
+		"manifest.json",
+	}
+	for _, rel := range legacyPaths {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	id := "2026-08-29T000000"
 	if err := store.EnsureDatasetDir(id); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.StoreBrowse(id, []domain.BrowseEntry{{ID: 1, Slug: "a", Name: "A"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.WriteDatasetManifest(cache.DatasetManifest{
@@ -36,14 +54,22 @@ func TestIncompatibleSchemaReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	if store.HasActiveDataset() {
-		t.Fatal("v2 active dataset must be reset")
+		t.Fatal("incompatible dataset must be reset")
+	}
+	for _, rel := range legacyPaths {
+		if _, err := os.Stat(filepath.Join(root, rel)); !os.IsNotExist(err) {
+			t.Fatalf("legacy file remains: %s", rel)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(root, "active.json")); !os.IsNotExist(err) {
 		t.Fatal("active.json must be removed")
 	}
+	if _, err := os.Stat(filepath.Join(root, "datasets", id)); !os.IsNotExist(err) {
+		t.Fatal("incompatible dataset dir must be removed")
+	}
 }
 
-func TestV3SchemaPreserved(t *testing.T) {
+func TestDatasetSchemaPreserved(t *testing.T) {
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
@@ -56,11 +82,14 @@ func TestV3SchemaPreserved(t *testing.T) {
 			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
 		},
 	}
+	if err := cache.EnsureCompatibleCache(store); err != nil {
+		t.Fatal(err)
+	}
 	svc := cache.NewService(store, api, testConfig(), clock)
-	if err := svc.BootstrapDataset(t.Context(), nil); err != nil {
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if !svc.HasActiveDataset() {
-		t.Fatal("v3 dataset must remain active")
+		t.Fatal("active dataset must remain active")
 	}
 }

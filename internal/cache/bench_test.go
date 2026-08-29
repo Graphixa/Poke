@@ -10,11 +10,11 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-func benchV3Dataset(b *testing.B) (*Store, string) {
+func benchDataset(b *testing.B) (*Store, string) {
 	b.Helper()
 	root := b.TempDir()
 	store := NewStore(root, nil)
-	id := "bench-v3"
+	id := "bench-dataset"
 	_ = store.EnsureDatasetDir(id)
 	builder := dataset.NewBuilder()
 	for i := 1; i <= 1025; i++ {
@@ -82,7 +82,7 @@ func BenchmarkLoadBrowse(b *testing.B) {
 }
 
 func BenchmarkLoadPokemonDataset(b *testing.B) {
-	store, id := benchV3Dataset(b)
+	store, id := benchDataset(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := store.LoadAggregatePokemon(id); err != nil {
@@ -92,7 +92,7 @@ func BenchmarkLoadPokemonDataset(b *testing.B) {
 }
 
 func BenchmarkLoadSpeciesDataset(b *testing.B) {
-	store, id := benchV3Dataset(b)
+	store, id := benchDataset(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := store.LoadAggregateSpecies(id); err != nil {
@@ -102,7 +102,7 @@ func BenchmarkLoadSpeciesDataset(b *testing.B) {
 }
 
 func BenchmarkLoadMovesDataset(b *testing.B) {
-	store, id := benchV3Dataset(b)
+	store, id := benchDataset(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := store.LoadAggregateMoves(id); err != nil {
@@ -112,7 +112,7 @@ func BenchmarkLoadMovesDataset(b *testing.B) {
 }
 
 func BenchmarkLoadEvolutionDataset(b *testing.B) {
-	store, id := benchV3Dataset(b)
+	store, id := benchDataset(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := store.LoadAggregateEvolutions(id); err != nil {
@@ -122,7 +122,7 @@ func BenchmarkLoadEvolutionDataset(b *testing.B) {
 }
 
 func BenchmarkLoadEncounterDataset(b *testing.B) {
-	store, id := benchV3Dataset(b)
+	store, id := benchDataset(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := store.LoadAggregateEncounters(id); err != nil {
@@ -131,12 +131,12 @@ func BenchmarkLoadEncounterDataset(b *testing.B) {
 	}
 }
 
-func BenchmarkPreloadV3Dataset(b *testing.B) {
-	store, _ := benchV3Dataset(b)
+func BenchmarkPreloadDataset(b *testing.B) {
+	store, _ := benchDataset(b)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.invalidateV3Dataset()
-		if err := store.PreloadV3Dataset(); err != nil {
+		store.invalidateLoadedSnapshot()
+		if err := store.PreloadDataset(); err != nil {
 			b.Fatal(err)
 		}
 	}

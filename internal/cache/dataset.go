@@ -174,7 +174,7 @@ func (s *Store) ActivateDataset(id string) error {
 		return err
 	}
 	s.setActiveDatasetID(id)
-	s.invalidateV3Dataset()
+	s.invalidateLoadedSnapshot()
 	debuglog.Cachef("dataset.activate id=%s count=%d", id, man.PokemonCount)
 	return nil
 }
@@ -232,4 +232,12 @@ func (s *Store) LoadBrowseSummaries() ([]domain.SpeciesSummary, error) {
 // EnsureDatasetDir creates the snapshot directory.
 func (s *Store) EnsureDatasetDir(id string) error {
 	return os.MkdirAll(s.datasetDir(id), 0o700)
+}
+
+// RemoveDatasetDir deletes a staging or failed snapshot directory.
+func (s *Store) RemoveDatasetDir(id string) error {
+	if id == "" {
+		return nil
+	}
+	return os.RemoveAll(s.datasetDir(id))
 }
