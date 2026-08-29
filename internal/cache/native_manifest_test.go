@@ -173,8 +173,8 @@ func TestEnsureNativeManifestSingleDirectoryPass(t *testing.T) {
 	if err := store.EnsureNativeManifest(sprite.AlgorithmVersion, "sixel"); err != nil {
 		t.Fatal(err)
 	}
-	if n := cache.NativeDirectoryScanCount(); n != 1 {
-		t.Fatalf("EnsureNativeManifest scans=%d want 1", n)
+	if n := cache.NativeDirectoryScanCount(); n != 0 {
+		t.Fatalf("EnsureNativeManifest scans=%d want 0 (trust matching manifest)", n)
 	}
 }
 

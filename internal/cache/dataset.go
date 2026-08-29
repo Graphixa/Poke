@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
+	"github.com/Graphixa/Pokedex/internal/dataset"
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-// DatasetSchemaVersion is the snapshot layout version (independent of envelope schema).
-const DatasetSchemaVersion = 2
+// DatasetSchemaVersion is the current snapshot layout version.
+const DatasetSchemaVersion = dataset.SchemaVersion
 
 const appDataVersion = 3
 
@@ -26,6 +27,7 @@ type activePointer struct {
 type DatasetManifest struct {
 	SchemaVersion   int       `json:"schema_version"`
 	DatasetVersion  string    `json:"dataset_version"`
+	Source          string    `json:"source,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	PokeAPIBase     string    `json:"pokeapi_base"`
 	PokemonCount    int       `json:"pokemon_count"`
@@ -90,7 +92,7 @@ func (s *Store) HasActiveDataset() bool {
 		return false
 	}
 	man, err := s.ReadDatasetManifest(id)
-	return err == nil && man.Complete && man.SchemaVersion == DatasetSchemaVersion
+	return err == nil && man.Complete && supportedDatasetSchema(man.SchemaVersion)
 }
 
 // ReadDatasetManifest loads a snapshot manifest.
@@ -163,7 +165,7 @@ func (s *Store) ActivateDataset(id string) error {
 	if !man.Complete {
 		return fmt.Errorf("cache: refuse to activate incomplete dataset %q", id)
 	}
-	ptr := activePointer{SchemaVersion: DatasetSchemaVersion, DatasetID: id}
+	ptr := activePointer{SchemaVersion: man.SchemaVersion, DatasetID: id}
 	data, err := json.Marshal(ptr)
 	if err != nil {
 		return err
@@ -172,6 +174,7 @@ func (s *Store) ActivateDataset(id string) error {
 		return err
 	}
 	s.setActiveDatasetID(id)
+	s.invalidateV3Dataset()
 	debuglog.Cachef("dataset.activate id=%s count=%d", id, man.PokemonCount)
 	return nil
 }
@@ -182,7 +185,7 @@ func (s *Store) StoreBrowse(id string, entries []domain.BrowseEntry) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(s.browsePath(id), data, 0o600)
+	return writeAtomicRename(s.browsePath(id), data, 0o600)
 }
 
 // LoadBrowse reads browse.json from the active snapshot.
@@ -229,50 +232,4 @@ func (s *Store) LoadBrowseSummaries() ([]domain.SpeciesSummary, error) {
 // EnsureDatasetDir creates the snapshot directory.
 func (s *Store) EnsureDatasetDir(id string) error {
 	return os.MkdirAll(s.datasetDir(id), 0o700)
-}
-
-// SnapshotPokemonPath is the per-resource pokemon JSON inside a snapshot.
-func (s *Store) SnapshotPokemonPath(datasetID string, id int) string {
-	return filepath.Join(s.datasetDir(datasetID), "pokemon", fmt.Sprintf("%d.json", id))
-}
-
-func (s *Store) SnapshotSpeciesPath(datasetID string, id int) string {
-	return filepath.Join(s.datasetDir(datasetID), "species", fmt.Sprintf("%d.json", id))
-}
-
-func (s *Store) SnapshotEvolutionPath(datasetID string, id int) string {
-	return filepath.Join(s.datasetDir(datasetID), "evolution", fmt.Sprintf("%d.json", id))
-}
-
-func (s *Store) SnapshotEncountersPath(datasetID string, pokemonID int) string {
-	return filepath.Join(s.datasetDir(datasetID), "encounters", fmt.Sprintf("%d.json", pokemonID))
-}
-
-func (s *Store) SnapshotMovePath(datasetID string, id int) string {
-	return filepath.Join(s.datasetDir(datasetID), "moves", fmt.Sprintf("%d.json", id))
-}
-
-func (s *Store) writeSnapshotJSON(path string, fetchedAt time.Time, value any) error {
-	return s.writeJSON(path, fetchedAt, value)
-}
-
-// StoreSnapshotPokemon writes a pokemon record into a staging snapshot.
-func (s *Store) StoreSnapshotPokemon(datasetID string, pokemon domain.Pokemon, fetchedAt time.Time) error {
-	return s.writeSnapshotJSON(s.SnapshotPokemonPath(datasetID, pokemon.ID), fetchedAt, pokemon)
-}
-
-func (s *Store) StoreSnapshotSpecies(datasetID string, species domain.Species, fetchedAt time.Time) error {
-	return s.writeSnapshotJSON(s.SnapshotSpeciesPath(datasetID, species.ID), fetchedAt, species)
-}
-
-func (s *Store) StoreSnapshotEvolution(datasetID string, id int, tree domain.EvolutionTree, fetchedAt time.Time) error {
-	return s.writeSnapshotJSON(s.SnapshotEvolutionPath(datasetID, id), fetchedAt, tree)
-}
-
-func (s *Store) StoreSnapshotEncounters(datasetID string, pokemonID int, encounters []domain.Encounter, fetchedAt time.Time) error {
-	return s.writeSnapshotJSON(s.SnapshotEncountersPath(datasetID, pokemonID), fetchedAt, encounters)
-}
-
-func (s *Store) StoreSnapshotMove(datasetID string, move domain.Move, fetchedAt time.Time) error {
-	return s.writeSnapshotJSON(s.SnapshotMovePath(datasetID, move.ID), fetchedAt, move)
 }

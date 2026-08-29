@@ -310,9 +310,7 @@ func (s *Service) assembleExtras(ctx context.Context, d domain.Dossier) (domain.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		rows, err := resolveLevelUpMoves(ctx, pokemon, func(id int) (domain.Move, error) {
-			return s.Move(ctx, id)
-		}, s.moveWorkers())
+		rows, err := s.levelUpMovesForPokemon(ctx, pokemon)
 		if err == nil {
 			moves = rows
 			movesOK = true
@@ -355,14 +353,23 @@ func (s *Service) ensureLevelUpMoves(ctx context.Context, d domain.Dossier) doma
 	if len(d.LevelUpMoves) > 0 {
 		return d
 	}
-	rows, err := resolveLevelUpMoves(ctx, d.Pokemon, func(id int) (domain.Move, error) {
-		return s.Move(ctx, id)
-	}, s.moveWorkers())
+	rows, err := s.levelUpMovesForPokemon(ctx, d.Pokemon)
 	if err != nil {
 		return d
 	}
 	d.LevelUpMoves = rows
 	return d
+}
+
+func (s *Service) levelUpMovesForPokemon(ctx context.Context, pokemon domain.Pokemon) ([]domain.LevelUpMove, error) {
+	if pokemon.ID != 0 {
+		if rows, err := s.store.LevelUpMoves(pokemon.ID); err == nil || !errors.Is(err, ErrNotFound) {
+			return rows, err
+		}
+	}
+	return resolveLevelUpMoves(ctx, pokemon, func(id int) (domain.Move, error) {
+		return s.Move(ctx, id)
+	}, s.moveWorkers())
 }
 
 func resolveLevelUpMoves(ctx context.Context, pokemon domain.Pokemon, getMove func(int) (domain.Move, error), workers int) ([]domain.LevelUpMove, error) {

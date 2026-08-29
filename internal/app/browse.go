@@ -115,6 +115,7 @@ func (w warmPokemonLoader) Pokemon(ctx context.Context, speciesID int) (domain.P
 }
 
 func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
+	debuglog.StartupMark("startup.browse")
 	svc, err := h.Services()
 	if err != nil {
 		return err
@@ -238,7 +239,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		protocol := img.ProtocolName()
 		_ = svc.Cache.EnsureNativeManifest(protocol)
 		imageSpec = cache.DefaultImageCacheSpec(protocol, string(sourceKind), style.BaseRGBA())
-		coord, err := svc.Cache.StartImageCacheSession(index, imageSpec)
+		coord, err := svc.Cache.StartImageCacheSessionDeferred(index, imageSpec)
 		if err != nil {
 			debuglog.Cachef("image-cache session err=%v", err)
 		} else {
@@ -250,6 +251,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 				useProgress = true
 				imageCoord.PublishStart()
 			}
+			go imageCoord.ReconcileImageCacheSession(index)
 			defer func() { _ = imageCoord.Flush() }()
 		}
 	}
@@ -330,5 +332,6 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.WarmEvents = progressCh
 	}
 
+	debuglog.StartupMark("startup.tui")
 	return tui.Run(runCtx, opts)
 }

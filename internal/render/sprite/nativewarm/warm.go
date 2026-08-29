@@ -33,6 +33,7 @@ type PokemonLoader interface {
 type NativeRenderer interface {
 	HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cells int) bool
 	NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
+	NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult
 }
 
 // ManifestStore tracks per-size native cache completeness on disk.
@@ -444,6 +445,29 @@ func (s *Service) pop() (job, bool) {
 	return job{}, false
 }
 
+func (s *Service) warmOneSize(ctx context.Context, j job, poke domain.Pokemon, cells int) {
+	if j.priority >= PriorityBackground && s.activity.ThrottleBackground() {
+		s.requeue(job{speciesID: j.speciesID, priority: j.priority, allSizes: true})
+		return
+	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
+	cached := s.cfg.Renderer.HasNativeCache(ctx, poke, cells)
+	if cached {
+		s.noteVariant(j.speciesID, cells)
+		if s.cfg.Completer == nil || s.speciesFullyCached(ctx, j.speciesID) {
+			return
+		}
+	}
+	res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
+	if res.UsePlaceholder || !res.Native {
+		debuglog.Renderf("nativewarm miss species=%d backend=%s", j.speciesID, res.Backend)
+		return
+	}
+	s.noteVariant(j.speciesID, cells)
+}
+
 func (s *Service) runJob(ctx context.Context, j job) {
 	if j.priority >= PriorityBackground && s.activity.ThrottleBackground() {
 		s.requeue(j)
@@ -461,27 +485,28 @@ func (s *Service) runJob(ctx context.Context, j job) {
 	}
 
 	sizes := s.jobSizes(j)
-	for _, cells := range sizes {
-		if j.priority >= PriorityBackground && s.activity.ThrottleBackground() {
-			s.requeue(job{speciesID: j.speciesID, priority: j.priority, allSizes: true})
-			return
-		}
-		if err := ctx.Err(); err != nil {
-			return
-		}
-		cached := s.cfg.Renderer.HasNativeCache(ctx, poke, cells)
-		if cached {
-			s.noteVariant(j.speciesID, cells)
-			if s.cfg.Completer == nil || s.speciesFullyCached(ctx, j.speciesID) {
-				continue
+	if j.allSizes && len(sizes) > 1 {
+		if batch, ok := s.cfg.Renderer.(interface {
+			NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult
+		}); ok {
+			res := batch.NativeWarmBatch(ctx, poke, sizes)
+			for _, cells := range sizes {
+				if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
+					s.noteVariant(j.speciesID, cells)
+				}
+			}
+			if res.Encoded == 0 && (res.Last.UsePlaceholder || !res.Last.Native) {
+				debuglog.Renderf("nativewarm batch miss species=%d backend=%s", j.speciesID, res.Last.Backend)
+			}
+		} else {
+			for _, cells := range sizes {
+				s.warmOneSize(ctx, j, poke, cells)
 			}
 		}
-		res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
-		if res.UsePlaceholder || !res.Native {
-			debuglog.Renderf("nativewarm miss species=%d backend=%s", j.speciesID, res.Backend)
-			continue
+	} else {
+		for _, cells := range sizes {
+			s.warmOneSize(ctx, j, poke, cells)
 		}
-		s.noteVariant(j.speciesID, cells)
 	}
 
 	if s.speciesFullyCached(ctx, j.speciesID) {

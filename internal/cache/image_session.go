@@ -28,30 +28,45 @@ type PokemonCacheWork struct {
 
 // ImageCacheCoordinator owns the session outstanding set and Pokémon-level progress.
 type ImageCacheCoordinator struct {
-	mu       sync.Mutex
-	store    *Store
-	spec     ImageCacheSpec
-	specID   string
-	pending  map[int]*PokemonCacheWork
-	total    int
-	done     int
-	writer   *imageManifestWriter
-	progress ProgressFunc
+	mu         sync.Mutex
+	store      *Store
+	spec       ImageCacheSpec
+	specID     string
+	datasetID  string
+	pending    map[int]*PokemonCacheWork
+	total      int
+	done       int
+	writer     *imageManifestWriter
+	progress   ProgressFunc
+	deferAudit bool
 }
 
 // StartImageCacheSession audits the current index against the aggregate
 // manifest and required artefacts. Total is fixed for the session.
 func StartImageCacheSession(store *Store, index []domain.SpeciesSummary, spec ImageCacheSpec) (*ImageCacheCoordinator, error) {
+	return startImageCacheSession(store, index, spec, false)
+}
+
+// StartImageCacheSessionDeferred is the fast startup path: trusts manifest
+// completeness without per-Pokémon native file stats. Call ReconcileImageCacheSession
+// in the background to verify outstanding work.
+func StartImageCacheSessionDeferred(store *Store, index []domain.SpeciesSummary, spec ImageCacheSpec) (*ImageCacheCoordinator, error) {
+	return startImageCacheSession(store, index, spec, true)
+}
+
+func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec ImageCacheSpec, deferAudit bool) (*ImageCacheCoordinator, error) {
 	if store == nil {
 		return &ImageCacheCoordinator{spec: spec, specID: spec.ID(), pending: map[int]*PokemonCacheWork{}}, nil
 	}
 	specID := spec.ID()
+	datasetID, _ := store.ActiveDatasetID()
 	man, err := store.ReadImageCacheManifest()
 	if err != nil {
 		return nil, err
 	}
 	specChanged := man.SpecID != "" && man.SpecID != specID
-	if specChanged {
+	datasetChanged := datasetID != "" && man.DatasetID != "" && man.DatasetID != datasetID
+	if specChanged || datasetChanged {
 		man = ImageCacheManifest{
 			Version: ImageCacheManifestVersion,
 			SpecID:  specID,
@@ -60,13 +75,19 @@ func StartImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 	} else if man.SpecID == "" {
 		man.SpecID = specID
 	}
+	if datasetID != "" {
+		man.DatasetID = datasetID
+	}
+	man.PokemonCount = len(index)
+
+	trusted := deferAudit && imageManifestTrusted(man, index, specID, datasetID)
 
 	pending := make(map[int]*PokemonCacheWork)
 	for _, sum := range index {
 		if sum.ID < 1 {
 			continue
 		}
-		work := auditPokemonImageWork(store, spec, specID, sum, man.Pokemon[sum.ID], specChanged)
+		work := auditPokemonImageWork(store, spec, specID, sum, man.Pokemon[sum.ID], specChanged, trusted)
 		if work.Complete {
 			man.Pokemon[sum.ID] = PokemonImageCacheState{
 				SpeciesID:  sum.ID,
@@ -81,22 +102,47 @@ func StartImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 	}
 
 	writer := newImageManifestWriter(store, man)
-	if err := writer.flush(); err != nil {
-		return nil, err
+	for _, st := range man.Pokemon {
+		if st.Complete {
+			writer.set(st)
+		}
+	}
+	if specChanged || datasetChanged || len(pending) < len(index) {
+		if err := writer.flush(); err != nil {
+			return nil, err
+		}
 	}
 
 	c := &ImageCacheCoordinator{
-		store:   store,
-		spec:    spec,
-		specID:  specID,
-		pending: pending,
-		total:   len(pending),
-		writer:  writer,
+		store:      store,
+		spec:       spec,
+		specID:     specID,
+		datasetID:  datasetID,
+		pending:    pending,
+		total:      len(pending),
+		writer:     writer,
+		deferAudit: deferAudit && !trusted,
 	}
 	return c, nil
 }
 
-func auditPokemonImageWork(store *Store, spec ImageCacheSpec, specID string, sum domain.SpeciesSummary, st PokemonImageCacheState, specChanged bool) *PokemonCacheWork {
+func imageManifestTrusted(man ImageCacheManifest, index []domain.SpeciesSummary, specID, datasetID string) bool {
+	if datasetID == "" || man.DatasetID != datasetID || man.SpecID != specID {
+		return false
+	}
+	if man.PokemonCount != len(index) {
+		return false
+	}
+	for _, sum := range index {
+		st, ok := man.Pokemon[sum.ID]
+		if !ok || !st.Complete || st.SpecID != specID {
+			return false
+		}
+	}
+	return true
+}
+
+func auditPokemonImageWork(store *Store, spec ImageCacheSpec, specID string, sum domain.SpeciesSummary, st PokemonImageCacheState, specChanged, trusted bool) *PokemonCacheWork {
 	work := &PokemonCacheWork{
 		SpeciesID:   sum.ID,
 		Slug:        sum.Slug,
@@ -106,6 +152,14 @@ func auditPokemonImageWork(store *Store, spec ImageCacheSpec, specID string, sum
 	if ready && isHexSHA256(hash) {
 		work.SourceReady = true
 		work.SourceHash = hash
+	}
+
+	if trusted && !specChanged && st.Complete && st.SpecID == specID {
+		work.Complete = true
+		for _, cells := range spec.RequiredSizes {
+			work.NativeReady[cells] = true
+		}
+		return work
 	}
 
 	if !specChanged && work.SourceReady && st.Complete && st.SpecID == specID && st.SourceHash == work.SourceHash {
@@ -324,7 +378,7 @@ func (c *ImageCacheCoordinator) tryCompleteLocked(w *PokemonCacheWork) (PokemonI
 func (c *ImageCacheCoordinator) persistAndEmit(persist bool, st PokemonImageCacheState, fn ProgressFunc, p ImageCacheProgress, speciesID int) {
 	if persist && c.writer != nil {
 		c.writer.set(st)
-		_ = c.writer.flush()
+		_ = c.writer.maybeFlush(false)
 	}
 	if !persist || fn == nil {
 		return
@@ -388,9 +442,52 @@ func (c *ImageCacheCoordinator) CompletePokemonIDs() []int {
 	return ids
 }
 
-func (s *Service) StartImageCacheSession(index []domain.SpeciesSummary, spec ImageCacheSpec) (*ImageCacheCoordinator, error) {
-	if s == nil {
-		return StartImageCacheSession(nil, index, spec)
+// ReconcileImageCacheSession verifies outstanding image-cache work after deferred startup.
+func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.SpeciesSummary) {
+	if c == nil || c.store == nil || !c.deferAudit {
+		return
 	}
-	return StartImageCacheSession(s.store, index, spec)
+	c.mu.Lock()
+	c.deferAudit = false
+	c.mu.Unlock()
+
+	for _, sum := range index {
+		if sum.ID < 1 {
+			continue
+		}
+		c.mu.Lock()
+		w := c.pending[sum.ID]
+		if w == nil || w.Complete {
+			c.mu.Unlock()
+			continue
+		}
+		c.mu.Unlock()
+
+		st := c.writer.snapshot().Pokemon[sum.ID]
+		work := auditPokemonImageWork(c.store, c.spec, c.specID, sum, st, false, false)
+		c.mu.Lock()
+		if work.Complete {
+			delete(c.pending, sum.ID)
+			c.done++
+			if c.writer != nil {
+				c.writer.set(PokemonImageCacheState{
+					SpeciesID: sum.ID, SourceHash: work.SourceHash,
+					SpecID: c.specID, Complete: true,
+				})
+			}
+		} else {
+			c.pending[sum.ID] = work
+		}
+		c.mu.Unlock()
+	}
+	if c.writer != nil {
+		_ = c.writer.flush()
+	}
+}
+
+func (s *Service) StartImageCacheSessionDeferred(index []domain.SpeciesSummary, spec ImageCacheSpec) (*ImageCacheCoordinator, error) {
+	if s == nil {
+		return StartImageCacheSessionDeferred(nil, index, spec)
+	}
+	return StartImageCacheSessionDeferred(s.store, index, spec)
 }

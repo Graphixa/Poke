@@ -5,9 +5,53 @@ import (
 	"testing"
 
 	"github.com/Graphixa/Pokedex/internal/config"
+	"github.com/Graphixa/Pokedex/internal/dataset"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
+
+func benchV3Dataset(b *testing.B) (*Store, string) {
+	b.Helper()
+	root := b.TempDir()
+	store := NewStore(root, nil)
+	id := "bench-v3"
+	_ = store.EnsureDatasetDir(id)
+	builder := dataset.NewBuilder()
+	for i := 1; i <= 1025; i++ {
+		builder.Pokemon[i] = dataset.PokemonFromDomain(domain.Pokemon{
+			ID: i, Slug: "p", DisplayName: "P", SpeciesID: i,
+			Stats: domain.Stats{Speed: i % 255},
+		})
+		builder.Species[i] = dataset.SpeciesFromDomain(domain.Species{
+			ID: i, Slug: "p", DisplayName: "P", DefaultPokemonID: i,
+		})
+		builder.Learnsets[i] = []dataset.DatasetLearn{{Level: 1, MoveID: 1}}
+		builder.Moves[1] = dataset.DatasetMove{ID: 1, Slug: "pound", DisplayName: "Pound", PP: 35}
+		builder.Evolutions[i] = dataset.EvolutionFromDomain(domain.EvolutionTree{
+			Root: domain.EvolutionNode{SpeciesID: i, DisplayName: "P"},
+		})
+		builder.Encounters[i] = dataset.EncountersFromDomain([]domain.Encounter{{Area: "route", MinimumLevel: 1}})
+	}
+	if err := store.StoreAggregateBuilder(id, builder); err != nil {
+		b.Fatal(err)
+	}
+	entries := make([]domain.BrowseEntry, 1025)
+	for i := range entries {
+		entries[i] = domain.BrowseEntry{ID: i + 1, Slug: "p", Name: "P"}
+	}
+	if err := store.StoreBrowse(id, entries); err != nil {
+		b.Fatal(err)
+	}
+	if err := store.WriteDatasetManifest(DatasetManifest{
+		SchemaVersion: DatasetSchemaVersion, DatasetVersion: id, Complete: true, PokemonCount: len(entries),
+	}); err != nil {
+		b.Fatal(err)
+	}
+	if err := store.ActivateDataset(id); err != nil {
+		b.Fatal(err)
+	}
+	return store, id
+}
 
 func BenchmarkLoadBrowse(b *testing.B) {
 	root := b.TempDir()
@@ -32,6 +76,67 @@ func BenchmarkLoadBrowse(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := store.LoadBrowse(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLoadPokemonDataset(b *testing.B) {
+	store, id := benchV3Dataset(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := store.LoadAggregatePokemon(id); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLoadSpeciesDataset(b *testing.B) {
+	store, id := benchV3Dataset(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := store.LoadAggregateSpecies(id); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLoadMovesDataset(b *testing.B) {
+	store, id := benchV3Dataset(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := store.LoadAggregateMoves(id); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLoadEvolutionDataset(b *testing.B) {
+	store, id := benchV3Dataset(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := store.LoadAggregateEvolutions(id); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLoadEncounterDataset(b *testing.B) {
+	store, id := benchV3Dataset(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := store.LoadAggregateEncounters(id); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPreloadV3Dataset(b *testing.B) {
+	store, _ := benchV3Dataset(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		store.invalidateV3Dataset()
+		if err := store.PreloadV3Dataset(); err != nil {
 			b.Fatal(err)
 		}
 	}

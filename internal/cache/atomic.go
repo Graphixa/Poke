@@ -24,6 +24,37 @@ type manifest struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+// writeAtomicRename persists with temp+rename only (no fsync). Suitable for
+// reconstructable staging files and derived native frames.
+func writeAtomicRename(path string, data []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary file: %w", err)
+	}
+	tempName := temp.Name()
+	defer os.Remove(tempName)
+
+	if err := temp.Chmod(mode); err != nil {
+		temp.Close()
+		return fmt.Errorf("chmod temporary file: %w", err)
+	}
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return fmt.Errorf("write temporary file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close temporary file: %w", err)
+	}
+	if err := os.Rename(tempName, path); err != nil {
+		return fmt.Errorf("rename temporary file: %w", err)
+	}
+	return nil
+}
+
+// writeAtomic persists critical metadata with temp+sync+rename.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create directory: %w", err)

@@ -90,21 +90,7 @@ func (s *Store) EnsureNativeManifest(version, protocol string) error {
 		}
 		return s.WriteNativeManifest(m)
 	}
-	counts, err := s.auditNativeFrameCounts(m.Protocol)
-	if err != nil {
-		return err
-	}
-	if m.Sizes == nil {
-		m.Sizes = map[int]NativeSizeStatus{}
-	}
-	for _, cells := range sprite.FrameSteps() {
-		entry := m.Sizes[cells]
-		done := counts[cells]
-		entry.Done = done
-		entry.Complete = entry.Total > 0 && done >= entry.Total
-		m.Sizes[cells] = entry
-	}
-	return s.WriteNativeManifest(m)
+	return nil
 }
 
 // InitNativeSizePhase prepares manifest tracking for a warm phase.

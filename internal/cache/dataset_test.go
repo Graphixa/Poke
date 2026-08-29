@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
+	"github.com/Graphixa/Pokedex/internal/dataset"
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
@@ -352,5 +354,225 @@ func TestBootstrapFailurePreservesPreviousActive(t *testing.T) {
 	got, err := store.ActiveDatasetID()
 	if err != nil || got != goodID {
 		t.Fatalf("active=%q err=%v want %s", got, err, goodID)
+	}
+}
+
+func TestDatasetSnapshotHasBoundedFileCount(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	clock := fixedClock{t: now}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", SpeciesID: 25, Stats: domain.Stats{Speed: 90}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := store.ActiveDatasetID()
+	dir := filepath.Join(root, "datasets", id)
+	count := 0
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		count++
+		return nil
+	})
+	if count > 12 {
+		t.Fatalf("dataset snapshot files=%d want <=12", count)
+	}
+}
+
+func TestOfflineSpeciesSummaryRead(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	clock := fixedClock{t: now}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", SpeciesID: 25}},
+		species: map[int]domain.Species{25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25, Genus: "Mouse"}},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	before := api.calls.Load()
+	sp, err := svc.Species(context.Background(), 25)
+	if err != nil || sp.Genus == "" {
+		t.Fatalf("species=%#v err=%v", sp, err)
+	}
+	if api.calls.Load() != before {
+		t.Fatal("offline species read hit network")
+	}
+}
+
+func TestOfflineEvolutionRead(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	clock := fixedClock{t: now}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", SpeciesID: 25, Stats: domain.Stats{Speed: 90}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25, EvolutionChainID: 10},
+		},
+		evolution: map[int]domain.EvolutionTree{
+			10: {Root: domain.EvolutionNode{SpeciesID: 25, SpeciesSlug: "pikachu", DisplayName: "Pikachu"}},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	before := api.calls.Load()
+	tree, err := svc.EvolutionChain(context.Background(), 10)
+	if err != nil || tree.Root.SpeciesID != 25 {
+		t.Fatalf("evolution=%#v err=%v", tree, err)
+	}
+	if api.calls.Load() != before {
+		t.Fatal("offline evolution read hit network")
+	}
+}
+
+func TestOfflineEncountersRead(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	clock := fixedClock{t: now}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", SpeciesID: 25, Stats: domain.Stats{Speed: 90}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+		},
+		encounters: map[int][]domain.Encounter{
+			25: {{Area: "forest", MinimumLevel: 5}},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	before := api.calls.Load()
+	enc, err := svc.Encounters(context.Background(), 25)
+	if err != nil || len(enc) != 1 {
+		t.Fatalf("encounters=%#v err=%v", enc, err)
+	}
+	if api.calls.Load() != before {
+		t.Fatal("offline encounters read hit network")
+	}
+}
+
+func TestAggregateJSONUsesNoEnvelope(t *testing.T) {
+	root := t.TempDir()
+	store := cache.NewStore(root, nil)
+	id := "test"
+	b := dataset.NewBuilder()
+	b.Pokemon[1] = dataset.PokemonFromDomain(domain.Pokemon{ID: 1, Slug: "a", DisplayName: "A"})
+	if err := store.StoreAggregatePokemon(id, b.Pokemon); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(store.AggregatePokemonPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "schema_version") {
+		t.Fatalf("aggregate must not use envelope: %s", raw)
+	}
+}
+
+func TestAggregatePathsAndRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	store := cache.NewStore(root, nil)
+	id := "2026-08-29T120000"
+	if err := store.EnsureDatasetDir(id); err != nil {
+		t.Fatal(err)
+	}
+
+	b := dataset.NewBuilder()
+	b.Pokemon[25] = dataset.PokemonFromDomain(domain.Pokemon{
+		ID: 25, Slug: "pikachu", DisplayName: "Pikachu", SpeciesID: 25,
+		Stats: domain.Stats{Speed: 90},
+		Types: []domain.TypeSlot{{Name: "electric"}},
+	})
+	b.Species[25] = dataset.SpeciesFromDomain(domain.Species{
+		ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25,
+	})
+	b.Learnsets[25] = []dataset.DatasetLearn{{Level: 1, MoveID: 84}}
+	b.Moves[84] = dataset.DatasetMove{ID: 84, Slug: "thunder-shock", DisplayName: "Thunder Shock", PP: 30}
+	b.Evolutions[10] = dataset.EvolutionFromDomain(domain.EvolutionTree{
+		Root: domain.EvolutionNode{SpeciesID: 25, SpeciesSlug: "pikachu", DisplayName: "Pikachu"},
+	})
+	b.Encounters[25] = dataset.EncountersFromDomain([]domain.Encounter{{Area: "forest", MinimumLevel: 5}})
+
+	if err := store.StoreAggregateBuilder(id, b); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, file := range []string{
+		dataset.FilePokemon,
+		dataset.FileSpecies,
+		dataset.FileLearnsets,
+		dataset.FileMoves,
+		dataset.FileEvolutions,
+		dataset.FileEncounters,
+	} {
+		path := filepath.Join(root, "datasets", id, file)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		if strings.Contains(string(raw), "\n  ") {
+			t.Fatalf("expected compact JSON for %s:\n%s", file, raw)
+		}
+	}
+
+	pokemon, err := store.LoadAggregatePokemon(id)
+	if err != nil || pokemon[25].Slug != "pikachu" {
+		t.Fatalf("pokemon=%#v err=%v", pokemon, err)
+	}
+	species, err := store.LoadAggregateSpecies(id)
+	if err != nil || species[25].DisplayName != "Pikachu" {
+		t.Fatalf("species=%#v err=%v", species, err)
+	}
+	learnsets, err := store.LoadAggregateLearnsets(id)
+	if err != nil || learnsets[25][0].MoveID != 84 {
+		t.Fatalf("learnsets=%#v err=%v", learnsets, err)
+	}
+	moves, err := store.LoadAggregateMoves(id)
+	if err != nil || moves[84].Slug != "thunder-shock" {
+		t.Fatalf("moves=%#v err=%v", moves, err)
+	}
+	evolutions, err := store.LoadAggregateEvolutions(id)
+	if err != nil || evolutions[10].Root.SpeciesID != 25 {
+		t.Fatalf("evolutions=%#v err=%v", evolutions, err)
+	}
+	encounters, err := store.LoadAggregateEncounters(id)
+	if err != nil || encounters[25][0].Area != "forest" {
+		t.Fatalf("encounters=%#v err=%v", encounters, err)
+	}
+}
+
+func TestAggregatePathHelpers(t *testing.T) {
+	store := cache.NewStore(t.TempDir(), nil)
+	id := "test-id"
+	if got := store.AggregatePokemonPath(id); !strings.HasSuffix(got, filepath.Join("datasets", id, dataset.FilePokemon)) {
+		t.Fatalf("pokemon path=%q", got)
+	}
+	if got := store.AggregateSpeciesPath(id); !strings.HasSuffix(got, dataset.FileSpecies) {
+		t.Fatalf("species path=%q", got)
 	}
 }

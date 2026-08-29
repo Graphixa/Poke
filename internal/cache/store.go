@@ -35,6 +35,10 @@ type Store struct {
 	activeID      string
 	activeIDKnown bool
 
+	v3Mu      sync.RWMutex
+	v3        *v3Dataset
+	v3LoadErr error
+
 	speciesIndexWrites atomic.Uint32
 }
 
@@ -102,6 +106,7 @@ func (s *Store) invalidateActiveDatasetCache() {
 	defer s.mu.Unlock()
 	s.activeIDKnown = false
 	s.activeID = ""
+	s.invalidateV3Dataset()
 }
 
 func (s *Store) SpeciesIndex(context.Context) ([]domain.SpeciesSummary, error) {
@@ -126,13 +131,12 @@ func (s *Store) HasSpeciesIndex() bool {
 }
 
 func (s *Store) Pokemon(_ context.Context, id int) (domain.Pokemon, error) {
-	var value domain.Pokemon
-	if datasetID, err := s.getActiveDatasetID(); err == nil {
-		if _, err := s.readJSON(s.SnapshotPokemonPath(datasetID, id), &value); err != nil {
-			return domain.Pokemon{}, err
-		}
+	if value, ok, err := s.pokemonV3(id); err != nil {
+		return domain.Pokemon{}, err
+	} else if ok {
 		return value, nil
 	}
+	var value domain.Pokemon
 	if _, err := s.readJSON(s.pokemonPath(id), &value); err != nil {
 		return domain.Pokemon{}, err
 	}
@@ -140,13 +144,12 @@ func (s *Store) Pokemon(_ context.Context, id int) (domain.Pokemon, error) {
 }
 
 func (s *Store) Species(_ context.Context, id int) (domain.Species, error) {
-	var value domain.Species
-	if datasetID, err := s.getActiveDatasetID(); err == nil {
-		if _, err := s.readJSON(s.SnapshotSpeciesPath(datasetID, id), &value); err != nil {
-			return domain.Species{}, err
-		}
+	if value, ok, err := s.speciesV3(id); err != nil {
+		return domain.Species{}, err
+	} else if ok {
 		return value, nil
 	}
+	var value domain.Species
 	if _, err := s.readJSON(s.speciesPath(id), &value); err != nil {
 		return domain.Species{}, err
 	}
@@ -154,13 +157,12 @@ func (s *Store) Species(_ context.Context, id int) (domain.Species, error) {
 }
 
 func (s *Store) EvolutionChain(_ context.Context, id int) (domain.EvolutionTree, error) {
-	var value domain.EvolutionTree
-	if datasetID, err := s.getActiveDatasetID(); err == nil {
-		if _, err := s.readJSON(s.SnapshotEvolutionPath(datasetID, id), &value); err != nil {
-			return domain.EvolutionTree{}, err
-		}
+	if value, ok, err := s.evolutionV3(id); err != nil {
+		return domain.EvolutionTree{}, err
+	} else if ok {
 		return value, nil
 	}
+	var value domain.EvolutionTree
 	if _, err := s.readJSON(s.evolutionPath(id), &value); err != nil {
 		return domain.EvolutionTree{}, err
 	}
@@ -168,13 +170,12 @@ func (s *Store) EvolutionChain(_ context.Context, id int) (domain.EvolutionTree,
 }
 
 func (s *Store) Encounters(_ context.Context, pokemonID int) ([]domain.Encounter, error) {
-	var value []domain.Encounter
-	if datasetID, err := s.getActiveDatasetID(); err == nil {
-		if _, err := s.readJSON(s.SnapshotEncountersPath(datasetID, pokemonID), &value); err != nil {
-			return nil, err
-		}
+	if value, ok, err := s.encountersV3(pokemonID); err != nil {
+		return nil, err
+	} else if ok {
 		return value, nil
 	}
+	var value []domain.Encounter
 	if _, err := s.readJSON(s.encountersPath(pokemonID), &value); err != nil {
 		return nil, err
 	}
@@ -182,13 +183,12 @@ func (s *Store) Encounters(_ context.Context, pokemonID int) ([]domain.Encounter
 }
 
 func (s *Store) Move(_ context.Context, id int) (domain.Move, error) {
-	var value domain.Move
-	if datasetID, err := s.getActiveDatasetID(); err == nil {
-		if _, err := s.readJSON(s.SnapshotMovePath(datasetID, id), &value); err != nil {
-			return domain.Move{}, err
-		}
+	if value, ok, err := s.moveV3(id); err != nil {
+		return domain.Move{}, err
+	} else if ok {
 		return value, nil
 	}
+	var value domain.Move
 	if _, err := s.readJSON(s.movePath(id), &value); err != nil {
 		return domain.Move{}, err
 	}
@@ -268,7 +268,7 @@ func (s *Store) Native(_ context.Context, key string) ([]byte, error) {
 }
 
 func (s *Store) StoreNative(_ context.Context, key string, data []byte) error {
-	return writeAtomic(s.nativePath(key), data, 0o600)
+	return writeAtomicRename(s.nativePath(key), data, 0o600)
 }
 
 func bytesTrimSpace(b []byte) []byte {

@@ -66,7 +66,7 @@ func NewService(store *Store, api pokeAPI, cfg config.Config, clock Clock) *Serv
 	if concurrency <= 0 {
 		concurrency = 8
 	}
-	return &Service{
+	svc := &Service{
 		store:          store,
 		api:            api,
 		cfg:            cfg,
@@ -74,6 +74,8 @@ func NewService(store *Store, api pokeAPI, cfg config.Config, clock Clock) *Serv
 		sema:           make(chan struct{}, concurrency),
 		maxConcurrency: concurrency,
 	}
+	_ = store.EnsureCompatibleDataset()
+	return svc
 }
 
 // MaxConcurrency returns the shared HTTP concurrency budget.
