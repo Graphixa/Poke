@@ -75,6 +75,7 @@ type Service struct {
 	wg        sync.WaitGroup
 	doneN     atomic.Int64
 	totalN    atomic.Int64
+	activity  sprite.ActivityGate
 }
 
 // New creates a native warm service. Call EnsureStarted when browse layout is known.
@@ -282,6 +283,24 @@ func (s *Service) Prioritize(speciesID int) {
 	s.signal()
 }
 
+// NoteActivity records TUI selection motion so full-dex (P2) work pauses.
+func (s *Service) NoteActivity() {
+	if s == nil {
+		return
+	}
+	s.activity.NoteActivity()
+	s.signal()
+}
+
+// SetForegroundBusy pauses P2 work while a foreground cold encode is running.
+func (s *Service) SetForegroundBusy(busy bool) {
+	if s == nil {
+		return
+	}
+	s.activity.SetForegroundBusy(busy)
+	s.signal()
+}
+
 // SetNeighborsFromList enqueues list neighbors at P1.
 func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int) {
 	if s == nil || radius < 1 || len(list) == 0 {
@@ -419,10 +438,12 @@ func (s *Service) worker(ctx context.Context) {
 		}
 		j, ok := s.pop()
 		if !ok {
+			wait := sprite.InteractiveIdle
 			select {
 			case <-ctx.Done():
 				return
 			case <-s.wake:
+			case <-time.After(wait):
 			}
 			continue
 		}
@@ -433,19 +454,35 @@ func (s *Service) worker(ctx context.Context) {
 func (s *Service) pop() (job, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	throttle := s.activity.ThrottleBackground()
+	var skipped []job
 	for s.pq.Len() > 0 {
 		j := heap.Pop(&s.pq).(job)
 		if s.done[j.speciesID] {
 			delete(s.queued, j.speciesID)
 			continue
 		}
+		if throttle && j.priority >= PriorityBackground {
+			skipped = append(skipped, j)
+			continue
+		}
 		delete(s.queued, j.speciesID)
+		for _, sk := range skipped {
+			heap.Push(&s.pq, sk)
+		}
 		return j, true
+	}
+	for _, sk := range skipped {
+		heap.Push(&s.pq, sk)
 	}
 	return job{}, false
 }
 
 func (s *Service) runJob(ctx context.Context, j job) {
+	if j.priority >= PriorityBackground && s.activity.ThrottleBackground() {
+		s.requeue(j)
+		return
+	}
 	cells := s.cells
 	poke, err := s.pokemonForJob(ctx, j.speciesID)
 	if err != nil {
@@ -468,6 +505,15 @@ func (s *Service) runJob(ctx context.Context, j job) {
 	}
 	s.markDone(j.speciesID)
 	s.report(j.speciesID)
+}
+
+func (s *Service) requeue(j job) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done[j.speciesID] {
+		return
+	}
+	s.pushLocked(j)
 }
 
 func (s *Service) markDone(speciesID int) {

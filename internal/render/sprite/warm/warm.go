@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
@@ -60,18 +61,19 @@ type Config struct {
 type Service struct {
 	cfg Config
 
-	mu      sync.Mutex
-	pq      priorityQueue
-	seq     int64
-	queued  map[int]bool // species currently in queue
-	done    map[int]bool // species successfully warmed for current cells
-	cells   int
-	wake    chan struct{}
-	started atomic.Bool
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	doneN   atomic.Int64
-	totalN  atomic.Int64
+	mu       sync.Mutex
+	pq       priorityQueue
+	seq      int64
+	queued   map[int]bool // species currently in queue
+	done     map[int]bool // species successfully warmed for current cells
+	cells    int
+	wake     chan struct{}
+	started  atomic.Bool
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	doneN    atomic.Int64
+	totalN   atomic.Int64
+	activity sprite.ActivityGate
 }
 
 // New creates a warm service. Call Start to begin workers.
@@ -172,6 +174,24 @@ func (s *Service) Prioritize(speciesID int) {
 		return
 	}
 	s.pushLocked(job{speciesID: speciesID, priority: PrioritySelected})
+	s.signal()
+}
+
+// NoteActivity records TUI selection motion so full-dex (P2) work pauses.
+func (s *Service) NoteActivity() {
+	if s == nil {
+		return
+	}
+	s.activity.NoteActivity()
+	s.signal()
+}
+
+// SetForegroundBusy pauses P2 work while a foreground cold encode is running.
+func (s *Service) SetForegroundBusy(busy bool) {
+	if s == nil {
+		return
+	}
+	s.activity.SetForegroundBusy(busy)
 	s.signal()
 }
 
@@ -284,6 +304,7 @@ func (s *Service) worker(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-s.wake:
+			case <-time.After(sprite.InteractiveIdle):
 			}
 			continue
 		}
@@ -294,19 +315,35 @@ func (s *Service) worker(ctx context.Context) {
 func (s *Service) pop() (job, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	throttle := s.activity.ThrottleBackground()
+	var skipped []job
 	for s.pq.Len() > 0 {
 		j := heap.Pop(&s.pq).(job)
 		if s.done[j.speciesID] {
 			delete(s.queued, j.speciesID)
 			continue
 		}
+		if throttle && j.priority >= PriorityBackground {
+			skipped = append(skipped, j)
+			continue
+		}
 		delete(s.queued, j.speciesID)
+		for _, sk := range skipped {
+			heap.Push(&s.pq, sk)
+		}
 		return j, true
+	}
+	for _, sk := range skipped {
+		heap.Push(&s.pq, sk)
 	}
 	return job{}, false
 }
 
 func (s *Service) runJob(ctx context.Context, j job) {
+	if j.priority >= PriorityBackground && s.activity.ThrottleBackground() {
+		s.requeue(j)
+		return
+	}
 	cells := s.cells
 	poke, err := s.cfg.Loader.Pokemon(ctx, j.speciesID)
 	if err != nil || poke.Sprites.FrontDefault == "" {
@@ -324,6 +361,15 @@ func (s *Service) runJob(ctx context.Context, j job) {
 	}
 	s.markDone(j.speciesID)
 	s.report(j.speciesID)
+}
+
+func (s *Service) requeue(j job) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done[j.speciesID] {
+		return
+	}
+	s.pushLocked(j)
 }
 
 func (s *Service) markDone(speciesID int) {

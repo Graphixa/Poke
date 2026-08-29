@@ -60,7 +60,7 @@ func (e *Engine) memory() *ansiMemCache {
 		return nil
 	}
 	e.memOnce.Do(func() {
-		e.mem = newANSIMemCache(512)
+		e.mem = newANSIMemCacheBytes(defaultMemCacheBytes)
 	})
 	return e.mem
 }

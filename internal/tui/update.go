@@ -375,6 +375,7 @@ func (m *Model) notifyWarmer() {
 		}
 		m.warmer.Prioritize(sel.ID)
 		m.warmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
+		m.warmer.NoteActivity()
 	}
 	if m.artworkWarmer != nil {
 		m.artworkWarmer.Prioritize(sel.ID)
@@ -386,6 +387,7 @@ func (m *Model) notifyWarmer() {
 		}
 		m.nativeWarmer.Prioritize(sel.ID)
 		m.nativeWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
+		m.nativeWarmer.NoteActivity()
 	}
 }
 
@@ -530,6 +532,7 @@ func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 
 func (m *Model) ensureSpriteLoad() tea.Cmd {
 	load := m.beginSpriteLoad()
+	m.syncWarmerBusy()
 	if load == nil {
 		return nil
 	}

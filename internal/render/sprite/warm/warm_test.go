@@ -149,6 +149,90 @@ func TestProgressReports(t *testing.T) {
 	t.Fatalf("warm incomplete done=%d total=%d", done, total)
 }
 
+func TestForegroundBusySkipsBackgroundKeepsSelected(t *testing.T) {
+	loader := &fakeLoader{}
+	rend := &fakeRenderer{}
+	index := []domain.SpeciesSummary{{ID: 25}, {ID: 26}, {ID: 27}}
+	svc := warm.New(warm.Config{
+		Mode:     warm.ModeAllPixel,
+		Cells:    24,
+		Workers:  1,
+		Loader:   loader,
+		Renderer: rend,
+		Index:    index,
+	})
+	svc.SetForegroundBusy(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	svc.Start(ctx)
+	time.Sleep(80 * time.Millisecond)
+	if n := rend.calls.Load(); n != 0 {
+		t.Fatalf("P2 ran while foreground busy; calls=%d", n)
+	}
+	svc.Prioritize(25)
+	svc.SetNeighborsFromList(index, 0, 1)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && rend.calls.Load() < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if rend.calls.Load() < 2 {
+		t.Fatalf("selected+neighbor never ran; calls=%d", rend.calls.Load())
+	}
+	rend.mu.Lock()
+	order := append([]int(nil), rend.order...)
+	rend.mu.Unlock()
+	for _, id := range order {
+		if id == 27 {
+			t.Fatalf("P2 species 27 encoded while busy; order=%v", order)
+		}
+	}
+	svc.SetForegroundBusy(false)
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		done, total := svc.Snapshot()
+		if total == 3 && done >= 3 {
+			svc.Stop()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	done, total := svc.Snapshot()
+	svc.Stop()
+	t.Fatalf("background did not resume done=%d total=%d", done, total)
+}
+
+func TestActivityPausesBackgroundUntilIdle(t *testing.T) {
+	rend := &fakeRenderer{}
+	svc := warm.New(warm.Config{
+		Mode:     warm.ModeAllPixel,
+		Cells:    24,
+		Workers:  1,
+		Loader:   &fakeLoader{},
+		Renderer: rend,
+		Index:    []domain.SpeciesSummary{{ID: 1}, {ID: 2}},
+	})
+	svc.NoteActivity()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	svc.Start(ctx)
+	time.Sleep(80 * time.Millisecond)
+	if n := rend.calls.Load(); n != 0 {
+		t.Fatalf("P2 ran during activity window; calls=%d", n)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		done, total := svc.Snapshot()
+		if total == 2 && done >= 2 {
+			svc.Stop()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	done, total := svc.Snapshot()
+	svc.Stop()
+	t.Fatalf("idle resume failed done=%d total=%d", done, total)
+}
+
 func TestModeOffNoop(t *testing.T) {
 	rend := &fakeRenderer{}
 	svc := warm.New(warm.Config{

@@ -351,8 +351,10 @@ func (fakeNativeWarmer) EnsureStarted(context.Context, int) {}
 func (fakeNativeWarmer) Prioritize(int)                     {}
 func (fakeNativeWarmer) SetNeighborsFromList([]domain.SpeciesSummary, int, int) {
 }
-func (fakeNativeWarmer) SetCells(int)         {}
-func (fakeNativeWarmer) Snapshot() (int, int) { return 0, 0 }
+func (fakeNativeWarmer) SetCells(int)           {}
+func (fakeNativeWarmer) Snapshot() (int, int)   { return 0, 0 }
+func (fakeNativeWarmer) NoteActivity()          {}
+func (fakeNativeWarmer) SetForegroundBusy(bool) {}
 
 func TestWarmHintHiddenWhenNativeWarmer(t *testing.T) {
 	details := &fakeDetails{}

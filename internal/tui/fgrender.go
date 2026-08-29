@@ -41,6 +41,16 @@ func (m *Model) scheduleSpritePrefetchIfIdle() tea.Cmd {
 	return m.scheduleSpritePrefetch()
 }
 
+func (m *Model) syncWarmerBusy() {
+	busy := m.foregroundColdBusy()
+	if m.nativeWarmer != nil {
+		m.nativeWarmer.SetForegroundBusy(busy)
+	}
+	if m.warmer != nil {
+		m.warmer.SetForegroundBusy(busy)
+	}
+}
+
 func (m *Model) queueOrStartFgRender(req fgRenderReq, force bool) tea.Cmd {
 	if m.fgActive != nil {
 		if m.fgActive.same(req) && !force {
@@ -91,11 +101,14 @@ func (m *Model) handleSpriteMsg(msg spriteMsg) tea.Cmd {
 			AssetKind:      msg.assetKind,
 		})
 		m.fgPending = nil
+		m.syncWarmerBusy()
 		return m.scheduleSpritePrefetchIfIdle()
 	}
 
 	// Stale result: never paint. Drain the latest pending job only.
-	return m.startPendingFg()
+	cmd := m.startPendingFg()
+	m.syncWarmerBusy()
+	return cmd
 }
 
 func (m *Model) startPendingFg() tea.Cmd {

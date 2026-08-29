@@ -2,7 +2,9 @@ package nativewarm_test
 
 import (
 	"context"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -31,20 +33,33 @@ func (m *manifestStub) MarkNativeSizeComplete(cells, _ int) error {
 func (m *manifestStub) RecountNativeSize(cells int) (int, error) { return 0, nil }
 
 type fakeNativeRenderer struct {
+	mu     sync.Mutex
 	cached map[int]bool
 	render int
+	ids    []int
 }
 
 func (f *fakeNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Pokemon, cells int) bool {
 	if cells < sprite.MinFrameSize {
 		return false
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.cached[pokemon.ID]
 }
 
-func (f *fakeNativeRenderer) NativeWarmRender(_ context.Context, _ domain.Pokemon, cells int) sprite.RenderResult {
+func (f *fakeNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.render++
+	f.ids = append(f.ids, pokemon.ID)
 	return sprite.RenderResult{ANSI: "X", Native: true, Backend: "image"}
+}
+
+func (f *fakeNativeRenderer) renders() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.render
 }
 
 type fakeLoader struct{}
@@ -92,8 +107,8 @@ func TestEnsureStartedOnlyEncodesMissing(t *testing.T) {
 	if err := svc.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rend.render != 1 {
-		t.Fatalf("render calls=%d want 1", rend.render)
+	if rend.renders() != 1 {
+		t.Fatalf("render calls=%d want 1", rend.renders())
 	}
 }
 
@@ -143,8 +158,94 @@ func TestWarmAllSizesMaxFirst(t *testing.T) {
 	if len(manifest.init) != 2 || manifest.init[0] != 40 || manifest.init[1] != 32 {
 		t.Fatalf("init phases=%v want [40 32]", manifest.init)
 	}
-	if rend.render != 2 {
-		t.Fatalf("render=%d want 2 sizes", rend.render)
+	if rend.renders() != 2 {
+		t.Fatalf("render=%d want 2 sizes", rend.renders())
+	}
+}
+
+func (f *fakeNativeRenderer) renderedIDs() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int(nil), f.ids...)
+}
+
+func waitNativeRenders(t *testing.T, rend *fakeNativeRenderer, n int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rend.renders() >= n {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("renders=%d want >=%d ids=%v", rend.renders(), n, rend.renderedIDs())
+}
+
+func TestForegroundBusySkipsBackgroundKeepsSelected(t *testing.T) {
+	index := []domain.SpeciesSummary{
+		{ID: 25, Slug: "pikachu"},
+		{ID: 26, Slug: "raichu"},
+		{ID: 27, Slug: "sandshrew"},
+	}
+	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	svc := nativewarm.New(nativewarm.Config{
+		Cells:    sprite.MaxFrameSize,
+		Workers:  1,
+		Loader:   fakeLoader{},
+		Renderer: rend,
+		Index:    index,
+	})
+	svc.SetForegroundBusy(true)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	svc.EnsureStarted(ctx, sprite.MaxFrameSize)
+	time.Sleep(80 * time.Millisecond)
+	if n := rend.renders(); n != 0 {
+		t.Fatalf("P2 ran while foreground busy; renders=%d ids=%v", n, rend.renderedIDs())
+	}
+	svc.Prioritize(25)
+	svc.SetNeighborsFromList(index, 0, 1)
+	waitNativeRenders(t, rend, 2)
+	for _, id := range rend.renderedIDs() {
+		if id == 27 {
+			t.Fatalf("P2 species 27 encoded while busy; ids=%v", rend.renderedIDs())
+		}
+	}
+	svc.SetForegroundBusy(false)
+	if err := svc.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rend.renders() != 3 {
+		t.Fatalf("after idle render=%d want 3 ids=%v", rend.renders(), rend.renderedIDs())
+	}
+}
+
+func TestActivityPausesBackgroundUntilIdle(t *testing.T) {
+	index := []domain.SpeciesSummary{
+		{ID: 25, Slug: "pikachu"},
+		{ID: 26, Slug: "raichu"},
+	}
+	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	svc := nativewarm.New(nativewarm.Config{
+		Cells:    sprite.MaxFrameSize,
+		Workers:  1,
+		Loader:   fakeLoader{},
+		Renderer: rend,
+		Index:    index,
+	})
+	svc.NoteActivity()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	svc.EnsureStarted(ctx, sprite.MaxFrameSize)
+	time.Sleep(80 * time.Millisecond)
+	if n := rend.renders(); n != 0 {
+		t.Fatalf("P2 ran during activity window; renders=%d", n)
+	}
+	if err := svc.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rend.renders() != 2 {
+		t.Fatalf("after idle render=%d want 2", rend.renders())
 	}
 }
 

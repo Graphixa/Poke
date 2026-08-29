@@ -208,7 +208,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		spriteWarmer = warm.New(warm.Config{
 			Mode:     prewarm,
 			Cells:    sprite.MaxFrameSize,
-			Workers:  workers,
+			Workers:  sprite.InteractiveWorkers,
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
 			Index:    index,
@@ -247,7 +247,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		protocol := img.ProtocolName()
 		_ = svc.Cache.EnsureNativeManifest(protocol)
 		nativeWarmer = nativewarm.New(nativewarm.Config{
-			Workers:  2,
+			Workers:  sprite.InteractiveWorkers,
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
 			Index:    index,

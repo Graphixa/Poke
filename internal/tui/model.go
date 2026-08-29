@@ -45,6 +45,8 @@ type SpriteWarmer interface {
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
 	SetCells(cells int)
 	Snapshot() (done, total int)
+	NoteActivity()
+	SetForegroundBusy(busy bool)
 }
 
 // ArtworkWarmer prioritizes background official-artwork downloads.
@@ -62,6 +64,8 @@ type NativeWarmer interface {
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
 	SetCells(cells int)
 	Snapshot() (done, total int)
+	NoteActivity()
+	SetForegroundBusy(busy bool)
 }
 
 // WarmProgress is a TUI-friendly warm status snapshot.
