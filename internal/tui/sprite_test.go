@@ -907,3 +907,34 @@ func TestScroll100CoalescesToLatest(t *testing.T) {
 	}
 	close(block)
 }
+
+// Init is a value receiver — mutations (fgActive, spriteReqID, applied cache
+// hit) are discarded. The first WindowSize must load the selected sprite.
+func TestStartupAppliesCachedSpriteOnFirstWindowSize(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{cached: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	_ = m.Init()
+	if m.HasSpriteANSI() {
+		t.Fatal("Init must not apply sprites on the discarded copy")
+	}
+
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	if m.HasSpriteANSI() {
+		return
+	}
+	if cmd == nil {
+		t.Fatal("first WindowSize must start a sprite load when Init could not")
+	}
+	var model tea.Model = m
+	drainCmds(t, &model, cmd)
+	m = model.(tui.Model)
+	if !m.HasSpriteANSI() {
+		t.Fatal("expected first species sprite after WindowSize")
+	}
+}

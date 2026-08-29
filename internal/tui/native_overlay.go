@@ -71,6 +71,11 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 		if m.showHelp || m.showDialog {
 			return m, nil
 		}
+		// Layout unknown: a cache hit before WindowSize must not drop the dirty
+		// flag or the first species never paints.
+		if m.width < 1 || m.height < 1 {
+			return m, nil
+		}
 		m.nativeOverlayDirty = false
 		// Wipe leftover Sixel when selection has no native frame (placeholder /
 		// loading). Without this, fast scroll leaves the previous species' art.

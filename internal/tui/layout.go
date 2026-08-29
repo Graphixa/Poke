@@ -40,11 +40,9 @@ type LayoutFlags struct {
 func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	f := LayoutFlags{Width: width, Height: height}
 	if width <= 0 || height <= 0 {
-		f.ShowSprite = !th.DisableSprite
-		f.SpriteSize = sprite.MaxFrameSize
-		f.VerboseFooter = true
-		f.RightWidth = sprite.RightPanelWidth(120, sprite.MaxFrameSize)
-		f.LeftWidth = 120 - f.RightWidth - 1
+		// Unknown size: do not pretend a sprite panel exists. Init is a value
+		// receiver so it cannot start a load; a fake MaxFrameSize here made the
+		// first WindowSize look like a no-op and left the first species blank.
 		return f
 	}
 	f.TooSmall = width < minUsableWidth || height < minUsableHeight

@@ -14,6 +14,41 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
+// Init cannot mutate the live model. First WindowSize must paint native art
+// for the initially selected species (Bulbasaur) without a list move.
+func TestStartupPaintsFirstNativeSprite(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	details := &fakeDetails{}
+	sprites := &fakeSprites{cached: dcs, native: true}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	_ = m.Init()
+
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	if !m.HasSpriteANSI() {
+		if cmd == nil {
+			t.Fatal("first WindowSize produced no sprite and no load cmd")
+		}
+		var model tea.Model = m
+		drainCmds(t, &model, cmd)
+		m = model.(tui.Model)
+	}
+	if !m.HasSpriteANSI() {
+		t.Fatal("expected first species native sprite after WindowSize")
+	}
+	if !m.NativePaintPendingForTest() && m.NativePaintANSIForTest() == "" {
+		t.Fatal("expected native overlay paint for the first species")
+	}
+	payloads := collectRawPayloads(cmd)
+	if m.NativePaintANSIForTest() == "" && len(payloads) == 0 {
+		t.Fatal("expected tea.Raw overlay payload")
+	}
+}
+
 func TestNativeOverlayDebounceDoesNotStarve(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}

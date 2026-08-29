@@ -258,8 +258,10 @@ func newContentViewport() viewport.Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	m.notifyWarmer()
-	return tea.Batch(m.ensureSelectionLoads(), listenWarmProgress(m.warmEvents))
+	// Do not start sprite loads here: Model.Init is a value receiver, so
+	// fgActive/spriteReqID/cache-hit applies would be discarded. First
+	// WindowSize starts the real load (ShowSprite is false until then).
+	return listenWarmProgress(m.warmEvents)
 }
 
 func (m *Model) layout() LayoutFlags {

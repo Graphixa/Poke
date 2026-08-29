@@ -50,16 +50,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.SetWidth(msg.Width)
 		m.ensureListVisible()
-		if m.warmer != nil {
-			if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
-				m.warmer.SetCells(cells)
-			}
-		}
-		if m.nativeWarmer != nil {
-			if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
-				m.nativeWarmer.EnsureStarted(m.ctx, cells)
-			}
-		}
+		m.notifyWarmer()
 		return m, m.handleSpriteLayoutChange(prevShow, prevSide)
 
 	case dossierCoreMsg:
