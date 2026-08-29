@@ -141,7 +141,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.step {
 		case StepWelcome:
 			if key == "enter" || key == " " {
-				return m.beginIndex()
+				return m.loadIndexForArtwork()
 			}
 		case StepArtPrompt:
 			switch key {
@@ -243,8 +243,8 @@ func (m Model) View() tea.View {
 
 	switch m.step {
 	case StepWelcome:
-		fmt.Fprintf(&b, "  %s\n", body.Render("Welcome! We'll fetch the Pokédex index, then you can"))
-		fmt.Fprintf(&b, "  %s\n", body.Render("optionally download official artwork for every species."))
+		fmt.Fprintf(&b, "  %s\n", body.Render("Welcome! The Pokédex dataset is ready."))
+		fmt.Fprintf(&b, "  %s\n", body.Render("You can optionally download official artwork for every species."))
 		fmt.Fprintf(&b, "\n  %s\n", ok.Render("Press Enter to continue"))
 	case StepIndex:
 		fmt.Fprintf(&b, "  %s\n\n", body.Render(m.status))
@@ -278,6 +278,16 @@ func (m Model) View() tea.View {
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v
+}
+
+func (m Model) loadIndexForArtwork() (tea.Model, tea.Cmd) {
+	m.status = "Loading index"
+	m.errMsg = ""
+	deps := m.deps
+	return m, func() tea.Msg {
+		index, err := deps.EnsureIndex(context.Background(), nil)
+		return indexDoneMsg{index: index, err: err}
+	}
 }
 
 func (m Model) beginIndex() (tea.Model, tea.Cmd) {

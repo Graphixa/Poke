@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
@@ -108,34 +107,30 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		return err
 	}
 
+	if !svc.Cache.HasActiveDataset() {
+		if err := h.runDatasetBootstrap(ctx, svc); err != nil {
+			return err
+		}
+	}
+
 	cfg, startBgArtwork, err := h.runSetupIfNeeded(ctx, svc)
 	if err != nil {
 		return err
 	}
 	svc.Config = cfg
 
-	if !svc.Cache.HasActiveDataset() {
-		bootstrapProgress := func(p cache.Progress) {
-			if h.Stderr == nil {
-				return
-			}
-			switch p.Stage {
-			case "dataset":
-				if p.Total > 0 && p.Done > 0 {
-					fmt.Fprintf(h.Stderr, "Building dataset %d/%d %s\n", p.Done, p.Total, p.Message)
-				} else if p.Message != "" {
-					fmt.Fprintf(h.Stderr, "%s\n", p.Message)
-				}
-			}
-		}
-		if err := svc.Cache.BootstrapDataset(ctx, bootstrapProgress); err != nil {
-			return err
-		}
-	}
-
 	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
 	if err != nil {
 		return err
+	}
+
+	if req.Selected == nil && req.Prefill == "" && req.Target != "" {
+		idx := search.Build(index)
+		if sum, ok := idx.Resolve(req.Target); ok {
+			req.Selected = &sum
+		} else {
+			req.Prefill = req.Target
+		}
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -223,6 +218,42 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 
 	wantArtworkBG := startBgArtwork ||
 		(svc.Config.EffectiveArtworkMode() == config.ArtworkModeBackground && svc.Config.SpriteHDEnabled())
+
+	var imageCoord *cache.ImageCacheCoordinator
+	var imageSpec cache.ImageCacheSpec
+	if caps.NativeImage && !opts.DisableSprite {
+		protocol := img.ProtocolName()
+		_ = svc.Cache.EnsureNativeManifest(protocol)
+		imageSpec = cache.DefaultImageCacheSpec(protocol, string(sourceKind), style.BaseRGBA())
+		coord, err := svc.Cache.StartImageCacheSession(index, imageSpec)
+		if err != nil {
+			debuglog.Cachef("image-cache session err=%v", err)
+		} else {
+			imageCoord = coord
+			imageCoord.SetProgressFunc(func(p cache.Progress) {
+				sendWarmProgress(progressCh, p)
+			})
+			if imageCoord.Progress().Active {
+				useProgress = true
+				imageCoord.PublishStart()
+			}
+			defer func() { _ = imageCoord.Flush() }()
+		}
+	}
+
+	forwardWarm := func(p cache.Progress) {
+		if imageCoord != nil {
+			snap := imageCoord.Progress()
+			if snap.Active && p.Stage != "native" {
+				if p.SpeciesID != 0 {
+					sendWarmProgress(progressCh, imageCoord.AsCacheProgress(p.SpeciesID))
+				}
+				return
+			}
+		}
+		sendWarmProgress(progressCh, p)
+	}
+
 	var artworkWarmer *assetwarm.Service
 	if wantArtworkBG && !opts.DisableSprite {
 		useProgress = true
@@ -233,9 +264,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 			Loader:   warmPokemonLoader{details},
 			Resolver: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
 			Index:    index,
-			Progress: func(p cache.Progress) {
-				sendWarmProgress(progressCh, p)
-			},
+			Progress: forwardWarm,
 		})
 		artworkWarmer.Start(runCtx)
 		defer artworkWarmer.Stop()
@@ -244,36 +273,33 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 
 	var nativeWarmer *nativewarm.Service
 	if caps.NativeImage && !opts.DisableSprite {
-		protocol := img.ProtocolName()
-		_ = svc.Cache.EnsureNativeManifest(protocol)
 		nativeWarmer = nativewarm.New(nativewarm.Config{
-			Workers:  sprite.InteractiveWorkers,
-			Loader:   warmPokemonLoader{details},
-			Renderer: engine,
-			Index:    index,
-			Manifest: svc.Cache,
-			Protocol: protocol,
-			Progress: func(p cache.Progress) {
-				sendWarmProgress(progressCh, p)
-			},
+			Workers:       sprite.InteractiveWorkers,
+			Loader:        warmPokemonLoader{details},
+			Renderer:      engine,
+			Index:         index,
+			Manifest:      svc.Cache,
+			Protocol:      imageSpec.Protocol,
+			RequiredSizes: imageSpec.RequiredSizes,
+			Completer:     imageCoord,
+			Progress:      forwardWarm,
 		})
 		defer nativeWarmer.Stop()
 		opts.NativeWarmer = nativeWarmer
-		// Footer progress only while a layout bucket is incomplete (checked at EnsureStarted).
-		useProgress = true
+		if imageCoord == nil || imageCoord.Progress().Active {
+			useProgress = true
+		}
 	}
 
 	dossierMode := dossierwarm.Mode(svc.Config.EffectiveDossierPrewarm())
 	var dossierWarmer *dossierwarm.Service
 	if dossierMode != dossierwarm.ModeOff {
 		dwCfg := dossierwarm.Config{
-			Mode:    dossierMode,
-			Workers: 2,
-			Loader:  tuiDetails{details},
-			Index:   index,
-			Progress: func(p cache.Progress) {
-				sendWarmProgress(progressCh, p)
-			},
+			Mode:     dossierMode,
+			Workers:  2,
+			Loader:   tuiDetails{details},
+			Index:    index,
+			Progress: forwardWarm,
 		}
 		if dossierMode == dossierwarm.ModeWindow {
 			dwCfg.CoreLoader = tuiDetails{details}

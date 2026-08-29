@@ -63,29 +63,10 @@ func (c cacheCommands) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	progress := func(p cache.Progress) {
-		w := c.stderr
-		if w == nil {
-			return
-		}
-		switch p.Stage {
-		case "index":
-			if p.Message != "" {
-				fmt.Fprintf(w, "%s\n", p.Message)
-			}
-		case "enrich":
-			if p.Total > 0 {
-				fmt.Fprintf(w, "Enriching types %d/%d %s\n", p.Done, p.Total, p.Message)
-			}
-		case "dataset":
-			if p.Message != "" {
-				fmt.Fprintf(w, "%s\n", p.Message)
-			} else if p.Total > 0 && p.Done > 0 {
-				fmt.Fprintf(w, "Building dataset %d/%d %s\n", p.Done, p.Total, p.Message)
-			}
-		}
+	run := func(ctx context.Context, progress cache.ProgressFunc) error {
+		return svc.Cache.RefreshDataset(ctx, progress)
 	}
-	if err := svc.Cache.RefreshDataset(ctx, progress); err != nil {
+	if err := cacheDatasetProgress(ctx, c.stderr, run); err != nil {
 		return err
 	}
 	if c.stdout != nil {
@@ -141,45 +122,27 @@ func (c cacheCommands) Update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	progress := func(p cache.Progress) {
-		w := c.stderr
-		if w == nil {
-			return
+	run := func(ctx context.Context, progress cache.ProgressFunc) error {
+		if err := svc.Cache.RefreshDataset(ctx, progress); err != nil {
+			return err
 		}
-		switch p.Stage {
-		case "index":
-			if p.Message != "" {
-				fmt.Fprintf(w, "%s\n", p.Message)
-			}
-		case "enrich":
-			if p.Total > 0 {
-				fmt.Fprintf(w, "Enriching types %d/%d %s\n", p.Done, p.Total, p.Message)
-			}
-		case "dataset":
-			if p.Message != "" {
-				fmt.Fprintf(w, "%s\n", p.Message)
-			}
-		case "artwork":
-			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
-				fmt.Fprintf(w, "Downloading artwork %d/%d\n", p.Done, p.Total)
-			}
+		index, _, err := svc.Cache.EnsureIndex(ctx, nil)
+		if err != nil {
+			return err
 		}
+		syncResult, err := svc.Cache.SyncArtwork(ctx, index, progress)
+		if err != nil {
+			return err
+		}
+		if c.stdout != nil {
+			fmt.Fprintf(c.stdout, "Artwork: new=%d updated=%d unchanged=%d failed=%d\n",
+				syncResult.New, syncResult.Updated, syncResult.Unchanged, syncResult.Failed)
+			fmt.Fprintln(c.stdout, "Update complete")
+		}
+		return nil
 	}
-	if err := svc.Cache.RefreshDataset(ctx, progress); err != nil {
+	if err := cacheDatasetProgress(ctx, c.stderr, run); err != nil {
 		return err
-	}
-	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
-	if err != nil {
-		return err
-	}
-	syncResult, err := svc.Cache.SyncArtwork(ctx, index, progress)
-	if err != nil {
-		return err
-	}
-	if c.stdout != nil {
-		fmt.Fprintf(c.stdout, "Artwork: new=%d updated=%d unchanged=%d failed=%d\n",
-			syncResult.New, syncResult.Updated, syncResult.Unchanged, syncResult.Failed)
-		fmt.Fprintln(c.stdout, "Update complete")
 	}
 	return nil
 }

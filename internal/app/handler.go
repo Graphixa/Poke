@@ -38,9 +38,18 @@ type BrowseRequest struct {
 }
 
 func (h *Handler) RunRoot(ctx context.Context, request cli.RootRequest) error {
-	index, err := h.ensureIndex(ctx)
+	svc, err := h.Services()
 	if err != nil {
 		return err
+	}
+	needsBootstrap := h.Browse != nil && request.InlineMode == cli.InlineNone && !svc.Cache.HasActiveDataset()
+
+	var index []domain.SpeciesSummary
+	if !needsBootstrap {
+		index, err = h.ensureIndex(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	idx := search.Build(index)
 
@@ -54,7 +63,7 @@ func (h *Handler) RunRoot(ctx context.Context, request cli.RootRequest) error {
 	}
 
 	browse := BrowseRequest{Target: target}
-	if target != "" {
+	if !needsBootstrap && target != "" {
 		if sum, ok := idx.Resolve(target); ok {
 			browse.Selected = &sum
 		} else {

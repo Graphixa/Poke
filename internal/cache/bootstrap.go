@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/Graphixa/Pokedex/internal/cache/typeseed"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
@@ -12,11 +13,11 @@ import (
 	"github.com/Graphixa/Pokedex/internal/pokeapi"
 )
 
-const datasetWorkerDefault = 6
+const datasetWorkerDefault = 8
 
 // BootstrapDataset fetches the TUI metadata graph into a staging snapshot and
 // activates it only when complete. A failed run leaves the previous active
-// snapshot untouched.
+// snapshot untouched. Uses the cached species index when present.
 func (s *Service) BootstrapDataset(ctx context.Context, progress ProgressFunc) error {
 	_, err := s.group.Do("dataset-bootstrap", func() (any, error) {
 		return nil, s.bootstrapDataset(ctx, progress)
@@ -24,8 +25,45 @@ func (s *Service) BootstrapDataset(ctx context.Context, progress ProgressFunc) e
 	return err
 }
 
+// BootstrapDatasetFromIndex builds a snapshot from an already-loaded index.
+func (s *Service) BootstrapDatasetFromIndex(ctx context.Context, summaries []domain.SpeciesSummary, progress ProgressFunc) error {
+	_, err := s.group.Do("dataset-bootstrap", func() (any, error) {
+		return nil, s.bootstrapDatasetFromIndex(ctx, summaries, progress)
+	})
+	return err
+}
+
 func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) error {
+	ctx = WithInteractivePriority(ctx)
 	debuglog.Cachef("dataset.bootstrap.start")
+
+	summaries, _, err := s.loadIndex()
+	if err != nil || len(summaries) == 0 {
+		if err := s.store.EnsureRoot(); err != nil {
+			return err
+		}
+		report(progress, Progress{Stage: "index", Message: "Fetching species index"})
+		summaries, err = s.api.ListSpecies(ctx)
+		if err != nil {
+			return err
+		}
+		summaries, _ = typeseed.Apply(summaries)
+		now := s.clock.Now()
+		if err := s.store.StoreSpeciesIndex(ctx, summaries, now); err != nil {
+			return err
+		}
+		report(progress, Progress{Stage: "index", Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
+	} else {
+		summaries, _ = typeseed.Apply(summaries)
+	}
+	return s.bootstrapDatasetFromIndex(ctx, summaries, progress)
+}
+
+func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []domain.SpeciesSummary, progress ProgressFunc) error {
+	ctx = WithInteractivePriority(ctx)
+	if len(summaries) == 0 {
+		return ErrEmpty
+	}
 	if err := s.store.EnsureRoot(); err != nil {
 		return err
 	}
@@ -46,33 +84,11 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 		return err
 	}
 
-	report(progress, Progress{Stage: "dataset", Message: "Fetching species index"})
-	summaries, err := s.api.ListSpecies(ctx)
-	if err != nil {
-		return err
-	}
-	summaries, _ = typeseed.Apply(summaries)
-	if err := s.store.StoreSpeciesIndex(ctx, summaries, now); err != nil {
-		return err
-	}
-
-	workers := s.MaxConcurrency()
-	if workers < 1 {
-		workers = datasetWorkerDefault
-	}
-	if workers > 8 {
-		workers = 8
-	}
-
-	type pokeResult struct {
-		sum     domain.SpeciesSummary
-		pokemon domain.Pokemon
-		species domain.Species
-		err     error
-	}
+	workers := s.datasetWorkers()
+	total := len(summaries)
 
 	jobs := make(chan domain.SpeciesSummary, workers*2)
-	results := make(chan pokeResult, workers*2)
+	results := make(chan recordResult, workers*8)
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
@@ -80,16 +96,10 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 			defer wg.Done()
 			for sum := range jobs {
 				if ctx.Err() != nil {
-					results <- pokeResult{sum: sum, err: ctx.Err()}
+					results <- recordResult{sum: sum, err: ctx.Err()}
 					continue
 				}
-				poke, perr := s.fetchDefaultPokemon(ctx, sum)
-				sp, serr := s.fetchSpecies(ctx, sum.ID)
-				err := perr
-				if err == nil {
-					err = serr
-				}
-				results <- pokeResult{sum: sum, pokemon: poke, species: sp, err: err}
+				results <- s.fetchAndStoreRecord(ctx, id, sum, now)
 			}
 		}()
 	}
@@ -109,80 +119,38 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 		close(results)
 	}()
 
-	entries := make([]domain.BrowseEntry, 0, len(summaries))
+	entries := make([]domain.BrowseEntry, 0, total)
 	evoIDs := map[int]struct{}{}
 	moveIDs := map[int]struct{}{}
-	rep := DatasetBootstrapReport{Expected: len(summaries)}
+	rep := DatasetBootstrapReport{Expected: total}
 	var done int
-	total := len(summaries)
 	for res := range results {
 		done++
-		report(progress, Progress{Stage: "dataset", Done: done, Total: total, Message: res.sum.DisplayName, SpeciesID: res.sum.ID})
+		report(progress, Progress{
+			Stage: "records", Done: done, Total: total,
+			Message: res.sum.DisplayName, SpeciesID: res.sum.ID,
+		})
 		if err := ctx.Err(); err != nil {
 			rep.add("pokemon", res.sum.ID, err, true)
 			continue
 		}
 		if res.err != nil {
-			rep.add("pokemon", res.sum.ID, res.err, true)
-			continue
-		}
-		if res.pokemon.ID == 0 || res.species.ID == 0 {
-			rep.add("pokemon", res.sum.ID, fmt.Errorf("cache: missing pokemon or species record"), true)
-			continue
-		}
-		if err := s.store.StoreSnapshotPokemon(id, res.pokemon, now); err != nil {
-			rep.StorageFailures++
-			rep.add("pokemon", res.pokemon.ID, err, true)
+			if res.storageFail {
+				rep.StorageFailures++
+			}
+			rep.add(res.failResource, res.failID, res.err, true)
 			continue
 		}
 		rep.PokemonOK++
-		if err := s.store.StoreSnapshotSpecies(id, res.species, now); err != nil {
-			rep.StorageFailures++
-			rep.add("species", res.species.ID, err, true)
-			continue
-		}
 		rep.SpeciesOK++
-		if res.species.EvolutionChainID != 0 {
-			evoIDs[res.species.EvolutionChainID] = struct{}{}
-		}
-		for _, m := range res.pokemon.Moves {
-			if m.MoveID > 0 {
-				moveIDs[m.MoveID] = struct{}{}
-			}
-		}
-		types := res.sum.Types
-		if len(types) == 0 {
-			for _, t := range res.pokemon.Types {
-				types = append(types, t.Name)
-			}
-		}
-		name := res.sum.DisplayName
-		if name == "" {
-			name = res.pokemon.DisplayName
-		}
-		entries = append(entries, domain.BrowseEntry{
-			ID:        res.sum.ID,
-			Slug:      res.sum.Slug,
-			Name:      name,
-			Types:     types,
-			HP:        res.pokemon.Stats.HP,
-			Attack:    res.pokemon.Stats.Attack,
-			Defence:   res.pokemon.Stats.Defense,
-			SpAttack:  res.pokemon.Stats.SpecialAttack,
-			SpDefence: res.pokemon.Stats.SpecialDefense,
-			Speed:     res.pokemon.Stats.Speed,
-		})
-		enc, encErr := s.fetchEncounters(ctx, res.pokemon.ID)
-		if encErr := optionalEmpty(encErr); encErr != nil {
-			rep.add("encounter", res.pokemon.ID, encErr, true)
-			continue
-		}
-		if err := s.store.StoreSnapshotEncounters(id, res.pokemon.ID, enc, now); err != nil {
-			rep.StorageFailures++
-			rep.add("encounter", res.pokemon.ID, err, true)
-			continue
-		}
 		rep.EncounterOK++
+		if res.evoID != 0 {
+			evoIDs[res.evoID] = struct{}{}
+		}
+		for _, mid := range res.moveIDs {
+			moveIDs[mid] = struct{}{}
+		}
+		entries = append(entries, res.entry)
 	}
 	if err := ctx.Err(); err != nil {
 		s.finalizeIncomplete(id, staging, rep, err)
@@ -190,40 +158,15 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 	}
 
 	rep.EvolutionWanted = len(evoIDs)
-	for evoID := range evoIDs {
-		if err := ctx.Err(); err != nil {
-			s.finalizeIncomplete(id, staging, rep, err)
-			return err
-		}
-		tree, err := s.fetchEvolution(ctx, evoID)
-		if err != nil {
-			rep.add("evolution", evoID, err, true)
-			continue
-		}
-		if err := s.store.StoreSnapshotEvolution(id, evoID, tree, now); err != nil {
-			rep.StorageFailures++
-			rep.add("evolution", evoID, err, true)
-			continue
-		}
-		rep.EvolutionOK++
+	if err := s.parallelEvolutionFetch(ctx, id, intSetKeys(evoIDs), progress, &rep); err != nil {
+		s.finalizeIncomplete(id, staging, rep, err)
+		return err
 	}
+
 	rep.MoveWanted = len(moveIDs)
-	for moveID := range moveIDs {
-		if err := ctx.Err(); err != nil {
-			s.finalizeIncomplete(id, staging, rep, err)
-			return err
-		}
-		mv, err := s.fetchMove(ctx, moveID)
-		if err != nil {
-			rep.add("move", moveID, err, true)
-			continue
-		}
-		if err := s.store.StoreSnapshotMove(id, mv, now); err != nil {
-			rep.StorageFailures++
-			rep.add("move", moveID, err, true)
-			continue
-		}
-		rep.MoveOK++
+	if err := s.parallelMoveFetch(ctx, id, intSetKeys(moveIDs), progress, &rep); err != nil {
+		s.finalizeIncomplete(id, staging, rep, err)
+		return err
 	}
 
 	if err := s.store.StoreBrowse(id, entries); err != nil {
@@ -249,6 +192,7 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 	if !staging.Complete {
 		return fmt.Errorf("cache: dataset %s incomplete (%s)", id, rep.summary())
 	}
+	report(progress, Progress{Stage: "dataset", Done: 1, Total: 1, Message: "Activating dataset"})
 	if err := s.store.ActivateDataset(id); err != nil {
 		return err
 	}
@@ -256,6 +200,194 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 	debuglog.Cachef("dataset.bootstrap.complete id=%s count=%d", id, staging.PokemonCount)
 	report(progress, Progress{Stage: "dataset", Done: 1, Total: 1, Message: fmt.Sprintf("Dataset %s active", id)})
 	return nil
+}
+
+func (s *Service) datasetWorkers() int {
+	workers := s.MaxConcurrency()
+	if workers < 1 {
+		workers = datasetWorkerDefault
+	}
+	return workers
+}
+
+type recordResult struct {
+	sum          domain.SpeciesSummary
+	entry        domain.BrowseEntry
+	evoID        int
+	moveIDs      []int
+	err          error
+	storageFail  bool
+	failResource string
+	failID       int
+}
+
+func (s *Service) fetchAndStoreRecord(ctx context.Context, datasetID string, sum domain.SpeciesSummary, now time.Time) recordResult {
+	var (
+		poke domain.Pokemon
+		sp   domain.Species
+		perr error
+		serr error
+		wg   sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		poke, perr = s.fetchDefaultPokemon(ctx, sum)
+	}()
+	go func() {
+		defer wg.Done()
+		sp, serr = s.fetchSpecies(ctx, sum.ID)
+	}()
+	wg.Wait()
+
+	err := perr
+	if err == nil {
+		err = serr
+	}
+	if err != nil {
+		return recordResult{sum: sum, err: err, failResource: "pokemon", failID: sum.ID}
+	}
+	if poke.ID == 0 || sp.ID == 0 {
+		return recordResult{sum: sum, err: fmt.Errorf("cache: missing pokemon or species record"), failResource: "pokemon", failID: sum.ID}
+	}
+
+	if err := s.store.StoreSnapshotPokemon(datasetID, poke, now); err != nil {
+		return recordResult{sum: sum, err: err, storageFail: true, failResource: "pokemon", failID: poke.ID}
+	}
+	if err := s.store.StoreSnapshotSpecies(datasetID, sp, now); err != nil {
+		return recordResult{sum: sum, err: err, storageFail: true, failResource: "species", failID: sp.ID}
+	}
+
+	enc, encErr := s.fetchEncounters(ctx, poke.ID)
+	if encErr := optionalEmpty(encErr); encErr != nil {
+		return recordResult{sum: sum, err: encErr, failResource: "encounter", failID: poke.ID}
+	}
+	if err := s.store.StoreSnapshotEncounters(datasetID, poke.ID, enc, now); err != nil {
+		return recordResult{sum: sum, err: err, storageFail: true, failResource: "encounter", failID: poke.ID}
+	}
+
+	types := sum.Types
+	if len(types) == 0 {
+		for _, t := range poke.Types {
+			types = append(types, t.Name)
+		}
+	}
+	name := sum.DisplayName
+	if name == "" {
+		name = poke.DisplayName
+	}
+	entry := domain.BrowseEntry{
+		ID:        sum.ID,
+		Slug:      sum.Slug,
+		Name:      name,
+		Types:     types,
+		HP:        poke.Stats.HP,
+		Attack:    poke.Stats.Attack,
+		Defence:   poke.Stats.Defense,
+		SpAttack:  poke.Stats.SpecialAttack,
+		SpDefence: poke.Stats.SpecialDefense,
+		Speed:     poke.Stats.Speed,
+	}
+
+	evoID := 0
+	if sp.EvolutionChainID != 0 {
+		evoID = sp.EvolutionChainID
+	}
+	return recordResult{
+		sum:     sum,
+		entry:   entry,
+		evoID:   evoID,
+		moveIDs: levelUpMoveIDs(poke),
+	}
+}
+
+func (s *Service) parallelEvolutionFetch(ctx context.Context, datasetID string, ids []int, progress ProgressFunc, rep *DatasetBootstrapReport) error {
+	now := s.clock.Now()
+	return s.parallelIntFetch(ctx, ids, "evolution", progress, func(ctx context.Context, id int) error {
+		tree, err := s.fetchEvolution(ctx, id)
+		if err != nil {
+			rep.add("evolution", id, err, true)
+			return nil
+		}
+		if err := s.store.StoreSnapshotEvolution(datasetID, id, tree, now); err != nil {
+			rep.StorageFailures++
+			rep.add("evolution", id, err, true)
+			return nil
+		}
+		rep.EvolutionOK++
+		return nil
+	})
+}
+
+func (s *Service) parallelMoveFetch(ctx context.Context, datasetID string, ids []int, progress ProgressFunc, rep *DatasetBootstrapReport) error {
+	now := s.clock.Now()
+	return s.parallelIntFetch(ctx, ids, "moves", progress, func(ctx context.Context, id int) error {
+		mv, err := s.fetchMove(ctx, id)
+		if err != nil {
+			rep.add("move", id, err, true)
+			return nil
+		}
+		if err := s.store.StoreSnapshotMove(datasetID, mv, now); err != nil {
+			rep.StorageFailures++
+			rep.add("move", id, err, true)
+			return nil
+		}
+		rep.MoveOK++
+		return nil
+	})
+}
+
+func (s *Service) parallelIntFetch(ctx context.Context, ids []int, stage string, progress ProgressFunc, fn func(context.Context, int) error) error {
+	total := len(ids)
+	if total == 0 {
+		return nil
+	}
+	workers := s.datasetWorkers()
+	if workers > total {
+		workers = total
+	}
+	jobs := make(chan int, workers*2)
+	var wg sync.WaitGroup
+	var done int
+	var doneMu sync.Mutex
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				_ = fn(ctx, id)
+				doneMu.Lock()
+				done++
+				current := done
+				doneMu.Unlock()
+				report(progress, Progress{Stage: stage, Done: current, Total: total})
+			}
+		}()
+	}
+	for _, id := range ids {
+		select {
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return ctx.Err()
+		case jobs <- id:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	return ctx.Err()
+}
+
+func intSetKeys(set map[int]struct{}) []int {
+	out := make([]int, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	return out
 }
 
 func optionalEmpty(err error) error {

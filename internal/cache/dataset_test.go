@@ -323,6 +323,13 @@ func TestBootstrapFailurePreservesPreviousActive(t *testing.T) {
 	}
 
 	later := fixedClock{t: now.Add(time.Hour)}
+	twoSpecies := []domain.SpeciesSummary{
+		{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"},
+		{ID: 26, Slug: "raichu", DisplayName: "Raichu"},
+	}
+	if err := store.StoreSpeciesIndex(context.Background(), twoSpecies, later.t); err != nil {
+		t.Fatal(err)
+	}
 	failAPI := &fakeAPI{
 		list: []domain.SpeciesSummary{
 			{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"},

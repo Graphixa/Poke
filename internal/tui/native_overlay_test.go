@@ -304,7 +304,7 @@ func TestWarmProgressNativeFooter(t *testing.T) {
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
 	m = updated.(tui.Model)
 	hint := m.BrowseWarmHintForTest()
-	if hint == "" || !strings.Contains(hint, "Image Cache") {
+	if hint == "" || !strings.Contains(hint, "Building Image Cache") {
 		t.Fatalf("warm right=%q", hint)
 	}
 	if vis := m.BrowseVisibleWarmHintForTest(); vis == "" {
@@ -345,6 +345,39 @@ func TestWarmHintHiddenUnderNativeSprite(t *testing.T) {
 	}
 	if m.NativeOverlayDirtyForTest() || m.NativePaintPendingForTest() {
 		t.Fatal("warm tick must not trigger overlay repaint (causes Sixel flash)")
+	}
+}
+
+func TestNativeImageCacheProgressUsesRawFooterPatch(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells,
+		"\x1bP0;0;8q#1~~~\x1b\\", false,
+	))
+	updated, _ = m.Update(msg)
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+
+	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(3, 8, 40))
+	m = updated.(tui.Model)
+	if strings.Contains(m.BrowseWarmHintForTest(), "(40)") {
+		t.Fatalf("size bucket leaked: %q", m.BrowseWarmHintForTest())
+	}
+	raws := collectRawPayloads(cmd)
+	if len(raws) == 0 {
+		t.Fatal("expected tea.Raw footer patch while native sprite is visible")
 	}
 }
 

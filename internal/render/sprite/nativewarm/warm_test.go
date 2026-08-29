@@ -34,11 +34,18 @@ func (m *manifestStub) MarkNativeSizeComplete(cells, _ int) error {
 }
 func (m *manifestStub) RecountNativeSize(cells int) (int, error) { return 0, nil }
 
+type fakeKey struct {
+	id    int
+	cells int
+}
+
 type fakeNativeRenderer struct {
-	mu     sync.Mutex
-	cached map[int]bool
-	render int
-	ids    []int
+	mu       sync.Mutex
+	cached   map[fakeKey]bool
+	allSizes map[int]bool
+	render   int
+	ids      []int
+	cells    []int
 }
 
 func (f *fakeNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Pokemon, cells int) bool {
@@ -47,7 +54,10 @@ func (f *fakeNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Po
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.cached[pokemon.ID]
+	if f.allSizes[pokemon.ID] {
+		return true
+	}
+	return f.cached[fakeKey{pokemon.ID, cells}]
 }
 
 func (f *fakeNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
@@ -55,6 +65,11 @@ func (f *fakeNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.
 	defer f.mu.Unlock()
 	f.render++
 	f.ids = append(f.ids, pokemon.ID)
+	f.cells = append(f.cells, cells)
+	if f.cached == nil {
+		f.cached = map[fakeKey]bool{}
+	}
+	f.cached[fakeKey{pokemon.ID, cells}] = true
 	return sprite.RenderResult{ANSI: "X", Native: true, Backend: "image"}
 }
 
@@ -83,7 +98,7 @@ func TestEnsureStartedSkipsWhenManifestComplete(t *testing.T) {
 		Cells:    sprite.MaxFrameSize,
 		Workers:  1,
 		Loader:   fakeLoader{},
-		Renderer: &fakeNativeRenderer{cached: map[int]bool{}},
+		Renderer: &fakeNativeRenderer{},
 		Index:    index,
 		Manifest: manifest,
 		Protocol: "sixel",
@@ -100,7 +115,7 @@ func TestEnsureStartedOnlyEncodesMissing(t *testing.T) {
 		{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"},
 		{ID: 26, Slug: "raichu", DisplayName: "Raichu"},
 	}
-	rend := &fakeNativeRenderer{cached: map[int]bool{25: true}}
+	rend := &fakeNativeRenderer{allSizes: map[int]bool{25: true}}
 	svc := nativewarm.New(nativewarm.Config{
 		Cells:    sprite.MaxFrameSize,
 		Workers:  1,
@@ -113,8 +128,9 @@ func TestEnsureStartedOnlyEncodesMissing(t *testing.T) {
 	if err := svc.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rend.renders() != 1 {
-		t.Fatalf("render calls=%d want 1", rend.renders())
+	want := len(sprite.FrameSteps())
+	if rend.renders() != want {
+		t.Fatalf("render calls=%d want %d (one Pokémon, all sizes)", rend.renders(), want)
 	}
 }
 
@@ -130,7 +146,7 @@ func TestEnsureStartedMarksManifestComplete(t *testing.T) {
 		}
 	}
 	manifest := &manifestStub{complete: complete}
-	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{
 		Cells:    sprite.MaxFrameSize,
 		Workers:  1,
@@ -145,37 +161,56 @@ func TestEnsureStartedMarksManifestComplete(t *testing.T) {
 	if err := svc.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(manifest.marked) != 1 || manifest.marked[0] != sprite.MaxFrameSize {
-		t.Fatalf("marked=%v want [%d]", manifest.marked, sprite.MaxFrameSize)
+	found := false
+	for _, cells := range manifest.marked {
+		if cells == sprite.MaxFrameSize {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("marked=%v want to include %d", manifest.marked, sprite.MaxFrameSize)
 	}
 }
 
-func TestEnsureStartedChainsBackgroundSizeAfterLayoutComplete(t *testing.T) {
-	index := []domain.SpeciesSummary{{ID: 25, Slug: "pikachu"}}
-	complete := map[int]bool{sprite.MaxFrameSize: true}
-	manifest := &manifestStub{complete: complete}
-	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+func TestP2CompletesAllSizesForOnePokemonBeforeNext(t *testing.T) {
+	index := []domain.SpeciesSummary{
+		{ID: 25, Slug: "pikachu"},
+		{ID: 26, Slug: "raichu"},
+	}
+	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{
 		Workers:  1,
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
-		Manifest: manifest,
-		Protocol: "sixel",
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, sprite.MaxFrameSize)
-	waitNativeRenders(t, rend, 1)
-	if len(manifest.init) == 0 || manifest.init[0] != 36 {
-		t.Fatalf("init phases=%v want first background size 36", manifest.init)
+	if err := svc.Wait(ctx); err != nil {
+		t.Fatal(err)
 	}
-	svc.Stop()
+	n := len(sprite.FrameSteps())
+	ids := rend.renderedIDs()
+	if len(ids) != 2*n {
+		t.Fatalf("ids=%v want %d renders", ids, 2*n)
+	}
+	for i := 0; i < n; i++ {
+		if ids[i] != 25 {
+			t.Fatalf("first Pokémon incomplete before next; ids=%v", ids)
+		}
+	}
+	for i := n; i < 2*n; i++ {
+		if ids[i] != 26 {
+			t.Fatalf("second Pokémon mixed with first; ids=%v", ids)
+		}
+	}
 }
 
 func TestWarmAllSizesMaxFirst(t *testing.T) {
 	index := []domain.SpeciesSummary{{ID: 25, Slug: "pikachu"}}
 	manifest := &manifestStub{complete: map[int]bool{}}
-	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{
 		Workers:  1,
 		Loader:   fakeLoader{},
@@ -189,11 +224,11 @@ func TestWarmAllSizesMaxFirst(t *testing.T) {
 	if err := svc.WarmAllSizes(ctx, sizes); err != nil {
 		t.Fatal(err)
 	}
-	if len(manifest.init) != 2 || manifest.init[0] != 40 || manifest.init[1] != 32 {
-		t.Fatalf("init phases=%v want [40 32]", manifest.init)
-	}
 	if rend.renders() != 2 {
 		t.Fatalf("render=%d want 2 sizes", rend.renders())
+	}
+	if len(rend.renderedCells()) != 2 {
+		t.Fatalf("cells=%v want two sizes", rend.renderedCells())
 	}
 }
 
@@ -201,6 +236,12 @@ func (f *fakeNativeRenderer) renderedIDs() []int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]int(nil), f.ids...)
+}
+
+func (f *fakeNativeRenderer) renderedCells() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int(nil), f.cells...)
 }
 
 func waitNativeRenders(t *testing.T, rend *fakeNativeRenderer, n int) {
@@ -229,7 +270,7 @@ func TestEnsureStartedHotPathNoDirectoryScan(t *testing.T) {
 		{ID: 25, Slug: "pikachu"},
 		{ID: 26, Slug: "raichu"},
 	}
-	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	rend := &fakeNativeRenderer{}
 	svcWarm := nativewarm.New(nativewarm.Config{
 		Cells:    sprite.MaxFrameSize,
 		Workers:  1,
@@ -258,7 +299,7 @@ func TestForegroundBusySkipsBackgroundKeepsSelected(t *testing.T) {
 		{ID: 26, Slug: "raichu"},
 		{ID: 27, Slug: "sandshrew"},
 	}
-	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{
 		Cells:    sprite.MaxFrameSize,
 		Workers:  1,
@@ -286,8 +327,9 @@ func TestForegroundBusySkipsBackgroundKeepsSelected(t *testing.T) {
 	if err := svc.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rend.renders() != 3 {
-		t.Fatalf("after idle render=%d want 3 ids=%v", rend.renders(), rend.renderedIDs())
+	nSizes := len(sprite.FrameSteps())
+	if rend.renders() != 3*nSizes {
+		t.Fatalf("after idle render=%d want %d ids=%v", rend.renders(), 3*nSizes, rend.renderedIDs())
 	}
 }
 
@@ -296,7 +338,7 @@ func TestActivityPausesBackgroundUntilIdle(t *testing.T) {
 		{ID: 25, Slug: "pikachu"},
 		{ID: 26, Slug: "raichu"},
 	}
-	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{
 		Cells:    sprite.MaxFrameSize,
 		Workers:  1,
@@ -315,13 +357,15 @@ func TestActivityPausesBackgroundUntilIdle(t *testing.T) {
 	if err := svc.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rend.renders() != 2 {
-		t.Fatalf("after idle render=%d want 2", rend.renders())
+	nSizes := len(sprite.FrameSteps())
+	if rend.renders() != 2*nSizes {
+		t.Fatalf("after idle render=%d want %d", rend.renders(), 2*nSizes)
 	}
 }
 
 // compile-time check manifestStub implements interface
 var _ nativewarm.ManifestStore = (*manifestStub)(nil)
+var _ nativewarm.ImageCompleter = (*cache.ImageCacheCoordinator)(nil)
 
 // unused import guard
 var _ = cache.Progress{}

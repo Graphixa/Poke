@@ -199,7 +199,14 @@ func (s *Service) RefreshDataset(ctx context.Context, progress ProgressFunc) err
 	if err := s.Refresh(ctx, progress); err != nil {
 		return err
 	}
-	return s.BootstrapDataset(ctx, progress)
+	index, _, err := s.loadIndex()
+	if err != nil {
+		return err
+	}
+	if len(index) == 0 {
+		return ErrEmpty
+	}
+	return s.BootstrapDatasetFromIndex(ctx, index, progress)
 }
 
 // LocalOnly reports whether normal reads must not hit the network.

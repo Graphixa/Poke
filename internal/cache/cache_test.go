@@ -33,9 +33,22 @@ type fakeAPI struct {
 	maxFlight  atomic.Int64
 	delay      time.Duration
 	calls      atomic.Int64
+	listCalls  atomic.Int64
+}
+
+func (f *fakeAPI) trackFlight() func() {
+	cur := f.inFlight.Add(1)
+	for {
+		prev := f.maxFlight.Load()
+		if cur <= prev || f.maxFlight.CompareAndSwap(prev, cur) {
+			break
+		}
+	}
+	return func() { f.inFlight.Add(-1) }
 }
 
 func (f *fakeAPI) ListSpecies(context.Context) ([]domain.SpeciesSummary, error) {
+	f.listCalls.Add(1)
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -71,6 +84,11 @@ func (f *fakeAPI) GetPokemon(ctx context.Context, id int) (domain.Pokemon, error
 }
 
 func (f *fakeAPI) GetSpecies(_ context.Context, id int) (domain.Species, error) {
+	f.calls.Add(1)
+	defer f.trackFlight()()
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.species != nil {
 		if s, ok := f.species[id]; ok {
 			return s, nil
@@ -79,6 +97,11 @@ func (f *fakeAPI) GetSpecies(_ context.Context, id int) (domain.Species, error) 
 	return domain.Species{}, pokeapi.ErrNotFound
 }
 func (f *fakeAPI) GetEvolutionChain(_ context.Context, id int) (domain.EvolutionTree, error) {
+	f.calls.Add(1)
+	defer f.trackFlight()()
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.evolution != nil {
 		if tree, ok := f.evolution[id]; ok {
 			return tree, nil
@@ -87,6 +110,11 @@ func (f *fakeAPI) GetEvolutionChain(_ context.Context, id int) (domain.Evolution
 	return domain.EvolutionTree{}, pokeapi.ErrNotFound
 }
 func (f *fakeAPI) GetEncounters(_ context.Context, id int) ([]domain.Encounter, error) {
+	f.calls.Add(1)
+	defer f.trackFlight()()
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.encounters != nil {
 		if enc, ok := f.encounters[id]; ok {
 			return enc, nil
@@ -95,6 +123,11 @@ func (f *fakeAPI) GetEncounters(_ context.Context, id int) ([]domain.Encounter, 
 	return nil, pokeapi.ErrNotFound
 }
 func (f *fakeAPI) GetMove(_ context.Context, id int) (domain.Move, error) {
+	f.calls.Add(1)
+	defer f.trackFlight()()
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.moves != nil {
 		if mv, ok := f.moves[id]; ok {
 			return mv, nil

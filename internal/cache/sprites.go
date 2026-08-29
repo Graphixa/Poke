@@ -70,6 +70,7 @@ func (s *Service) InvalidateNativeSpecies(speciesID int) error {
 	if err := s.store.DeleteNativeForSpecies(speciesID); err != nil {
 		return err
 	}
+	_ = s.store.invalidateImageCachePokemon(speciesID)
 	return s.store.InvalidateNativeManifestSizes()
 }
 

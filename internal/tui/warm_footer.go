@@ -36,12 +36,8 @@ func warmBarStyles() (label, fill, track, count lipgloss.Style) {
 	return label, fill, track, count
 }
 
-func formatNativeImageCacheFooter(cells int, done, total int) string {
-	labelText := "Image Cache"
-	if cells > 0 {
-		labelText = fmt.Sprintf("Image Cache (%d)", cells)
-	}
-	return formatWarmBar(labelText, done, total)
+func formatNativeImageCacheFooter(_ int, done, total int) string {
+	return formatWarmBar("Building Image Cache:", done, total)
 }
 
 func formatArtworkCacheBar(done, total int) string {
@@ -49,7 +45,7 @@ func formatArtworkCacheBar(done, total int) string {
 }
 
 func formatWarmBar(labelText string, done, total int) string {
-	if total <= 0 {
+	if total <= 0 || done >= total {
 		return ""
 	}
 	labelSty, fillSty, trackSty, countSty := warmBarStyles()
