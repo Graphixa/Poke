@@ -53,7 +53,7 @@ func (s *Store) writeNamedSpriteMeta(id int, slug, kind string, meta NamedSprite
 	if meta.UpdatedAt.IsZero() {
 		meta.UpdatedAt = s.clock.Now()
 	}
-	data, err := json.MarshalIndent(meta, "", "  ")
+	data, err := json.Marshal(meta)
 	if err != nil {
 		return err
 	}

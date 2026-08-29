@@ -133,6 +133,14 @@ type detailAdapter struct {
 	*app.DetailService
 }
 
+func (d detailAdapter) LoadDossierCore(ctx context.Context, speciesID int, slug string) (domain.Dossier, bool, error) {
+	return d.DetailService.LoadDossierCore(ctx, speciesID, slug)
+}
+
+func (d detailAdapter) LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
+	return d.DetailService.LoadDossierExtras(ctx, speciesID, slug, core)
+}
+
 func (d detailAdapter) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
 	return d.DetailService.LoadDossier(ctx, speciesID)
 }

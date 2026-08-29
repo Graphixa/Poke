@@ -35,11 +35,17 @@ func (s *Service) Pokemon(ctx context.Context, id int) (domain.Pokemon, error) {
 func (s *Service) getPokemon(ctx context.Context, id int) (domain.Pokemon, error) {
 	cached, cacheErr := s.store.Pokemon(ctx, id)
 	haveCache := cacheErr == nil
-	if haveCache && !s.detailStale("pokemon", id) {
-		debuglog.Cachef("hit pokemon id=%d", id)
+	if haveCache {
+		debuglog.Cachef("detail.cache.hit pokemon id=%d", id)
 		return cached, nil
 	}
 	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
+		return domain.Pokemon{}, cacheErr
+	}
+	if s.localOnly.Load() {
+		if haveCache {
+			return cached, nil
+		}
 		return domain.Pokemon{}, cacheErr
 	}
 	if err := s.acquire(ctx); err != nil {
@@ -55,7 +61,7 @@ func (s *Service) getPokemon(ctx context.Context, id int) (domain.Pokemon, error
 			debuglog.Cachef("stale-serve pokemon id=%d err=%v", id, fetchErr)
 			return cached, nil
 		}
-		debuglog.Cachef("miss pokemon id=%d err=%v", id, fetchErr)
+		debuglog.Cachef("detail.cache.miss pokemon id=%d err=%v", id, fetchErr)
 		return domain.Pokemon{}, fetchErr
 	}
 	debuglog.Cachef("store pokemon id=%d", id)
@@ -76,10 +82,13 @@ func (s *Service) Species(ctx context.Context, id int) (domain.Species, error) {
 func (s *Service) getSpecies(ctx context.Context, id int) (domain.Species, error) {
 	cached, cacheErr := s.store.Species(ctx, id)
 	haveCache := cacheErr == nil
-	if haveCache && !s.detailStale("species", id) {
+	if haveCache {
 		return cached, nil
 	}
 	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
+		return domain.Species{}, cacheErr
+	}
+	if s.localOnly.Load() {
 		return domain.Species{}, cacheErr
 	}
 	if err := s.acquire(ctx); err != nil {
@@ -113,21 +122,21 @@ func (s *Service) EvolutionChain(ctx context.Context, id int) (domain.EvolutionT
 func (s *Service) getEvolution(ctx context.Context, id int) (domain.EvolutionTree, error) {
 	cached, cacheErr := s.store.EvolutionChain(ctx, id)
 	haveCache := cacheErr == nil
-	if haveCache && !s.detailStale("evolution", id) {
+	if haveCache {
 		return cached, nil
 	}
+	if cacheErr != nil && !errors.Is(cacheErr, ErrNotFound) && !errors.Is(cacheErr, ErrCorrupt) {
+		return domain.EvolutionTree{}, cacheErr
+	}
+	if s.localOnly.Load() {
+		return domain.EvolutionTree{}, cacheErr
+	}
 	if err := s.acquire(ctx); err != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return domain.EvolutionTree{}, err
 	}
 	fresh, fetchErr := s.api.GetEvolutionChain(ctx, id)
 	s.release()
 	if fetchErr != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return domain.EvolutionTree{}, fetchErr
 	}
 	_ = s.store.StoreEvolutionChain(ctx, id, fresh, s.clock.Now())
@@ -147,21 +156,18 @@ func (s *Service) Encounters(ctx context.Context, pokemonID int) ([]domain.Encou
 func (s *Service) getEncounters(ctx context.Context, pokemonID int) ([]domain.Encounter, error) {
 	cached, cacheErr := s.store.Encounters(ctx, pokemonID)
 	haveCache := cacheErr == nil
-	if haveCache && !s.detailStale("encounters", pokemonID) {
+	if haveCache {
 		return cached, nil
 	}
+	if s.localOnly.Load() {
+		return nil, cacheErr
+	}
 	if err := s.acquire(ctx); err != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return nil, err
 	}
 	fresh, fetchErr := s.api.GetEncounters(ctx, pokemonID)
 	s.release()
 	if fetchErr != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return nil, fetchErr
 	}
 	_ = s.store.StoreEncounters(ctx, pokemonID, fresh, s.clock.Now())
@@ -181,41 +187,22 @@ func (s *Service) Move(ctx context.Context, id int) (domain.Move, error) {
 func (s *Service) getMove(ctx context.Context, id int) (domain.Move, error) {
 	cached, cacheErr := s.store.Move(ctx, id)
 	haveCache := cacheErr == nil
-	if haveCache && !s.moveStale(id) {
+	if haveCache {
 		return cached, nil
 	}
+	if s.localOnly.Load() {
+		return domain.Move{}, cacheErr
+	}
 	if err := s.acquire(ctx); err != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return domain.Move{}, err
 	}
 	fresh, fetchErr := s.api.GetMove(ctx, id)
 	s.release()
 	if fetchErr != nil {
-		if haveCache {
-			return cached, nil
-		}
 		return domain.Move{}, fetchErr
 	}
 	_ = s.store.StoreMove(ctx, fresh, s.clock.Now())
 	return fresh, nil
-}
-
-func (s *Service) detailStale(kind string, id int) bool {
-	fetchedAt, err := s.store.ResourceFetchedAt(kind, id)
-	if err != nil {
-		return true
-	}
-	return s.isStale(fetchedAt, s.cfg.Cache.DetailTTL.Duration)
-}
-
-func (s *Service) moveStale(id int) bool {
-	fetchedAt, err := s.store.ResourceFetchedAt("moves", id)
-	if err != nil {
-		return true
-	}
-	return s.isStale(fetchedAt, s.cfg.Cache.MoveTTL.Duration)
 }
 
 // ReadSpriteBytes downloads sprite bytes through the API client.

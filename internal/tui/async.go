@@ -9,6 +9,22 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
+type dossierCoreMsg struct {
+	gen       int
+	speciesID int
+	slug      string
+	dossier   domain.Dossier
+	complete  bool
+	err       error
+}
+
+type dossierExtrasMsg struct {
+	gen       int
+	speciesID int
+	dossier   domain.Dossier
+	err       error
+}
+
 type dossierMsg struct {
 	gen       int
 	speciesID int
@@ -27,8 +43,8 @@ type spriteMsg struct {
 	assetKind   string
 }
 
-// spritePrefetchRadius is how many list rows above/below the cursor to keep
-// rendered in the resource cache so scrolling feels continuous.
+// spritePrefetchRadius is how many list rows above/below the cursor to warm
+// via background render calls (engine/disk cache only).
 const spritePrefetchRadius = 12
 
 // spritePrefetchBurst limits how many new neighbor encodes start per selection.
@@ -48,12 +64,48 @@ type spritePrefetchMsg struct {
 	pokemon     domain.Pokemon
 }
 
+func loadDossierCoreCmd(ctx context.Context, src DetailSource, gen, speciesID int, slug string) tea.Cmd {
+	if src == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := ctx.Err(); err != nil {
+			return dossierCoreMsg{gen: gen, speciesID: speciesID, slug: slug, err: err}
+		}
+		d, complete, err := src.LoadDossierCore(ctx, speciesID, slug)
+		return dossierCoreMsg{gen: gen, speciesID: speciesID, slug: slug, dossier: d, complete: complete, err: err}
+	}
+}
+
+func loadDossierExtrasCmd(ctx context.Context, src DetailSource, gen, speciesID int, slug string, core domain.Dossier) tea.Cmd {
+	if src == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := ctx.Err(); err != nil {
+			return dossierExtrasMsg{gen: gen, speciesID: speciesID, err: err}
+		}
+		d, err := src.LoadDossierExtras(ctx, speciesID, slug, core)
+		return dossierExtrasMsg{gen: gen, speciesID: speciesID, dossier: d, err: err}
+	}
+}
+
 func loadDossierCmd(ctx context.Context, src DetailSource, gen, speciesID int) tea.Cmd {
 	if src == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		d, err := src.LoadDossier(ctx, speciesID)
+		d, complete, err := src.LoadDossierCore(ctx, speciesID, "")
+		if err != nil || !complete {
+			if err != nil {
+				return dossierMsg{gen: gen, speciesID: speciesID, err: err}
+			}
+			extras, err := src.LoadDossierExtras(ctx, speciesID, "", d)
+			if err != nil {
+				return dossierMsg{gen: gen, speciesID: speciesID, err: err}
+			}
+			d = extras
+		}
 		return dossierMsg{gen: gen, speciesID: speciesID, dossier: d, err: err}
 	}
 }

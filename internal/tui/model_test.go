@@ -25,13 +25,15 @@ func fixtureIndex() *search.Index {
 }
 
 type fakeDetails struct {
-	loadCalls atomic.Int32
-	blockLoad chan struct{}
-	loadErr   error
+	loadCalls   atomic.Int32
+	coreCalls   atomic.Int32
+	extrasCalls atomic.Int32
+	blockLoad   chan struct{}
+	loadErr     error
+	coreOnly    bool
 }
 
-func (f *fakeDetails) LoadDossier(_ context.Context, speciesID int) (domain.Dossier, error) {
-	f.loadCalls.Add(1)
+func (f *fakeDetails) makeDossier(speciesID int) (domain.Dossier, error) {
 	if f.blockLoad != nil {
 		<-f.blockLoad
 	}
@@ -79,6 +81,34 @@ func (f *fakeDetails) LoadDossier(_ context.Context, speciesID int) (domain.Doss
 			Move:  domain.Move{Slug: "scratch", DisplayName: "Scratch", Type: "normal", DamageClass: "physical", Power: &pow},
 		}},
 	}, nil
+}
+
+func (f *fakeDetails) LoadDossierCore(_ context.Context, speciesID int, _ string) (domain.Dossier, bool, error) {
+	f.loadCalls.Add(1)
+	f.coreCalls.Add(1)
+	d, err := f.makeDossier(speciesID)
+	if err != nil {
+		return domain.Dossier{}, false, err
+	}
+	if f.coreOnly {
+		d.Evolution = nil
+		d.Encounters = nil
+		d.LevelUpMoves = nil
+		return d, false, nil
+	}
+	return d, true, nil
+}
+
+func (f *fakeDetails) LoadDossierExtras(_ context.Context, speciesID int, _ string, core domain.Dossier) (domain.Dossier, error) {
+	f.extrasCalls.Add(1)
+	if f.loadErr != nil {
+		return domain.Dossier{}, f.loadErr
+	}
+	d, err := f.makeDossier(speciesID)
+	if err != nil {
+		return core, err
+	}
+	return d, nil
 }
 
 func key(s string) tea.KeyPressMsg {
@@ -267,6 +297,30 @@ func TestAsyncRaceSuppression(t *testing.T) {
 	m = apply(t, m, stale)
 	if res := m.ResourceName(4); res == "Stale" {
 		t.Fatal("stale dossier applied")
+	}
+}
+
+func TestProgressiveCoreBeforeExtras(t *testing.T) {
+	details := &fakeDetails{coreOnly: true}
+	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52})
+	var model tea.Model = m
+	drainCmds(t, &model, m.Init())
+	m = model.(tui.Model)
+
+	m = apply(t, m, key("enter"))
+	if details.coreCalls.Load() != 1 {
+		t.Fatalf("core loads = %d", details.coreCalls.Load())
+	}
+	if details.extrasCalls.Load() != 1 {
+		t.Fatalf("extras loads = %d", details.extrasCalls.Load())
+	}
+	if !m.ExtrasReadyForTest(4) {
+		t.Fatal("expected extras after enter")
+	}
+	view := m.View().Content
+	if strings.Contains(view, "Loading…") {
+		t.Fatalf("summary should paint before extras complete, got %q", view)
 	}
 }
 

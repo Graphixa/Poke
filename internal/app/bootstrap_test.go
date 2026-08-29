@@ -22,20 +22,24 @@ type updateStubAPI struct {
 func (s *updateStubAPI) ListSpecies(context.Context) ([]domain.SpeciesSummary, error) {
 	return append([]domain.SpeciesSummary(nil), s.list...), nil
 }
-func (s *updateStubAPI) GetPokemon(context.Context, int) (domain.Pokemon, error) {
-	return domain.Pokemon{}, errors.New("unused")
+func (s *updateStubAPI) GetPokemon(_ context.Context, id int) (domain.Pokemon, error) {
+	return domain.Pokemon{
+		ID: id, Slug: "pokemon", DisplayName: "Pokemon",
+		Stats: domain.Stats{HP: 50},
+		Types: []domain.TypeSlot{{Name: "normal"}},
+	}, nil
 }
-func (s *updateStubAPI) GetSpecies(context.Context, int) (domain.Species, error) {
-	return domain.Species{}, errors.New("unused")
+func (s *updateStubAPI) GetSpecies(_ context.Context, id int) (domain.Species, error) {
+	return domain.Species{ID: id, DefaultPokemonID: id}, nil
 }
 func (s *updateStubAPI) GetEvolutionChain(context.Context, int) (domain.EvolutionTree, error) {
-	return domain.EvolutionTree{}, errors.New("unused")
+	return domain.EvolutionTree{}, nil
 }
 func (s *updateStubAPI) GetEncounters(context.Context, int) ([]domain.Encounter, error) {
 	return nil, nil
 }
 func (s *updateStubAPI) GetMove(context.Context, int) (domain.Move, error) {
-	return domain.Move{}, errors.New("unused")
+	return domain.Move{}, nil
 }
 func (s *updateStubAPI) GetSprite(context.Context, string) (io.ReadCloser, error) {
 	return nil, errors.New("unused")

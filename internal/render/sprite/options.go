@@ -11,6 +11,7 @@ const (
 	ModeChafa       RenderMode = "chafa"
 	ModeOff         RenderMode = "off"
 	ModePlaceholder RenderMode = "placeholder"
+	ModeHalfblock   RenderMode = "halfblock"
 )
 
 // ColorMode selects colour encoding for text-based renderers.
@@ -33,7 +34,10 @@ const (
 
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
-const AlgorithmVersion = "v10"
+const AlgorithmVersion = "v12"
+
+// ChafaRenderVersion bumps when external/in-process chafa invocation args change.
+const ChafaRenderVersion = "exec-v1"
 
 // QualityProfile selects chafa conversion quality.
 type QualityProfile string

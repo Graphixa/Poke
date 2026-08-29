@@ -100,8 +100,10 @@ type BrowseData struct {
 	DialogLines   []string
 	DialogOff     int
 
-	SpriteANSI   string
-	SpriteNative bool
+	SpriteANSI    string
+	SpriteNative  bool
+	ImageState    int // 0 blank, 1 loading, 2 ready, 3 unavailable
+	SpriteSpinner string
 
 	WarmHint string
 
@@ -343,13 +345,15 @@ func renderViewBody(d BrowseData, width, maxH int) string {
 	}
 
 	var inner string
-	if d.ShowSprite && d.SpriteNative {
-		// Blank cell reservation only — graphics are painted via tea.Raw.
+	ready := d.ImageState == 2 || (d.ImageState == 0 && (d.SpriteANSI != "" || d.SpriteNative))
+	if d.ShowSprite && d.ImageState == 1 && d.SpriteSpinner != "" {
+		inner = components.SpritePlaceholder(d.SpriteSpinner, artW, artH)
+	} else if d.ShowSprite && d.SpriteNative && ready {
 		inner = components.SpritePanel("", artW, artH, true)
-	} else if d.ShowSprite && d.SpriteANSI != "" {
+	} else if d.ShowSprite && d.SpriteANSI != "" && ready {
 		inner = components.SpritePanel(d.SpriteANSI, artW, artH, false)
 	} else if d.ShowSprite {
-		inner = components.SpritePlaceholder(d.Selected.DisplayName, artW, artH)
+		inner = components.SpritePanel("", artW, artH, true)
 	} else {
 		inner = components.SpriteSizeCue(artW, artH)
 	}
@@ -437,9 +441,23 @@ func spriteArtGeometry(d BrowseData, width, maxH int) (artW, artH, outerW, outer
 
 // SpriteArtOrigin returns the 1-indexed terminal CUP row/col of the sprite art
 // box for native overlay painting, plus the art cell size for clearing.
-// ok is false when the sprite is not shown.
+// ok is false when the sprite is not shown or native art is not active.
 func SpriteArtOrigin(d BrowseData) (row, col, artW, artH int, ok bool) {
-	if !d.ShowSprite || !d.SpriteNative {
+	return spriteArtRegion(d, true)
+}
+
+// SpriteArtRegion returns the art box geometry for the current browse layout
+// even when the selected species is still on a text placeholder (used to wipe
+// leftover Kitty/iTerm/Sixel from the previous selection).
+func SpriteArtRegion(d BrowseData) (row, col, artW, artH int, ok bool) {
+	return spriteArtRegion(d, false)
+}
+
+func spriteArtRegion(d BrowseData, requireNative bool) (row, col, artW, artH int, ok bool) {
+	if !d.ShowSprite {
+		return 0, 0, 0, 0, false
+	}
+	if requireNative && !d.SpriteNative {
 		return 0, 0, 0, 0, false
 	}
 	if d.TooSmall || d.OnePane || d.ShowHelp || d.ShowDialog || d.BrowseView != 0 {

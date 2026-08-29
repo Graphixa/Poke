@@ -14,7 +14,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-const enrichIndexBatchSize = 50
+const interactiveReserve = 2
 
 // Progress reports refresh work without coupling to CLI or TUI rendering.
 type Progress struct {
@@ -52,6 +52,10 @@ type Service struct {
 	clock Clock
 	group singleFlight
 	sema  chan struct{}
+	// inFlight tracks active HTTP slots; background work stops at max-reserve.
+	inFlight       int32
+	maxConcurrency int
+	localOnly      atomic.Bool
 }
 
 func NewService(store *Store, api pokeAPI, cfg config.Config, clock Clock) *Service {
@@ -63,11 +67,12 @@ func NewService(store *Store, api pokeAPI, cfg config.Config, clock Clock) *Serv
 		concurrency = 8
 	}
 	return &Service{
-		store: store,
-		api:   api,
-		cfg:   cfg,
-		clock: clock,
-		sema:  make(chan struct{}, concurrency),
+		store:          store,
+		api:            api,
+		cfg:            cfg,
+		clock:          clock,
+		sema:           make(chan struct{}, concurrency),
+		maxConcurrency: concurrency,
 	}
 }
 
@@ -84,21 +89,29 @@ func (s *Service) Path() string {
 	return s.store.Path()
 }
 
+// HasActiveDataset reports whether a complete snapshot is activated.
+func (s *Service) HasActiveDataset() bool {
+	return s.store.HasActiveDataset()
+}
+
 func (s *Service) Clear() error {
 	return s.store.Clear()
 }
 
-// EnsureIndex applies the startup cache policy:
-//   - fresh cache: return immediately with no network
-//   - stale cache: return immediately; caller may start BackgroundRefresh
-//   - empty cache: block for thin index only; type enrich runs in background
-//
-// progress may be nil; it is used when an empty cache triggers index fetch.
+// EnsureIndex returns the browse index from the active dataset when present,
+// otherwise the cached species index. An empty cache triggers a blocking thin
+// index fetch only (full metadata bootstrap is explicit via BootstrapDataset).
 func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index []domain.SpeciesSummary, stale bool, err error) {
 	index, fetchedAt, err := s.loadIndex()
 	if err == nil && len(index) > 0 {
 		stale = s.isStale(fetchedAt, s.cfg.Cache.IndexTTL.Duration)
 		index, _ = typeseed.Apply(index)
+		if s.store.HasActiveDataset() {
+			s.localOnly.Store(true)
+			if browse, berr := s.store.LoadBrowseSummaries(); berr == nil && len(browse) > 0 {
+				return browse, stale, nil
+			}
+		}
 		return index, stale, nil
 	}
 	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrCorrupt) {
@@ -179,6 +192,21 @@ func (s *Service) Refresh(ctx context.Context, progress ProgressFunc) error {
 	return err
 }
 
+// RefreshDataset rebuilds metadata beside the active snapshot and activates the
+// new snapshot only when complete. A failed bootstrap leaves the previous
+// active snapshot in place.
+func (s *Service) RefreshDataset(ctx context.Context, progress ProgressFunc) error {
+	if err := s.Refresh(ctx, progress); err != nil {
+		return err
+	}
+	return s.BootstrapDataset(ctx, progress)
+}
+
+// LocalOnly reports whether normal reads must not hit the network.
+func (s *Service) LocalOnly() bool {
+	return s.localOnly.Load()
+}
+
 // EnrichTypes fills missing type hints on the cached index (sync).
 func (s *Service) EnrichTypes(ctx context.Context, progress ProgressFunc) error {
 	_, err := s.group.Do("enrich", func() (any, error) {
@@ -243,26 +271,11 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 	queue := make(chan job, workers*2)
 
 	var (
-		done      atomic.Int64
-		mu        sync.Mutex
-		index     = append([]domain.SpeciesSummary(nil), summaries...)
-		firstErr  error
-		dirty     int
-		lastWrite int
+		done     atomic.Int64
+		mu       sync.Mutex
+		index    = append([]domain.SpeciesSummary(nil), summaries...)
+		firstErr error
 	)
-
-	flush := func(force bool) {
-		if !force && dirty < enrichIndexBatchSize {
-			return
-		}
-		if dirty == 0 && !force {
-			return
-		}
-		snapshot := append([]domain.SpeciesSummary(nil), index...)
-		_ = s.store.StoreSpeciesIndex(ctx, snapshot, s.clock.Now())
-		dirty = 0
-		lastWrite++
-	}
 
 	var wg sync.WaitGroup
 	worker := func() {
@@ -296,8 +309,6 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 
 			mu.Lock()
 			index[j.idx].Types = types
-			dirty++
-			flush(false)
 			mu.Unlock()
 
 			current := int(done.Add(1))
@@ -334,10 +345,10 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 	wg.Wait()
 
 	mu.Lock()
-	flush(true)
+	snapshot := append([]domain.SpeciesSummary(nil), index...)
 	err := firstErr
-	_ = lastWrite
 	mu.Unlock()
+	_ = s.store.StoreSpeciesIndex(ctx, snapshot, s.clock.Now())
 	if err != nil {
 		return err
 	}
@@ -361,16 +372,38 @@ func (s *Service) fetchDefaultPokemon(ctx context.Context, sum domain.SpeciesSum
 }
 
 func (s *Service) acquire(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case s.sema <- struct{}{}:
-		return nil
+	reserve := interactiveReserve
+	if reserve >= s.maxConcurrency {
+		reserve = 0
+	}
+	bgLimit := int32(s.maxConcurrency - reserve)
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !interactivePriority(ctx) {
+			if atomic.LoadInt32(&s.inFlight) >= bgLimit {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(5 * time.Millisecond):
+					continue
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case s.sema <- struct{}{}:
+			atomic.AddInt32(&s.inFlight, 1)
+			return nil
+		}
 	}
 }
 
 func (s *Service) release() {
 	<-s.sema
+	atomic.AddInt32(&s.inFlight, -1)
 }
 
 func (s *Service) loadIndex() ([]domain.SpeciesSummary, time.Time, error) {

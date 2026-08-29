@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui"
 )
 
@@ -121,9 +122,7 @@ func TestSpriteCancelOnSelectionChange(t *testing.T) {
 	})
 	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-	if cmd == nil {
-		cmd = m.EnsureSelectionLoadsForTest()
-	}
+	cmd = m.EnsureSelectionLoadsForTest()
 	if cmd == nil {
 		t.Fatal("expected sprite cmd")
 	}
@@ -315,3 +314,150 @@ func TestWarmProgressUpgradesNonPlaceholderPixel(t *testing.T) {
 	_ = cmd
 }
 
+func TestSelectionChangeBlanksImagePane(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	fresh := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), id, cells, "ART", false)
+	updated, _ = m.Update(fresh)
+	m = updated.(tui.Model)
+	if !m.HasSpriteANSI() {
+		t.Fatal("expected art")
+	}
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if m.HasSpriteANSI() {
+		t.Fatal("image pane must be blank after selection change")
+	}
+	if m.ImageStateForTest() != 0 {
+		t.Fatalf("image state=%d want blank", m.ImageStateForTest())
+	}
+}
+
+func TestResourceCacheLRUPlateau(t *testing.T) {
+	const n = 100
+	rows := make([]domain.SpeciesSummary, n)
+	for i := range rows {
+		id := i + 1
+		rows[i] = domain.SpeciesSummary{ID: id, Slug: "p", DisplayName: "P"}
+	}
+	m := tui.NewModel(tui.Options{
+		Index:   search.Build(rows),
+		Details: &fakeDetails{},
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	for i := 0; i < n-1; i++ {
+		updated, _ = m.Update(key("down"))
+		m = updated.(tui.Model)
+	}
+	if count := m.ResourceCountForTest(); count > 16 {
+		t.Fatalf("resource cache exceeded limit after %d selections: %d > 16", n, count)
+	}
+}
+
+func TestResourceCacheLRUBounded(t *testing.T) {
+	rows := make([]domain.SpeciesSummary, 40)
+	for i := range rows {
+		id := i + 1
+		rows[i] = domain.SpeciesSummary{ID: id, Slug: "p", DisplayName: "P"}
+	}
+	m := tui.NewModel(tui.Options{
+		Index:   search.Build(rows),
+		Details: &fakeDetails{},
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	for i := 0; i < 30; i++ {
+		updated, _ = m.Update(key("down"))
+		m = updated.(tui.Model)
+	}
+	if n := m.ResourceCountForTest(); n > 16 {
+		t.Fatalf("resource cache grew unbounded: %d", n)
+	}
+}
+
+func TestSpinnerAppearsAfterDelayNotDuringDebounce(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART", block: make(chan struct{})}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	cmd := m.EnsureSelectionLoadsForTest()
+	if cmd == nil {
+		t.Fatal("expected sprite load")
+	}
+	if m.ImageStateForTest() != 0 {
+		t.Fatalf("image state=%d want blank until spinner delay", m.ImageStateForTest())
+	}
+	id, _ := m.SelectedID()
+	updated, _ = m.Update(tui.SpinnerDelayMsgForTest(m.SelectionGen(), id))
+	m = updated.(tui.Model)
+	if m.ImageStateForTest() != 1 {
+		t.Fatalf("image state=%d want loading after spinner delay", m.ImageStateForTest())
+	}
+	close(sprites.block)
+}
+
+func TestPrefetchDoesNotRetainRenderedImage(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "NEIGHBOR"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	fresh := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), id, cells, "CURRENT", false)
+	updated, _ = m.Update(fresh)
+	m = updated.(tui.Model)
+	if !m.HasSpriteANSI() || m.ImageANSILenForTest() != len("CURRENT") {
+		t.Fatal("expected current selection art on image pane")
+	}
+
+	cmd := m.ScheduleSpritePrefetchForTest()
+	if cmd != nil {
+		var apply func(tea.Cmd)
+		apply = func(c tea.Cmd) {
+			if c == nil {
+				return
+			}
+			msg := c()
+			switch v := msg.(type) {
+			case tea.BatchMsg:
+				for _, inner := range v {
+					apply(inner)
+				}
+			default:
+				updated, _ = m.Update(msg)
+				m = updated.(tui.Model)
+			}
+		}
+		apply(cmd)
+	}
+	if m.ImageANSILenForTest() != len("CURRENT") {
+		t.Fatalf("prefetch must not replace selection image, len=%d", m.ImageANSILenForTest())
+	}
+
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if m.HasSpriteANSI() {
+		t.Fatal("selection change must blank image pane")
+	}
+}

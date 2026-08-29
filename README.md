@@ -27,7 +27,7 @@ Verify the download with `checksums.txt` from the same release.
 
 ### From source
 
-Requires Go 1.25+.
+Requires Go 1.26+.
 
 ```bash
 git clone https://github.com/Graphixa/Pokedex.git
@@ -45,10 +45,10 @@ cp poke pokedex   # or: ln -s poke pokedex
 ## Quick start
 
 ```bash
-# First run: poke opens a setup wizard (index + pixel sprites; optional HD art)
+# First run: setup wizard, then metadata bootstrap completes before browse opens
 poke
 
-# Or bootstrap the index alone first
+# Or bootstrap metadata + artwork explicitly first
 poke update
 
 # Open browse with a selection / search prefill
@@ -69,7 +69,7 @@ poke config path
 poke config init
 poke config edit
 
-# DEV: wipe cache + config to re-test first-run setup (remove before release)
+# Clear cache and config to re-run first-run setup
 poke reset
 
 # Colour themes (interactive selector with live preview)
@@ -90,14 +90,13 @@ Typing always filters the list (including the letter `q`). Press `?` in browse m
 | Backspace | Delete from search |
 | Esc | Clear search (or close help) |
 | ↑ / ↓ | Move selection |
-| Tab / Shift+Tab | Cycle detail tabs |
+| Tab / Shift+Tab | Cycle detail dialog sections (Enter/i) |
 | PgUp / PgDn | Scroll the detail panel |
 | Home / End | Jump in the detail panel |
+| Enter / i | Open Pokémon details dialog |
 | q | Quit **only when search is empty** |
 | Ctrl+C | Always quit |
 | ? | Toggle help |
-
-Unbound in v1: Enter, `r`, `/`.
 
 Sprites need roughly **110×40** terminal cells for the fixed 24×24 sprite frame; smaller terminals hide the sprite and keep browse usable. Below about **40×12**, the UI shows a “terminal too small” message. Capable terminals (Kitty / iTerm2 / Sixel, including Windows Terminal) may show the PNG natively; others use coloured half-block cell art.
 
@@ -121,17 +120,29 @@ poke cache path
 
 ## Offline behaviour
 
-Data is **cache-first**:
+After a successful first-run **metadata bootstrap**, browse and inline commands work from a local dataset snapshot. Ordinary navigation does not refresh metadata over the network.
+
+Official artwork downloads in the background after the TUI opens (and can resume on later launches). Derived sixel/chafa/halfblock frames are generated once per render size and cached.
 
 | Situation | Behaviour |
 | --- | --- |
-| Fresh / warm cache | Browse and inline commands work immediately; no network required for cached data |
-| Stale cache | Usable offline; may background-refresh when online and configured |
-| Empty cache + online | Bootstrap via `poke update` (or first launch) |
+| Dataset present | TUI starts immediately; no metadata network required |
+| Empty cache + online | First run / `poke update` builds a complete local dataset (blocking), then activates it atomically before browse |
 | Empty cache + offline | Hard failure with a clear remediation (`poke update` while online) |
-| Tab never fetched while offline | Clear unavailable/offline message — not a panic |
+| Failed update | Previous snapshot stays active |
+| Artwork still downloading | List and text stay usable; selected missing art is prioritised |
 
-`poke update` / `poke cache refresh` refresh the species index and enrichment; they do not download every encounter or sprite up front. Detail and sprites load on demand and are cached locally.
+`poke update` / `poke cache refresh` rebuild a new dataset snapshot beside the active one, then switch `active.json` only if the snapshot is complete. They also sync official artwork.
+
+### Renderer fallback
+
+```
+Kitty / iTerm2 native → Sixel → Chafa (optional binary, else in-process) → half-block → placeholder
+```
+
+Sixel and chafa output are cached. A warm sixel/chafa paint reads the derived artefact without decoding the original PNG.
+
+Braille and ASCII modes are no longer in the production path; old config values map to the text/half-block fallback.
 
 ## Troubleshooting
 
@@ -142,7 +153,7 @@ Data is **cache-first**:
 | Corrupt cache entry | App quarantines bad files under `corrupt/` and rebuilds; clear cache if needed |
 | Rate limited (HTTP 429) | Wait and retry; client backs off automatically |
 | Not found (inline flags) | Check spelling/slug/number; inline mode exits non-zero |
-| No sprite / `[ Name ]` placeholder | Expected when sprites are disabled, terminal is small, colour is limited, or the image failed — browse still works |
+| No sprite | Expected while the image pane is blank during scroll debounce, when sprites are disabled, the terminal is small, or the image failed — browse still works |
 | Terminal too small | Resize to at least 40×12 |
 | Debug diagnostics | `poke --debug` (optional path) writes a log file; path is printed on stderr, not into the TUI |
 

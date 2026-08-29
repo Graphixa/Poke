@@ -108,7 +108,7 @@ func (f *fakeAPI) GetSprite(_ context.Context, url string) (io.ReadCloser, error
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
-func mustPNG(t *testing.T, c color.RGBA) []byte {
+func mustPNG(t testing.TB, c color.RGBA) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	for y := 0; y < 2; y++ {
@@ -234,7 +234,7 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || colorMode != sprite.ColorTrueColor || bgHash != "010203" || ver != sprite.AlgorithmVersion {
+	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || colorMode != sprite.ColorTrueColor || bgHash != "010203" || ver != sprite.AlgorithmVersion+"-"+sprite.ChafaRenderVersion {
 		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s %s", hash, src, mode, w, h, colorMode, bgHash, ver)
 	}
 	if sprite.ClampFrameSide(21) != sprite.MinFrameSize {
@@ -312,7 +312,8 @@ func TestValidatePNG(t *testing.T) {
 // namedMemStore adds NamedPNGStore on top of memStore.
 type namedMemStore struct {
 	*memStore
-	named map[string][]byte
+	named    map[string][]byte
+	pngReads int
 }
 
 func newNamedMemStore() *namedMemStore {
@@ -326,11 +327,22 @@ func namedKey(id int, slug, kind string) string {
 func (m *namedMemStore) NamedSprite(_ context.Context, id int, slug, kind string) ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.pngReads++
 	data, ok := m.named[namedKey(id, slug, kind)]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), data...), nil
+}
+
+func (m *namedMemStore) NamedAssetMeta(_ context.Context, id int, slug, kind string) (string, string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.named[namedKey(id, slug, kind)]
+	if !ok {
+		return "", "", false, nil
+	}
+	return sprite.NamedAssetKey(id, slug, kind), "", true, nil
 }
 
 func (m *namedMemStore) StoreNamedSprite(_ context.Context, id int, slug, kind, _ string, data []byte) error {
@@ -345,7 +357,7 @@ type stubNativeRenderer struct {
 	err     error
 }
 
-func (s *stubNativeRenderer) Name() string { return "image" }
+func (s *stubNativeRenderer) Name() string         { return "image" }
 func (s *stubNativeRenderer) ProtocolName() string { return "sixel" }
 func (s *stubNativeRenderer) Supported(caps sprite.Capabilities) bool {
 	return caps.NativeImage
@@ -439,6 +451,9 @@ func TestEngineNativeDiskCacheSkipsEncodeOnFreshEngine(t *testing.T) {
 	if native.renders != 1 {
 		t.Fatalf("disk hit must skip encode, renders=%d", native.renders)
 	}
+	if store.pngReads != 1 {
+		t.Fatalf("warm native render must not re-read PNG, pngReads=%d", store.pngReads)
+	}
 }
 
 func TestEngineNativeCancelDoesNotDisable(t *testing.T) {
@@ -520,5 +535,41 @@ func TestEngineNativeUsesPixelWhenHDMissingWithoutDisabling(t *testing.T) {
 	res3 := engine.Render(context.Background(), poke, 24)
 	if !res3.Native || res3.Backend != "image" {
 		t.Fatalf("native should remain available, got %+v", res3)
+	}
+}
+
+func TestEngineChafaWarmSkipsPNGRead(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{0, 128, 255, 255})
+	if err := store.StoreNamedSprite(context.Background(), 4, "charmander", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeChafa,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+	}
+	poke := domain.Pokemon{ID: 4, Slug: "charmander", DisplayName: "Charmander"}
+	res := engine.Render(context.Background(), poke, 24)
+	if res.UsePlaceholder || res.Backend != "chafa" || res.ANSI == "" {
+		t.Fatalf("cold render: %+v", res)
+	}
+	if store.pngReads != 1 {
+		t.Fatalf("cold pngReads=%d want 1", store.pngReads)
+	}
+	res2 := engine.Render(context.Background(), poke, 24)
+	if res2.ANSI != res.ANSI {
+		t.Fatal("warm ansi mismatch")
+	}
+	if store.pngReads != 1 {
+		t.Fatalf("warm chafa must not re-read PNG, pngReads=%d", store.pngReads)
 	}
 }

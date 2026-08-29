@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync"
 
-	termimg "github.com/blacktop/go-termimg"
-	"github.com/mattn/go-sixel"
+	spritesixel "github.com/Graphixa/Pokedex/internal/render/sprite/sixel"
+	termimg "github.com/Graphixa/Pokedex/internal/render/termimg"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -29,13 +29,6 @@ const (
 	protocolSixel protocol = "sixel"
 )
 
-// Approximate monospace cell size used when converting cell dims → pixels
-// for sixel encoding (CSI font-size query is out of scope).
-const (
-	sixelCellPxW = 8
-	sixelCellPxH = 16
-)
-
 // Renderer displays sprites as real images when the terminal supports it.
 type Renderer struct {
 	proto  protocol
@@ -46,7 +39,16 @@ type Renderer struct {
 // New creates an Image renderer that auto-detects Kitty/iTerm/Sixel support from
 // the environment. There is no user-facing protocol override.
 func New() *Renderer {
-	return &Renderer{proto: detectProtocol()}
+	r := &Renderer{proto: detectProtocol()}
+	switch r.proto {
+	case protocolKitty:
+		termimg.Init(termimg.ProtocolKitty)
+	case protocolITerm:
+		termimg.Init(termimg.ProtocolITerm)
+	case protocolSixel:
+		termimg.Init(termimg.ProtocolSixel)
+	}
+	return r
 }
 
 // Name returns the logical renderer class.
@@ -197,29 +199,20 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		src = sprite.CropToContentSquare(src, threshold, 1)
 	}
 
-	// go-termimg's Sixel path double-wraps mattn/go-sixel's already-complete DCS
-	// sequence (ESC Pq + ESC P0;0;8q…ST), which Windows Terminal rejects.
-	// Encode with go-sixel directly instead (handled above).
-
-	restore := bypassDetection(r.proto)
-	defer restore()
-
-	proto := termimg.Kitty
-	if r.proto == protocolITerm {
-		proto = termimg.ITerm2
+	var (
+		out string
+		err error
+	)
+	switch r.proto {
+	case protocolKitty:
+		out, err = termimg.RenderKitty(src, w, h)
+	case protocolITerm:
+		out, err = termimg.RenderITerm(src, w, h)
+	default:
+		return sprite.Frame{}, fmt.Errorf("image: native backend unavailable")
 	}
-
-	out, err := termimg.New(src).
-		Width(w).
-		Height(h).
-		Scale(termimg.ScaleFit).
-		Protocol(proto).
-		Render()
 	if err != nil {
 		return sprite.Frame{}, err
-	}
-	if out == "" {
-		return sprite.Frame{}, fmt.Errorf("image: empty native render")
 	}
 	if err := ctx.Err(); err != nil {
 		return sprite.Frame{}, err
@@ -229,48 +222,7 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 
 // encodeSixel builds a single valid DECSIXEL DCS via mattn/go-sixel.
 func encodeSixel(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderOptions) (string, error) {
-	bg := opts.BackgroundColor
-	if bg.A == 0 {
-		bg = sprite.DefaultBackground
-	}
-	threshold := opts.AlphaThreshold
-	if threshold == 0 {
-		threshold = 16
-	}
-	pxW := cellsW * sixelCellPxW
-	pxH := cellsH * sixelCellPxH
-	source := opts.Source
-	if source == "" {
-		source = sprite.SourceArtwork
-	}
-	// Square artwork: downsample then Prepare; non-square: CropAndPrepare then Resize.
-	prepared := sprite.PrepareEncodeSrc(src, pxW, pxH, source, bg, threshold, 1)
-
-	var buf bytes.Buffer
-	enc := sixel.NewEncoder(&buf)
-	enc.Colors = 256
-	if err := enc.Encode(prepared); err != nil {
-		return "", fmt.Errorf("image: sixel encode: %w", err)
-	}
-	out := buf.String()
-	if out == "" {
-		return "", fmt.Errorf("image: empty sixel render")
-	}
-	// Sanity: exactly one DCS introducer (go-termimg used to emit two).
-	if countESCPrefix(out, 'P') != 1 {
-		return "", fmt.Errorf("image: malformed sixel sequence")
-	}
-	return out, nil
-}
-
-func countESCPrefix(s string, second byte) int {
-	n := 0
-	for i := 0; i+1 < len(s); i++ {
-		if s[i] == 0x1b && s[i+1] == second {
-			n++
-		}
-	}
-	return n
+	return spritesixel.EncodeFromCells(src, cellsW, cellsH, opts)
 }
 
 // RenderPNG is a convenience used by the engine when PNG bytes are already loaded.
@@ -287,27 +239,8 @@ func (r *Renderer) RenderPNG(pngData []byte, w, h int) (sprite.Frame, error) {
 	})
 }
 
-func bypassDetection(proto protocol) (restore func()) {
-	prev, had := os.LookupEnv("TERMIMG_BYPASS_DETECTION")
-	val := "halfblocks"
-	switch proto {
-	case protocolKitty:
-		val = "kitty"
-	case protocolITerm:
-		val = "iterm2"
-	case protocolSixel:
-		val = "sixel"
-	}
-	_ = os.Setenv("TERMIMG_BYPASS_DETECTION", val)
-	termimg.ClearFeatureCache()
-	return func() {
-		if had {
-			_ = os.Setenv("TERMIMG_BYPASS_DETECTION", prev)
-		} else {
-			_ = os.Unsetenv("TERMIMG_BYPASS_DETECTION")
-		}
-		termimg.ClearFeatureCache()
-	}
+func bypassDetection(_ protocol) (restore func()) {
+	return func() {}
 }
 
 // ClearBestEffort deletes prior native placements for Kitty/iTerm.
@@ -319,8 +252,6 @@ func ClearBestEffort() {
 		return
 	}
 	defer func() { _ = recover() }()
-	restore := bypassDetection(proto)
-	defer restore()
 	_ = termimg.ClearAll()
 }
 
@@ -345,8 +276,8 @@ func clearSixelRegion(cellsW, cellsH int, bg color.RGBA) (string, error) {
 	if bg.A == 0 {
 		bg = sprite.DefaultBackground
 	}
-	pxW := cellsW * sixelCellPxW
-	pxH := cellsH * sixelCellPxH
+	pxW := cellsW * sprite.SixelCellPxW
+	pxH := cellsH * sprite.SixelCellPxH
 	img := stdimage.NewRGBA(stdimage.Rect(0, 0, pxW, pxH))
 	for y := 0; y < pxH; y++ {
 		for x := 0; x < pxW; x++ {

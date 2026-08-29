@@ -30,7 +30,7 @@ func (h *Handler) Theme(ctx context.Context) error {
 				return err
 			}
 			// Refresh lazy services cache by reloading next time; update in-memory if possible.
-			cfg, loadErr := config.Load(h.Paths.ConfigFile)
+			cfg, _, loadErr := config.Load(h.Paths.ConfigFile)
 			if loadErr == nil {
 				ApplyTheme(h.Paths, cfg)
 			}

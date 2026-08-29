@@ -15,16 +15,17 @@ import (
 )
 
 // Dossier returns a cached species dossier when present.
-func (s *Store) Dossier(_ context.Context, speciesID int, slug string) (domain.Dossier, error) {
+func (s *Store) Dossier(_ context.Context, speciesID int, slug string) (domain.Dossier, time.Time, error) {
 	path, err := s.resolveDossierPath(speciesID, slug)
 	if err != nil {
-		return domain.Dossier{}, err
+		return domain.Dossier{}, time.Time{}, err
 	}
 	var value domain.Dossier
-	if _, err := s.readJSON(path, &value); err != nil {
-		return domain.Dossier{}, err
+	fetchedAt, err := s.readJSON(path, &value)
+	if err != nil {
+		return domain.Dossier{}, time.Time{}, err
 	}
-	return value, nil
+	return value, fetchedAt, nil
 }
 
 // StoreDossier writes pokemon/<id>-<slug>/dossier.json.
@@ -100,6 +101,7 @@ func (s *Store) StoreNamedSpriteWithMeta(ctx context.Context, id int, slug, kind
 	if err := s.StoreNamedSprite(ctx, id, slug, kind, data); err != nil {
 		return err
 	}
+	_ = s.StoreContentAsset(id, kind, url, sha256, data)
 	return s.writeNamedSpriteMeta(id, slug, kind, NamedSpriteMeta{
 		URL:       url,
 		SHA256:    sha256,

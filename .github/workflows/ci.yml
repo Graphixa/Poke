@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           cache: true
       - name: Verify formatting
         run: test -z "$(gofmt -l $(find . -name '*.go' -type f))"
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           cache: true
       - name: Build
         run: go build ./cmd/poke
@@ -52,7 +52,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           cache: true
       - name: GoReleaser snapshot
         uses: goreleaser/goreleaser-action@v6

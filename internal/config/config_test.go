@@ -20,8 +20,8 @@ func TestDefault(t *testing.T) {
 	if cfg.Network.MaxConcurrency != 8 {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.Cache.DossierPrewarm != "off" {
-		t.Fatalf("dossier_prewarm = %q want off", cfg.Cache.DossierPrewarm)
+	if cfg.Cache.DossierPrewarm != "window" {
+		t.Fatalf("dossier_prewarm = %q want window", cfg.Cache.DossierPrewarm)
 	}
 	if cfg.Render.SpritePrewarm != "window" {
 		t.Fatalf("sprite_prewarm = %q", cfg.Render.SpritePrewarm)
@@ -41,7 +41,7 @@ func TestLoadOverlaysDefaultsAndIgnoresUnknownFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := Load(path)
+	cfg, _, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestLoadRejectsInvalidYAMLAndValues(t *testing.T) {
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Load(path); err == nil {
+			if _, _, err := Load(path); err == nil {
 				t.Fatal("Load() error = nil")
 			}
 		})
@@ -102,7 +102,7 @@ func TestInitializeIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(path); err != nil {
+	if _, _, err := Load(path); err != nil {
 		t.Fatalf("initialized config cannot be loaded: %v", err)
 	}
 	created, err = Initialize(path)
@@ -146,6 +146,41 @@ func (r *recordingRunner) Run(name string, args ...string) error {
 	r.name = name
 	r.args = append([]string(nil), args...)
 	return nil
+}
+
+func TestMigrateDeprecatedRenderModes(t *testing.T) {
+	cfg := Default()
+	cfg.Render.SpriteMode = "braille"
+	warns := cfg.MigrateDeprecatedRenderModes()
+	if len(warns) != 1 || cfg.Render.SpriteMode != "halfblock" {
+		t.Fatalf("mode=%q warns=%v", cfg.Render.SpriteMode, warns)
+	}
+	if cfg.EffectiveSpriteMode() != "halfblock" {
+		t.Fatalf("effective=%q", cfg.EffectiveSpriteMode())
+	}
+	cfg.Render.SpriteMode = "ascii"
+	_ = cfg.MigrateDeprecatedRenderModes()
+	if cfg.Render.SpriteMode != "halfblock" {
+		t.Fatalf("ascii mapped to %q", cfg.Render.SpriteMode)
+	}
+}
+
+func TestLoadSurfacesDeprecatedModeWarnings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte("render:\n  sprite_mode: braille\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, warns, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Render.SpriteMode != "halfblock" {
+		t.Fatalf("mode=%q", cfg.Render.SpriteMode)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("warns=%v", warns)
+	}
 }
 
 func TestEditInitializesAndLaunchesSelectedEditor(t *testing.T) {

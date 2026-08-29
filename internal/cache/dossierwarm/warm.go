@@ -46,9 +46,9 @@ const (
 
 // Config configures a dossier warm Service.
 type Config struct {
-	Mode     Mode
-	Workers  int
-	Loader   Loader
+	Mode    Mode
+	Workers int
+	Loader  Loader
 	// CoreLoader, when set, is used for ModeWindow instead of full LoadDossier.
 	CoreLoader CoreLoader
 	Index      []domain.SpeciesSummary

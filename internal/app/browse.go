@@ -2,17 +2,20 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
+	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/warm"
 	"github.com/Graphixa/Pokedex/internal/search"
@@ -22,6 +25,18 @@ import (
 
 type tuiDetails struct {
 	*DetailService
+}
+
+func (t tuiDetails) WarmCore(ctx context.Context, speciesID int) error {
+	return t.DetailService.WarmCore(ctx, speciesID)
+}
+
+func (t tuiDetails) LoadDossierCore(ctx context.Context, speciesID int, slug string) (domain.Dossier, bool, error) {
+	return t.DetailService.LoadDossierCore(ctx, speciesID, slug)
+}
+
+func (t tuiDetails) LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
+	return t.DetailService.LoadDossierExtras(ctx, speciesID, slug, core)
 }
 
 func (t tuiDetails) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
@@ -63,16 +78,15 @@ func (t tuiSprites) ClearNativeRegion(cellsW, cellsH int) string {
 	return t.Engine.ClearNativeRegion(cellsW, cellsH)
 }
 
-// sendWarmProgress never drops SpeciesID events so selected pop-in cannot miss.
-// Aggregate-only ticks (SpeciesID==0) may drop when the buffer is full.
+// sendWarmProgress is non-blocking. A full buffer drops ticks so warmers
+// cannot stall the TUI (or hang quit waiting on a closed consumer).
 func sendWarmProgress(ch chan<- tui.WarmProgress, p cache.Progress) {
+	if ch == nil {
+		return
+	}
 	msg := tui.WarmProgress{
 		Done: p.Done, Total: p.Total, Message: p.Message,
 		SpeciesID: p.SpeciesID, Stage: p.Stage, Cells: p.Cells,
-	}
-	if p.SpeciesID != 0 {
-		ch <- msg
-		return
 	}
 	select {
 	case ch <- msg:
@@ -100,17 +114,40 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 	svc.Config = cfg
 
+	if !svc.Cache.HasActiveDataset() {
+		bootstrapProgress := func(p cache.Progress) {
+			if h.Stderr == nil {
+				return
+			}
+			switch p.Stage {
+			case "dataset":
+				if p.Total > 0 && p.Done > 0 {
+					fmt.Fprintf(h.Stderr, "Building dataset %d/%d %s\n", p.Done, p.Total, p.Message)
+				} else if p.Message != "" {
+					fmt.Fprintf(h.Stderr, "%s\n", p.Message)
+				}
+			}
+		}
+		if err := svc.Cache.BootstrapDataset(ctx, bootstrapProgress); err != nil {
+			return err
+		}
+	}
+
 	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if cache.NeedsTypeEnrichment(index) {
-		svc.Cache.BackgroundEnrich(ctx, nil)
-	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	progressCh := make(chan tui.WarmProgress, 128)
+	var useProgress bool
 
 	img := spriteimage.New()
+	_, _ = spritechafa.Detect()
 	caps := sprite.DetectCapabilities(img.Available())
-	debuglog.Renderf("sprite caps native=%v protocol=%q term_program=%q wt_session=%v",
+	debuglog.Renderf("render.backend.selected native=%v protocol=%q term_program=%q wt_session=%v",
 		caps.NativeImage, img.ProtocolName(), os.Getenv("TERM_PROGRAM"), os.Getenv("WT_SESSION") != "")
 	colorMode := sprite.ColorMode(svc.Config.Render.Color)
 	if colorMode == "" || colorMode == sprite.ColorAuto {
@@ -133,19 +170,20 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		Modes: sprite.NewModeResolver(
 			img,
 			spritechafa.Renderer{},
+			halfblock.Renderer{},
 			placeholder.Renderer{},
 		),
-		Artefacts:     svc.Cache,
-		Caps:          caps,
-		Preference:    sprite.RenderMode(svc.Config.EffectiveSpriteMode()),
-		Color:         colorMode,
-		SourceKind:    sourceKind,
-		Background:    style.BaseRGBA(),
+		Artefacts:  svc.Cache,
+		Caps:       caps,
+		Preference: sprite.RenderMode(svc.Config.EffectiveSpriteMode()),
+		Color:      colorMode,
+		SourceKind: sourceKind,
+		Background: style.BaseRGBA(),
 		// Consent gates bulk warm, not resolve — always use artwork tier.
-		HDOff:         false,
-		ClearNativeFn:         spriteimage.ClearBestEffort,
-		ClearNativeRegionFn:   spriteimage.ClearNativeRegion,
-		OnNativeFail:          img.Disable,
+		HDOff:               false,
+		ClearNativeFn:       spriteimage.ClearBestEffort,
+		ClearNativeRegionFn: spriteimage.ClearNativeRegion,
+		OnNativeFail:        img.Disable,
 	}
 
 	details := NewDetailService(svc.Cache)
@@ -157,12 +195,9 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		Sprites:       tuiSprites{engine},
 		Selected:      req.Selected,
 		Prefill:       req.Prefill,
-		Context:       ctx,
+		Context:       runCtx,
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
 	}
-
-	progressCh := make(chan tui.WarmProgress, 128)
-	var useProgress bool
 
 	// Chafa artefact warm only helps chafa-only terminals. Native (Sixel/Kitty/
 	// iTerm) browse uses interactive encode + prefetch; chafa warm would steal CPU.
@@ -181,7 +216,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 				sendWarmProgress(progressCh, p)
 			},
 		})
-		spriteWarmer.Start(ctx)
+		spriteWarmer.Start(runCtx)
 		defer spriteWarmer.Stop()
 		opts.Warmer = spriteWarmer
 	}
@@ -202,7 +237,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 				sendWarmProgress(progressCh, p)
 			},
 		})
-		artworkWarmer.Start(ctx)
+		artworkWarmer.Start(runCtx)
 		defer artworkWarmer.Stop()
 		opts.ArtworkWarmer = artworkWarmer
 	}
@@ -228,10 +263,33 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		useProgress = true
 	}
 
+	dossierMode := dossierwarm.Mode(svc.Config.EffectiveDossierPrewarm())
+	var dossierWarmer *dossierwarm.Service
+	if dossierMode != dossierwarm.ModeOff {
+		dwCfg := dossierwarm.Config{
+			Mode:    dossierMode,
+			Workers: 2,
+			Loader:  tuiDetails{details},
+			Index:   index,
+			Progress: func(p cache.Progress) {
+				sendWarmProgress(progressCh, p)
+			},
+		}
+		if dossierMode == dossierwarm.ModeWindow {
+			dwCfg.CoreLoader = tuiDetails{details}
+		}
+		dossierWarmer = dossierwarm.New(dwCfg)
+		dossierWarmer.Start(runCtx)
+		defer dossierWarmer.Stop()
+		opts.DossierWarmer = dossierWarmer
+		if dossierMode == dossierwarm.ModeAll {
+			useProgress = true
+		}
+	}
+
 	if useProgress {
-		defer close(progressCh)
 		opts.WarmEvents = progressCh
 	}
 
-	return tui.Run(ctx, opts)
+	return tui.Run(runCtx, opts)
 }

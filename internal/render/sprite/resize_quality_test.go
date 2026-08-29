@@ -1,6 +1,7 @@
 package sprite_test
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -28,23 +29,24 @@ func TestResizeArtworkInteractiveProducesTargetSize(t *testing.T) {
 }
 
 func TestAlgorithmVersionBumpedForPrep(t *testing.T) {
-	if sprite.AlgorithmVersion != "v10" {
-		t.Fatalf("AlgorithmVersion=%s want v10 (native disk key + artwork prep)", sprite.AlgorithmVersion)
+	if sprite.AlgorithmVersion != "v12" {
+		t.Fatalf("AlgorithmVersion=%s want v12 (sixel band-aligned encode height)", sprite.AlgorithmVersion)
 	}
 }
 
 func TestNativeCacheKeyRoundTrip(t *testing.T) {
 	bg := color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
 	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg)
-	wantPrefix := "named-25-pikachu-artwork-image-sixel-40x20-313244-"
+	pxW, pxH := sprite.PixelSize(40, 20)
+	wantPrefix := fmt.Sprintf("named-25-pikachu-artwork-image-sixel-%dx%d-313244-", pxW, pxH)
 	if !strings.HasPrefix(key, wantPrefix) || !strings.HasSuffix(key, sprite.AlgorithmVersion) {
-		t.Fatalf("key=%q", key)
+		t.Fatalf("key=%q want prefix %q", key, wantPrefix)
 	}
 	hash, proto, w, h, bgHash, ver, err := sprite.ParseNativeCacheKey(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash != "named-25-pikachu-artwork" || proto != "sixel" || w != 40 || h != 20 || bgHash != "313244" || ver != sprite.AlgorithmVersion {
+	if hash != "named-25-pikachu-artwork" || proto != "sixel" || w != pxW || h != pxH || bgHash != "313244" || ver != sprite.AlgorithmVersion {
 		t.Fatalf("parsed hash=%s proto=%s %dx%d bg=%s ver=%s", hash, proto, w, h, bgHash, ver)
 	}
 }

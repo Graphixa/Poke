@@ -1,6 +1,8 @@
 package tui_test
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -132,6 +134,143 @@ func TestSpriteArtOriginTwoPane(t *testing.T) {
 		t.Fatalf("art size %dx%d", artW, artH)
 	}
 	t.Logf("origin row=%d col=%d %dx%d", row, col, artW, artH)
+
+	d.SpriteNative = false
+	row2, col2, artW2, artH2, ok2 := views.SpriteArtRegion(d)
+	if !ok2 {
+		t.Fatal("expected region for placeholder layout")
+	}
+	if row != row2 || col != col2 || artW != artW2 || artH != artH2 {
+		t.Fatalf("origin vs region mismatch: %d,%d %dx%d vs %d,%d %dx%d",
+			row, col, artW, artH, row2, col2, artW2, artH2)
+	}
+	_, _, _, _, ok3 := views.SpriteArtOrigin(d)
+	if ok3 {
+		t.Fatal("origin should require native")
+	}
+}
+
+func TestNativeOverlayClearsOnPlaceholder(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	native := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells,
+		"\x1bP0;0;8q#1~~~\x1b\\", false,
+	))
+	updated, _ = m.Update(native)
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+	if m.NativePaintANSIForTest() == "" {
+		t.Fatal("expected painted native ANSI tracked")
+	}
+
+	ph := tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, "", true,
+	)
+	updated, cmd := m.Update(ph)
+	m = updated.(tui.Model)
+	if cmd == nil {
+		t.Fatal("expected clear cmd when native art falls back to placeholder")
+	}
+}
+
+func TestNativeOverlayWrapsSixelInDECSC(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	seq := tui.NativeOverlayPaintSeqForTest(5, 10, 20, 16, dcs)
+	assertNativeOverlayPayload(t, seq, dcs)
+}
+
+func TestNativeOverlayFollowUpPayloadHasNoFooter(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	))
+	updated, _ = m.Update(msg)
+	m = updated.(tui.Model)
+
+	_, cmd := m.Update(tui.NativeOverlayFollowUpForTest())
+	payloads := collectRawPayloads(cmd)
+	if len(payloads) == 0 {
+		t.Fatal("expected Raw overlay payload")
+	}
+	joined := strings.Join(payloads, "")
+	assertNativeOverlayPayload(t, joined, dcs)
+}
+
+func assertNativeOverlayPayload(t *testing.T, seq, dcs string) {
+	t.Helper()
+	if seq == "" {
+		t.Fatal("empty overlay seq")
+	}
+	if strings.Contains(seq, "Cache") {
+		t.Fatalf("overlay must not contain Cache (footer must not reprint after DCS): %q", seq)
+	}
+	dcsAt := strings.Index(seq, "\x1bP")
+	if dcsAt < 0 {
+		t.Fatal("expected DCS in overlay")
+	}
+	decscAt := strings.Index(seq, "\x1b7")
+	if decscAt < 0 || decscAt > dcsAt {
+		t.Fatalf("DECSC (ESC 7) must precede DCS")
+	}
+	decrcAt := strings.LastIndex(seq, "\x1b8")
+	if decrcAt < 0 || decrcAt < dcsAt {
+		t.Fatalf("DECRC (ESC 8) must follow DCS")
+	}
+	st := "\x1b\\"
+	stAt := strings.LastIndex(seq, st)
+	if stAt < 0 {
+		t.Fatal("expected ST terminator after Sixel")
+	}
+	after := seq[stAt+len(st):]
+	if strings.Contains(after, "\x1bP") {
+		t.Fatalf("extra Sixel after image ST: %q", after)
+	}
+	if !strings.Contains(seq, dcs) {
+		t.Fatalf("missing image DCS")
+	}
+}
+
+func collectRawPayloads(cmd tea.Cmd) []string {
+	var out []string
+	var walk func(tea.Cmd)
+	walk = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		switch v := msg.(type) {
+		case tea.BatchMsg:
+			for _, inner := range v {
+				walk(inner)
+			}
+		case tea.RawMsg:
+			out = append(out, fmt.Sprint(v.Msg))
+		}
+	}
+	walk(cmd)
+	return out
 }
 
 func TestClearCellRectCoversBox(t *testing.T) {
@@ -203,6 +342,37 @@ func TestWarmHintHiddenUnderNativeSprite(t *testing.T) {
 	}
 	if m.NativeOverlayDirtyForTest() || m.NativePaintPendingForTest() {
 		t.Fatal("warm tick must not trigger overlay repaint (causes Sixel flash)")
+	}
+}
+
+type fakeNativeWarmer struct{}
+
+func (fakeNativeWarmer) EnsureStarted(context.Context, int) {}
+func (fakeNativeWarmer) Prioritize(int)                     {}
+func (fakeNativeWarmer) SetNeighborsFromList([]domain.SpeciesSummary, int, int) {
+}
+func (fakeNativeWarmer) SetCells(int)         {}
+func (fakeNativeWarmer) Snapshot() (int, int) { return 0, 0 }
+
+func TestWarmHintHiddenWhenNativeWarmer(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:        fixtureIndex(),
+		Details:      details,
+		Sprites:      sprites,
+		NativeWarmer: fakeNativeWarmer{},
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(5, 10, 0, "native"))
+	m = updated.(tui.Model)
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatal("expected internal warm state")
+	}
+	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
+		t.Fatalf("native session must not put Cache in the footer: %q", vis)
 	}
 }
 

@@ -61,12 +61,12 @@ func encodeEnvelope(fetchedAt time.Time, value any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.MarshalIndent(envelope{
+	return json.Marshal(envelope{
 		SchemaVersion: schemaVersion,
 		Source:        "pokeapi",
 		FetchedAt:     fetchedAt.UTC(),
 		Data:          payload,
-	}, "", "  ")
+	})
 }
 
 func decodeEnvelope(data []byte, dest any) (time.Time, error) {

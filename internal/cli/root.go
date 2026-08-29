@@ -191,35 +191,7 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newRandomCommand(options))
 	cmd.AddCommand(newThemeCommand(options))
 	cmd.AddCommand(newResetCommand(options))
-	cmd.AddCommand(newTestCommand(options))
-	return cmd
-}
-
-func newTestCommand(options Options) *cobra.Command {
-	var iters int
-	var benchOnly bool
-	cmd := &cobra.Command{
-		Use:   "test [pokemon]",
-		Short: "Compare chafa vs halfblock (imgcat-style) vs termimg at three sizes",
-		Long:  "DEV: visual side-by-side + timed drag race for sprite renderers. Default subject is Pikachu (#25).",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if options.RenderTest == nil {
-				return fmt.Errorf("poke test is unavailable")
-			}
-			target := ""
-			if len(args) == 1 {
-				target = args[0]
-			}
-			return options.RenderTest.RunRenderTest(cmd.Context(), RenderTestRequest{
-				Target:     target,
-				Iterations: iters,
-				SkipVisual: benchOnly,
-			})
-		},
-	}
-	cmd.Flags().IntVar(&iters, "iters", 30, "timed iterations per backend/size")
-	cmd.Flags().BoolVar(&benchOnly, "bench", false, "timings only (skip visual dumps)")
+	registerTestCommand(cmd, options)
 	return cmd
 }
 
@@ -336,7 +308,7 @@ func newCacheCommand(options Options) *cobra.Command {
 	})
 	parent.AddCommand(&cobra.Command{
 		Use:   "refresh",
-		Short: "Refresh the species index and type enrichment",
+		Short: "Rebuild the local metadata dataset snapshot",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if options.Cache == nil {
@@ -401,12 +373,11 @@ func newThemeCommand(options Options) *cobra.Command {
 	}
 }
 
-// DEV: remove before release — clears cache + config so first-run setup can be retested.
 func newResetCommand(options Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "reset",
-		Short: "DEV: clear cache and config (re-run first-run setup)",
-		Long:  "Temporary developer helper: deletes the cache directory and config file so the next poke run shows the first-run wizard. Remove before release.",
+		Short: "Clear cache and config (re-run first-run setup)",
+		Long:  "Deletes the cache directory and config file so the next poke run shows the first-run wizard.",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			if options.Reset == nil {

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -30,6 +31,34 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nativeOverlayMsg:
 		return m.emitNativeOverlay(msg.followUp)
 
+	case selectionDebounceMsg:
+		if msg.Generation != m.selectionGen || !m.isSelectedID(msg.PokemonID) {
+			return m, nil
+		}
+		return m, m.ensureSpriteLoad()
+
+	case spinnerDelayMsg:
+		if msg.Generation != m.selectionGen || !m.isSelectedID(msg.PokemonID) {
+			return m, nil
+		}
+		if m.imageState == ImageReady {
+			return m, nil
+		}
+		if !m.imageLoading {
+			return m, nil
+		}
+		m.imageState = ImageLoading
+		m.imageSpinner = true
+		return m, func() tea.Msg { return m.spinner.Tick() }
+
+	case spinner.TickMsg:
+		if m.imageState != ImageLoading {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
 	case spritePrefetchMsg:
 		return m.applySpritePrefetch(msg)
 
@@ -51,6 +80,61 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, m.handleSpriteLayoutChange(prevShow, prevSide)
+
+	case dossierCoreMsg:
+		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
+			m.clearStaleFlag(msg.speciesID, func(r *resourceCache) {
+				if !r.HasCore {
+					r.loadingCore = false
+				}
+			})
+			if m.isSelectedID(msg.speciesID) && m.showDialog {
+				return m, m.ensureDossierLoad()
+			}
+			return m, nil
+		}
+		r := m.ensureResource(msg.speciesID)
+		r.loadingCore = false
+		if msg.err != nil {
+			r.CoreErr = msg.err
+			if m.showDialog {
+				m.syncDialogViewport()
+			}
+			return m, nil
+		}
+		r.applyCore(msg.dossier, msg.complete)
+		if m.showDialog {
+			m.syncDialogViewport()
+		}
+		var extrasCmd tea.Cmd
+		if !msg.complete && !r.extrasReady() {
+			extrasCmd = m.ensureDossierExtras(msg.slug)
+		}
+		return m, tea.Batch(extrasCmd, m.ensureSpriteLoad())
+
+	case dossierExtrasMsg:
+		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
+			m.clearStaleFlag(msg.speciesID, func(r *resourceCache) {
+				r.loadingExtras = false
+			})
+			return m, nil
+		}
+		r := m.ensureResource(msg.speciesID)
+		r.loadingExtras = false
+		if msg.err != nil {
+			r.EvolutionErr = msg.err
+			r.EncountersErr = msg.err
+			r.MovesErr = msg.err
+			if m.showDialog {
+				m.syncDialogViewport()
+			}
+			return m, nil
+		}
+		r.applyExtras(msg.dossier)
+		if m.showDialog {
+			m.syncDialogViewport()
+		}
+		return m, nil
 
 	case dossierMsg:
 		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
@@ -81,43 +165,43 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spriteMsg:
 		if msg.reqID != m.spriteReqID || msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
-			m.clearStaleFlag(msg.speciesID, func(r *resourceCache) {
-				if r.loadingSprite && (msg.cells == 0 || r.SpriteCells == msg.cells) {
-					r.loadingSprite = false
-				}
-			})
+			if m.spriteLoadSpecies == msg.speciesID {
+				m.imageLoading = false
+			}
 			if m.isSelectedID(msg.speciesID) {
 				return m, m.ensureSpriteLoad()
 			}
 			return m, nil
 		}
 		if msg.cells != m.currentSpriteCells() {
-			m.clearStaleFlag(msg.speciesID, func(r *resourceCache) {
-				if r.loadingSprite && r.SpriteCells == msg.cells {
-					r.loadingSprite = false
-				}
-			})
+			if m.spriteLoadSpecies == msg.speciesID {
+				m.imageLoading = false
+			}
 			if m.isSelectedID(msg.speciesID) {
 				return m, m.ensureSpriteLoad()
 			}
 			return m, nil
 		}
-		r := m.ensureResource(msg.speciesID)
-		r.loadingSprite = false
-		r.SpriteCells = msg.cells
+		m.imageLoading = false
+		m.imageSpeciesID = msg.speciesID
+		m.imageCells = msg.cells
 		if msg.placeholder || msg.ansi == "" {
-			// Match prefetch: placeholders are not "done" for skip logic.
-			r.HasSprite = false
-			r.SpriteANSI = ""
-			r.SpritePlaceholder = true
-			r.SpriteNative = false
-			r.SpriteKind = ""
+			m.imageANSI = ""
+			m.imageNative = false
+			m.imageKind = ""
+			m.imagePlaceholder = true
+			m.imageState = ImageUnavailable
+			m.imageSpinner = false
+			if m.isSelectedID(msg.speciesID) {
+				m.markNativeOverlayDirty()
+			}
 		} else {
-			r.HasSprite = true
-			r.SpriteANSI = msg.ansi
-			r.SpritePlaceholder = false
-			r.SpriteNative = msg.native
-			r.SpriteKind = msg.assetKind
+			m.imageANSI = msg.ansi
+			m.imageNative = msg.native
+			m.imageKind = msg.assetKind
+			m.imagePlaceholder = false
+			m.imageState = ImageReady
+			m.imageSpinner = false
 			if msg.native {
 				m.markNativeOverlayDirtyFollowUp()
 			}
@@ -342,6 +426,10 @@ func (m *Model) notifyWarmer() {
 	if !ok {
 		return
 	}
+	if m.dossierWarmer != nil {
+		m.dossierWarmer.Prioritize(sel.ID)
+		m.dossierWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
+	}
 	if m.warmer != nil {
 		cells := m.currentSpriteCells()
 		if cells >= sprite.MinFrameSize {
@@ -364,8 +452,8 @@ func (m *Model) notifyWarmer() {
 }
 
 func (m *Model) ensureSelectionLoads() tea.Cmd {
-	// Browse: sprite only — never GetDossier on scroll.
-	return tea.Batch(m.ensureSpriteLoad(), m.scheduleSpritePrefetch())
+	// Browse: blank + debounce sprite load. Prefetch stays optional/low priority.
+	return tea.Batch(m.scheduleSelectionDebounce(), m.scheduleSpritePrefetch())
 }
 
 func (m *Model) ensureDossierLoad() tea.Cmd {
@@ -374,12 +462,63 @@ func (m *Model) ensureDossierLoad() tea.Cmd {
 		return nil
 	}
 	r := m.ensureResource(sel.ID)
-	if r.HasCore || r.loadingCore {
+	if r.extrasReady() {
+		return nil
+	}
+	if r.HasCore {
+		return m.ensureDossierExtras(sel.Slug)
+	}
+	if r.loadingCore {
 		return nil
 	}
 	r.loadingCore = true
 	r.CoreErr = nil
-	return loadDossierCmd(m.ctx, m.details, m.selectionGen, sel.ID)
+	return loadDossierCoreCmd(m.beginDossierLoad(sel.ID), m.details, m.selectionGen, sel.ID, sel.Slug)
+}
+
+func (m *Model) ensureDossierExtras(slug string) tea.Cmd {
+	sel, ok := m.selected()
+	if !ok {
+		return nil
+	}
+	r := m.ensureResource(sel.ID)
+	if r.extrasReady() || r.loadingExtras || !r.HasCore {
+		return nil
+	}
+	r.loadingExtras = true
+	core := domain.Dossier{Pokemon: r.Pokemon, Species: r.Species}
+	return loadDossierExtrasCmd(m.dossierCtxForLoad(sel.ID), m.details, m.selectionGen, sel.ID, slug, core)
+}
+
+func (m *Model) cancelDossier() {
+	if m.dossierCancel != nil {
+		m.dossierCancel()
+		m.dossierCancel = nil
+	}
+	m.dossierLoadCtx = nil
+	if m.dossierLoadSpecies != 0 {
+		if r := m.resources[m.dossierLoadSpecies]; r != nil {
+			r.loadingCore = false
+			r.loadingExtras = false
+		}
+		m.dossierLoadSpecies = 0
+	}
+}
+
+func (m *Model) beginDossierLoad(speciesID int) context.Context {
+	m.cancelDossier()
+	ctx, cancel := context.WithCancel(m.ctx)
+	m.dossierCancel = cancel
+	m.dossierLoadCtx = ctx
+	m.dossierLoadSpecies = speciesID
+	return ctx
+}
+
+func (m *Model) dossierCtxForLoad(speciesID int) context.Context {
+	if m.dossierLoadSpecies == speciesID && m.dossierLoadCtx != nil {
+		return m.dossierLoadCtx
+	}
+	return m.beginDossierLoad(speciesID)
 }
 
 func (m *Model) cancelSprite() {
@@ -388,12 +527,8 @@ func (m *Model) cancelSprite() {
 		m.spriteCancel = nil
 	}
 	m.spriteReqID++
-	if m.spriteLoadSpecies != 0 {
-		if r := m.resources[m.spriteLoadSpecies]; r != nil {
-			r.loadingSprite = false
-		}
-		m.spriteLoadSpecies = 0
-	}
+	m.imageLoading = false
+	m.spriteLoadSpecies = 0
 }
 
 // selectionSpriteOwns reports whether the selection encode path owns speciesID.
@@ -414,12 +549,9 @@ func (m *Model) clearStaleFlag(speciesID int, clear func(*resourceCache)) {
 	clear(r)
 }
 
-func (m *Model) clearSpriteArt(r *resourceCache) {
+func (m *Model) clearNativeDisplay() {
 	if m.sprites != nil {
 		m.sprites.ClearNative()
-	}
-	if r != nil {
-		r.clearSprite()
 	}
 }
 
@@ -439,22 +571,32 @@ func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 	lay := m.layout()
 	if !lay.ShowSprite {
 		m.cancelSprite()
-		if sel, ok := m.selected(); ok {
-			m.clearSpriteArt(m.resources[sel.ID])
-		}
+		m.setImageBlank()
+		m.clearNativeDisplay()
 		return nil
 	}
 	side := m.currentSpriteSide()
 	if !prevShow || prevSide != side {
-		if sel, ok := m.selected(); ok {
-			m.clearSpriteArt(m.resources[sel.ID])
-		}
+		m.clearImagePane()
+		m.clearNativeDisplay()
 		return m.ensureSpriteLoad()
 	}
 	return nil
 }
 
 func (m *Model) ensureSpriteLoad() tea.Cmd {
+	load := m.beginSpriteLoad()
+	if load == nil {
+		return nil
+	}
+	id := 0
+	if sel, ok := m.selected(); ok {
+		id = sel.ID
+	}
+	return tea.Batch(load, m.scheduleSpinnerDelay(m.selectionGen, id))
+}
+
+func (m *Model) beginSpriteLoad() tea.Cmd {
 	if m.sprites == nil || !m.layout().ShowSprite {
 		return nil
 	}
@@ -467,29 +609,28 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 	if cells < 1 {
 		return nil
 	}
-	if r.HasSprite && !r.SpritePlaceholder && r.SpriteCells == cells && !r.loadingSprite {
+	if m.imageSpeciesID == sel.ID && m.imageCells == cells && !m.imagePlaceholder && m.imageANSI != "" && !m.imageLoading {
+		m.imageState = ImageReady
+		m.imageSpinner = false
 		// Only treat official artwork as final. Pixel frames must upgrade when
 		// background artwork warm finishes for this species.
-		if r.SpriteKind == "artwork" {
-			if r.SpriteNative && r.SpriteANSI != "" {
-				m.dirtyNativeIfPaintChanged(sel.ID, cells, r.SpriteANSI)
+		if m.imageKind == "artwork" {
+			if m.imageNative && m.imageANSI != "" {
+				m.dirtyNativeIfPaintChanged(sel.ID, cells, m.imageANSI)
 			}
 			return nil
 		}
 		if !m.artworkReady(sel.ID) {
-			if r.SpriteNative && r.SpriteANSI != "" {
-				m.dirtyNativeIfPaintChanged(sel.ID, cells, r.SpriteANSI)
+			if m.imageNative && m.imageANSI != "" {
+				m.dirtyNativeIfPaintChanged(sel.ID, cells, m.imageANSI)
 			}
 			return nil
 		}
 		// Artwork is on disk now — fall through to re-encode.
 		m.sprites.InvalidateSpecies(sel.ID)
-		m.clearSpriteArt(r)
+		m.clearImagePane()
 	}
-	// Prefetch sets loadingSprite on neighbors; that is not a selection encode.
-	// Only skip when this model already owns an in-flight selection load.
-	if r.loadingSprite && r.SpriteCells == cells &&
-		m.spriteLoadSpecies == sel.ID && m.spriteCancel != nil {
+	if m.imageLoading && m.spriteLoadSpecies == sel.ID && m.spriteCancel != nil {
 		return nil
 	}
 	m.cancelSprite()
@@ -498,13 +639,7 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 	m.spriteReqID++
 	reqID := m.spriteReqID
 	m.spriteLoadSpecies = sel.ID
-	r.loadingSprite = true
-	r.SpriteCells = cells
-	r.HasSprite = false
-	r.SpriteANSI = ""
-	r.SpritePlaceholder = false
-	r.SpriteNative = false
-	r.SpriteKind = ""
+	m.imageLoading = true
 
 	pokemon := r.Pokemon
 	if pokemon.ID == 0 {
@@ -533,30 +668,25 @@ func (m *Model) refreshSpriteAfterWarm(speciesID int, stage string) tea.Cmd {
 	if !ok || sel.ID != speciesID {
 		return nil
 	}
-	r := m.resources[sel.ID]
 	artworkDone := stage == "artwork" || stage == ""
 	_ = stage // native warm does not force selected reload when art is already visible
-	if r != nil && r.HasSprite && !r.SpritePlaceholder && r.SpriteANSI != "" && r.SpriteKind == "artwork" {
-		// Already showing official artwork — native disk warm does not require reload.
+	if m.imageSpeciesID == speciesID && !m.imagePlaceholder && m.imageANSI != "" && m.imageKind == "artwork" {
 		return nil
 	}
 	if !artworkDone {
-		// Dossier / chafa warm: only retry if still waiting on art.
-		if r != nil && r.HasSprite && !r.SpritePlaceholder && r.SpriteANSI != "" {
+		if m.imageSpeciesID == speciesID && !m.imagePlaceholder && m.imageANSI != "" {
 			return nil
 		}
 	}
 	if m.sprites != nil {
 		m.sprites.InvalidateSpecies(speciesID)
 	}
-	if r != nil {
-		m.clearSpriteArt(r)
-	}
+	m.clearImagePane()
 	return m.ensureSpriteLoad()
 }
 
-// scheduleSpritePrefetch encodes nearby list rows into the resource cache so
-// scrolling hits warm frames instead of placeholders.
+// scheduleSpritePrefetch warms engine/disk render caches for nearby list rows.
+// Rendered output is not retained on resource entries.
 func (m *Model) scheduleSpritePrefetch() tea.Cmd {
 	if m.sprites == nil || !m.layout().ShowSprite || len(m.filtered) == 0 {
 		return nil
@@ -574,26 +704,6 @@ func (m *Model) scheduleSpritePrefetch() tea.Cmd {
 	if hi >= len(m.filtered) {
 		hi = len(m.filtered) - 1
 	}
-	need := 0
-	for dist := 1; dist <= spritePrefetchRadius; dist++ {
-		for _, idx := range []int{m.cursor - dist, m.cursor + dist} {
-			if idx < lo || idx > hi || idx == m.cursor {
-				continue
-			}
-			sum := m.filtered[idx]
-			r := m.ensureResource(sum.ID)
-			if r.HasSprite && r.SpriteCells == cells {
-				continue
-			}
-			if r.loadingSprite && r.SpriteCells == cells {
-				continue
-			}
-			need++
-		}
-	}
-	if need == 0 {
-		return nil
-	}
 
 	m.cancelPrefetch()
 	ctx, cancel := context.WithCancel(m.ctx)
@@ -602,7 +712,6 @@ func (m *Model) scheduleSpritePrefetch() tea.Cmd {
 	gen := m.prefetchGen
 
 	var cmds []tea.Cmd
-	// Prefer neighbors closest to the cursor (walk outward).
 	for dist := 1; dist <= spritePrefetchRadius && len(cmds) < spritePrefetchBurst; dist++ {
 		for _, idx := range []int{m.cursor - dist, m.cursor + dist} {
 			if idx < lo || idx > hi || idx == m.cursor {
@@ -610,14 +719,6 @@ func (m *Model) scheduleSpritePrefetch() tea.Cmd {
 			}
 			sum := m.filtered[idx]
 			r := m.ensureResource(sum.ID)
-			if r.HasSprite && r.SpriteCells == cells {
-				continue
-			}
-			if r.loadingSprite && r.SpriteCells == cells {
-				continue
-			}
-			r.loadingSprite = true
-			r.SpriteCells = cells
 			pokemon := r.Pokemon
 			if pokemon.ID == 0 {
 				pokemon = domain.Pokemon{ID: sum.ID, Slug: sum.Slug, DisplayName: sum.DisplayName}
@@ -627,6 +728,9 @@ func (m *Model) scheduleSpritePrefetch() tea.Cmd {
 				break
 			}
 		}
+	}
+	if len(cmds) == 0 {
+		return nil
 	}
 	return tea.Batch(cmds...)
 }
@@ -638,8 +742,7 @@ func (m *Model) cancelPrefetch() {
 	}
 }
 
-// pruneSpriteResources drops large Sixel/ANSI payloads outside the prefetch
-// window so scrolling cannot unbounded-grow RAM.
+// pruneSpriteResources drops dossier entries outside the prefetch window.
 func (m *Model) pruneSpriteResources() {
 	if len(m.filtered) == 0 || m.resources == nil {
 		return
@@ -663,15 +766,7 @@ func (m *Model) pruneSpriteResources() {
 		if _, ok := keep[id]; ok {
 			continue
 		}
-		if r == nil {
-			delete(m.resources, id)
-			continue
-		}
-		// Keep dossier/core data; free sprite payloads only.
-		if r.HasSprite || r.SpriteANSI != "" || r.loadingSprite {
-			r.clearSprite()
-		}
-		if !r.HasCore && !r.HasEvolution && !r.HasEncounters && !r.HasMoves && !r.loadingCore {
+		if r == nil || (!r.HasCore && !r.HasEvolution && !r.HasEncounters && !r.HasMoves && !r.loadingCore && !r.loadingExtras) {
 			delete(m.resources, id)
 		}
 	}
@@ -679,55 +774,23 @@ func (m *Model) pruneSpriteResources() {
 
 func (m Model) applySpritePrefetch(msg spritePrefetchMsg) (tea.Model, tea.Cmd) {
 	if msg.gen != 0 && msg.gen != m.prefetchGen {
-		if r := m.resources[msg.speciesID]; r != nil && r.loadingSprite && r.SpriteCells == msg.cells {
-			// Selection encode may have taken over this species after cancel.
-			if !m.selectionSpriteOwns(msg.speciesID) {
-				r.loadingSprite = false
-			}
-		}
 		return m, nil
 	}
 	if msg.cells != m.currentSpriteCells() {
-		if r := m.resources[msg.speciesID]; r != nil && r.loadingSprite && r.SpriteCells == msg.cells {
-			if !m.selectionSpriteOwns(msg.speciesID) {
-				r.loadingSprite = false
-			}
-		}
 		return m, nil
 	}
-	r := m.ensureResource(msg.speciesID)
-	// Selection encode in flight for this species — that result is authoritative.
 	if m.selectionSpriteOwns(msg.speciesID) {
 		return m, m.scheduleSpritePrefetch()
 	}
-	// Drop results that scrolled out of the sliding window (prune already ran).
 	if !m.inPrefetchWindow(msg.speciesID) {
-		r.loadingSprite = false
-		if !m.isSelectedID(msg.speciesID) {
-			r.clearSprite()
+		return m, m.scheduleSpritePrefetch()
+	}
+	// Warm engine/disk cache only — do not retain rendered output on resources.
+	if msg.pokemon.ID != 0 {
+		r := m.ensureResource(msg.speciesID)
+		if r.Pokemon.ID == 0 || r.Pokemon.Sprites.FrontDefault == "" {
+			r.Pokemon = msg.pokemon
 		}
-		return m, m.scheduleSpritePrefetch()
-	}
-	r.loadingSprite = false
-	r.SpriteCells = msg.cells
-	if msg.pokemon.ID != 0 && (r.Pokemon.ID == 0 || r.Pokemon.Sprites.FrontDefault == "") {
-		r.Pokemon = msg.pokemon
-	}
-	if msg.placeholder || msg.ansi == "" {
-		r.HasSprite = false
-		r.SpriteANSI = ""
-		r.SpritePlaceholder = true
-		r.SpriteNative = false
-		r.SpriteKind = ""
-		return m, m.scheduleSpritePrefetch()
-	}
-	r.HasSprite = true
-	r.SpriteANSI = msg.ansi
-	r.SpritePlaceholder = false
-	r.SpriteNative = msg.native
-	r.SpriteKind = msg.assetKind
-	if m.isSelectedID(msg.speciesID) && msg.native {
-		m.markNativeOverlayDirtyFollowUp()
 	}
 	return m, m.scheduleSpritePrefetch()
 }

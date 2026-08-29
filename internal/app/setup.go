@@ -40,11 +40,11 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 
 	warmArtwork := func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error {
 		w := assetwarm.New(assetwarm.Config{
-			Mode:    assetwarm.ModeArtwork,
-			Workers: assetwarm.ArtworkWorkers(workers),
-			Loader:  loader,
+			Mode:     assetwarm.ModeArtwork,
+			Workers:  assetwarm.ArtworkWorkers(workers),
+			Loader:   loader,
 			Resolver: resolver,
-			Index:   index,
+			Index:    index,
 			Progress: func(p cache.Progress) {
 				if progress != nil {
 					progress(p)

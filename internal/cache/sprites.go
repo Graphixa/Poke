@@ -140,13 +140,13 @@ func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
 }
 
 func (s *Service) recordNativeFrameManifest(key string) {
-	hash, _, w, h, _, ver, err := sprite.ParseNativeCacheKey(key)
+	hash, _, pxW, pxH, _, ver, err := sprite.ParseNativeCacheKey(key)
 	if err != nil || ver != sprite.AlgorithmVersion {
 		return
 	}
-	cells := w
-	if h > 0 && w/h == sprite.CellAspectY {
-		cells = w
+	cells := pxW / sprite.SixelCellPxW
+	if cells < sprite.MinFrameSize && pxH > 0 {
+		cells = pxH / sprite.SixelCellPxH
 	}
 	if cells < sprite.MinFrameSize {
 		return

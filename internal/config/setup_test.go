@@ -45,7 +45,7 @@ func TestSetupRoundTripYAML(t *testing.T) {
 	if err := config.Save(path, cfg); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := config.Load(path)
+	loaded, _, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}

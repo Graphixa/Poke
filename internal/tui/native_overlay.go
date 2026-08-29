@@ -22,6 +22,14 @@ type nativeOverlayMsg struct {
 // Sixel before we re-emit once. Not a perpetual refresh loop.
 const nativeOverlayRepaintDelay = 60 * time.Millisecond
 
+const (
+	decSaveCursor    = "\x1b7" // DECSC
+	decRestoreCursor = "\x1b8" // DECRC
+	// Windows Terminal: leave cursor at last sixel position, not the cell below.
+	wtSixelCursorHereOn  = "\x1b[?8452h"
+	wtSixelCursorHereOff = "\x1b[?8452l"
+)
+
 // markNativeOverlayDirty requests a paint on the next scheduleNativeOverlay pass.
 func (m *Model) markNativeOverlayDirty() {
 	m.nativeOverlayDirty = true
@@ -66,7 +74,7 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 		m.nativeOverlayDirty = false
 		// Wipe leftover Sixel when selection has no native frame (placeholder /
 		// loading). Without this, fast scroll leaves the previous species' art.
-		if m.nativePaintANSI != "" {
+		if m.nativePaintANSI != "" || m.nativePaintSpecies != 0 {
 			return m.emitNativeClear()
 		}
 		return m, nil
@@ -78,7 +86,7 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 }
 
 func (m Model) emitNativeClear() (Model, tea.Cmd) {
-	row, col, artW, artH, ok := views.SpriteArtOrigin(m.browseData())
+	row, col, artW, artH, ok := views.SpriteArtRegion(m.browseData())
 	m.nativePaintANSI = ""
 	m.nativePaintSpecies = 0
 	m.nativePaintCells = 0
@@ -88,12 +96,7 @@ func (m Model) emitNativeClear() (Model, tea.Cmd) {
 		return m, nil
 	}
 	debuglog.Renderf("native overlay clear row=%d col=%d %dx%d", row, col, artW, artH)
-	seq := clearCellRect(row, col, artW, artH)
-	if m.sprites != nil {
-		if region := m.sprites.ClearNativeRegion(artW, artH); region != "" {
-			seq = fmt.Sprintf("\x1b[%d;%dH%s", row, col, region)
-		}
-	}
+	seq := nativeOverlayClearSeq(row, col, artW, artH)
 	return m, tea.Raw(seq)
 }
 
@@ -105,8 +108,7 @@ func (m Model) nativeOverlayReady() bool {
 	if !ok {
 		return false
 	}
-	r := m.resources[sel.ID]
-	if r == nil || !r.HasSprite || r.SpritePlaceholder || !r.SpriteNative || r.SpriteANSI == "" {
+	if m.imageSpeciesID != sel.ID || m.imagePlaceholder || !m.imageNative || m.imageANSI == "" {
 		return false
 	}
 	lay := m.layout()
@@ -124,21 +126,17 @@ func (m Model) emitNativeOverlay(followUp bool) (Model, tea.Cmd) {
 		return m, nil
 	}
 	sel, _ := m.selected()
-	r := m.resources[sel.ID]
 	row, col, artW, artH, ok := views.SpriteArtOrigin(m.browseData())
 	if !ok {
 		m.nativePaintPending = false
 		return m, nil
 	}
-	// Clear character cells under the graphics region first. Warm-footer redraws
-	// and differential cell updates otherwise leave leftover glyphs ("warming N/M")
-	// visible through/around translucent Sixel pixels.
-	seq := clearCellRect(row, col, artW, artH) + fmt.Sprintf("\x1b[%d;%dH%s", row, col, r.SpriteANSI)
+	seq := nativeOverlayPaintSeq(row, col, artW, artH, m.imageANSI)
 	debuglog.Renderf("native overlay emit row=%d col=%d %dx%d bytes=%d followUp=%v",
-		row, col, artW, artH, len(r.SpriteANSI), followUp)
+		row, col, artW, artH, len(m.imageANSI), followUp)
 	m.nativePaintSpecies = sel.ID
-	m.nativePaintCells = r.SpriteCells
-	m.nativePaintANSI = r.SpriteANSI
+	m.nativePaintCells = m.imageCells
+	m.nativePaintANSI = m.imageANSI
 	cmds := []tea.Cmd{tea.Raw(seq)}
 	if !followUp {
 		if m.nativeNeedsFollowUp {
@@ -153,6 +151,26 @@ func (m Model) emitNativeOverlay(followUp bool) (Model, tea.Cmd) {
 		m.nativePaintPending = false
 	}
 	return m, tea.Batch(cmds...)
+}
+
+// nativeOverlayPaintSeq space-clears the art box, then paints DCS between
+// DECSC/DECRC so the cursor is not left below the image. No footer, no extra
+// Sixel bands after the image ST.
+func nativeOverlayPaintSeq(row, col, artW, artH int, ansi string) string {
+	var b strings.Builder
+	b.WriteString(decSaveCursor)
+	b.WriteString(wtSixelCursorHereOn)
+	b.WriteString(clearCellRect(row, col, artW, artH))
+	if ansi != "" && row >= 1 && col >= 1 {
+		fmt.Fprintf(&b, "\x1b[%d;%dH%s", row, col, ansi)
+	}
+	b.WriteString(wtSixelCursorHereOff)
+	b.WriteString(decRestoreCursor)
+	return b.String()
+}
+
+func nativeOverlayClearSeq(row, col, artW, artH int) string {
+	return decSaveCursor + clearCellRect(row, col, artW, artH) + decRestoreCursor
 }
 
 // clearCellRect writes spaces over a WxH cell box via CUP (1-indexed origin).

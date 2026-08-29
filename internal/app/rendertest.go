@@ -1,3 +1,5 @@
+//go:build rendertest
+
 package app
 
 import (
@@ -20,16 +22,6 @@ import (
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
-
-// RenderTestRequest configures poke test (renderer drag race + visual compare).
-type RenderTestRequest struct {
-	// Target is a Pokémon name or national dex number (default pikachu/25).
-	Target string
-	// Iterations for the timed drag race (default 30).
-	Iterations int
-	// SkipVisual suppresses ANSI dumps (bench-only).
-	SkipVisual bool
-}
 
 var renderTestSizes = []int{20, 28, 40}
 

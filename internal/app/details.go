@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
@@ -22,6 +23,11 @@ type detailCache interface {
 type dossierCache interface {
 	Dossier(context.Context, int) (domain.Dossier, error)
 	DossierWithSlug(context.Context, int, string) (domain.Dossier, error)
+}
+
+type dossierLoader interface {
+	DossierCore(context.Context, int, string) (cache.DossierCoreResult, error)
+	DossierExtras(context.Context, int, string, domain.Dossier) (domain.Dossier, error)
 }
 
 type coreWarmer interface {
@@ -45,6 +51,7 @@ type DetailService struct {
 	cache   detailCache
 	dossier dossierCache
 	core    coreWarmer
+	split   dossierLoader
 }
 
 func NewDetailService(cache detailCache) *DetailService {
@@ -55,7 +62,33 @@ func NewDetailService(cache detailCache) *DetailService {
 	if cw, ok := cache.(coreWarmer); ok {
 		d.core = cw
 	}
+	if dl, ok := cache.(dossierLoader); ok {
+		d.split = dl
+	}
 	return d
+}
+
+// LoadDossierCore returns species+pokemon for fast dialog paint.
+func (d *DetailService) LoadDossierCore(ctx context.Context, speciesID int, slug string) (domain.Dossier, bool, error) {
+	ctx = cache.WithInteractivePriority(ctx)
+	if d.split != nil {
+		res, err := d.split.DossierCore(ctx, speciesID, slug)
+		if err != nil {
+			return domain.Dossier{}, false, err
+		}
+		return res.Dossier, res.Complete, nil
+	}
+	full, err := d.LoadDossierWithSlug(ctx, speciesID, slug)
+	return full, true, err
+}
+
+// LoadDossierExtras fills evolution, encounters, and moves after core.
+func (d *DetailService) LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
+	ctx = cache.WithInteractivePriority(ctx)
+	if d.split != nil {
+		return d.split.DossierExtras(ctx, speciesID, slug, core)
+	}
+	return core, nil
 }
 
 // LoadDossier returns the full per-species dossier (Enter/detail path).

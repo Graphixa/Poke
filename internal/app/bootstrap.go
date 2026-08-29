@@ -42,9 +42,12 @@ func BuildServices(paths config.Paths, cfg config.Config, httpClient *http.Clien
 }
 
 func LoadServices(paths config.Paths) (*Services, error) {
-	cfg, err := config.Load(paths.ConfigFile)
+	cfg, warns, err := config.Load(paths.ConfigFile)
 	if err != nil {
 		return nil, err
+	}
+	for _, w := range warns {
+		fmt.Fprintf(os.Stderr, "config: %s\n", w)
 	}
 	return BuildServices(paths, cfg, nil, nil)
 }
@@ -74,9 +77,15 @@ func (c cacheCommands) Refresh(ctx context.Context) error {
 			if p.Total > 0 {
 				fmt.Fprintf(w, "Enriching types %d/%d %s\n", p.Done, p.Total, p.Message)
 			}
+		case "dataset":
+			if p.Message != "" {
+				fmt.Fprintf(w, "%s\n", p.Message)
+			} else if p.Total > 0 && p.Done > 0 {
+				fmt.Fprintf(w, "Building dataset %d/%d %s\n", p.Done, p.Total, p.Message)
+			}
 		}
 	}
-	if err := svc.Cache.Refresh(ctx, progress); err != nil {
+	if err := svc.Cache.RefreshDataset(ctx, progress); err != nil {
 		return err
 	}
 	if c.stdout != nil {
@@ -146,13 +155,17 @@ func (c cacheCommands) Update(ctx context.Context) error {
 			if p.Total > 0 {
 				fmt.Fprintf(w, "Enriching types %d/%d %s\n", p.Done, p.Total, p.Message)
 			}
+		case "dataset":
+			if p.Message != "" {
+				fmt.Fprintf(w, "%s\n", p.Message)
+			}
 		case "artwork":
 			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
 				fmt.Fprintf(w, "Downloading artwork %d/%d\n", p.Done, p.Total)
 			}
 		}
 	}
-	if err := svc.Cache.Refresh(ctx, progress); err != nil {
+	if err := svc.Cache.RefreshDataset(ctx, progress); err != nil {
 		return err
 	}
 	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
@@ -172,7 +185,6 @@ func (c cacheCommands) Update(ctx context.Context) error {
 }
 
 // Reset clears cache and deletes the config file so first-run setup runs again.
-// DEV: remove before release.
 func (c cacheCommands) Reset() error {
 	svc, err := c.services()
 	if err != nil {

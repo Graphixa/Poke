@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -27,6 +29,12 @@ func (systemClock) Now() time.Time { return time.Now() }
 type Store struct {
 	root  string
 	clock Clock
+
+	mu            sync.RWMutex
+	activeID      string
+	activeIDKnown bool
+
+	speciesIndexWrites atomic.Uint32
 }
 
 func NewStore(root string, clock Clock) *Store {
@@ -51,7 +59,48 @@ func (s *Store) Clear() error {
 	if err := os.RemoveAll(s.root); err != nil {
 		return fmt.Errorf("clear cache: %w", err)
 	}
+	s.invalidateActiveDatasetCache()
 	return s.EnsureRoot()
+}
+
+// getActiveDatasetID returns the cached active snapshot id when present.
+func (s *Store) getActiveDatasetID() (string, error) {
+	s.mu.RLock()
+	if s.activeIDKnown {
+		id := s.activeID
+		s.mu.RUnlock()
+		if id == "" {
+			return "", ErrNotFound
+		}
+		return id, nil
+	}
+	s.mu.RUnlock()
+
+	id, err := s.ActiveDatasetID()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.activeIDKnown = true
+		s.activeID = ""
+		return "", err
+	}
+	s.activeIDKnown = true
+	s.activeID = id
+	return id, nil
+}
+
+func (s *Store) setActiveDatasetID(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeIDKnown = true
+	s.activeID = id
+}
+
+func (s *Store) invalidateActiveDatasetCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeIDKnown = false
+	s.activeID = ""
 }
 
 func (s *Store) SpeciesIndex(context.Context) ([]domain.SpeciesSummary, error) {
@@ -77,6 +126,12 @@ func (s *Store) HasSpeciesIndex() bool {
 
 func (s *Store) Pokemon(_ context.Context, id int) (domain.Pokemon, error) {
 	var value domain.Pokemon
+	if datasetID, err := s.getActiveDatasetID(); err == nil {
+		if _, err := s.readJSON(s.SnapshotPokemonPath(datasetID, id), &value); err != nil {
+			return domain.Pokemon{}, err
+		}
+		return value, nil
+	}
 	if _, err := s.readJSON(s.pokemonPath(id), &value); err != nil {
 		return domain.Pokemon{}, err
 	}
@@ -85,6 +140,12 @@ func (s *Store) Pokemon(_ context.Context, id int) (domain.Pokemon, error) {
 
 func (s *Store) Species(_ context.Context, id int) (domain.Species, error) {
 	var value domain.Species
+	if datasetID, err := s.getActiveDatasetID(); err == nil {
+		if _, err := s.readJSON(s.SnapshotSpeciesPath(datasetID, id), &value); err != nil {
+			return domain.Species{}, err
+		}
+		return value, nil
+	}
 	if _, err := s.readJSON(s.speciesPath(id), &value); err != nil {
 		return domain.Species{}, err
 	}
@@ -93,6 +154,12 @@ func (s *Store) Species(_ context.Context, id int) (domain.Species, error) {
 
 func (s *Store) EvolutionChain(_ context.Context, id int) (domain.EvolutionTree, error) {
 	var value domain.EvolutionTree
+	if datasetID, err := s.getActiveDatasetID(); err == nil {
+		if _, err := s.readJSON(s.SnapshotEvolutionPath(datasetID, id), &value); err != nil {
+			return domain.EvolutionTree{}, err
+		}
+		return value, nil
+	}
 	if _, err := s.readJSON(s.evolutionPath(id), &value); err != nil {
 		return domain.EvolutionTree{}, err
 	}
@@ -101,6 +168,12 @@ func (s *Store) EvolutionChain(_ context.Context, id int) (domain.EvolutionTree,
 
 func (s *Store) Encounters(_ context.Context, pokemonID int) ([]domain.Encounter, error) {
 	var value []domain.Encounter
+	if datasetID, err := s.getActiveDatasetID(); err == nil {
+		if _, err := s.readJSON(s.SnapshotEncountersPath(datasetID, pokemonID), &value); err != nil {
+			return nil, err
+		}
+		return value, nil
+	}
 	if _, err := s.readJSON(s.encountersPath(pokemonID), &value); err != nil {
 		return nil, err
 	}
@@ -109,6 +182,12 @@ func (s *Store) Encounters(_ context.Context, pokemonID int) ([]domain.Encounter
 
 func (s *Store) Move(_ context.Context, id int) (domain.Move, error) {
 	var value domain.Move
+	if datasetID, err := s.getActiveDatasetID(); err == nil {
+		if _, err := s.readJSON(s.SnapshotMovePath(datasetID, id), &value); err != nil {
+			return domain.Move{}, err
+		}
+		return value, nil
+	}
 	if _, err := s.readJSON(s.movePath(id), &value); err != nil {
 		return domain.Move{}, err
 	}
@@ -189,6 +268,7 @@ func bytesTrimSpace(b []byte) []byte {
 }
 
 func (s *Store) StoreSpeciesIndex(_ context.Context, index []domain.SpeciesSummary, fetchedAt time.Time) error {
+	s.speciesIndexWrites.Add(1)
 	fillIndexSpritePaths(index)
 	if err := s.writeJSON(s.indexPath(), fetchedAt, index); err != nil {
 		return err
@@ -306,7 +386,7 @@ func (s *Store) readManifest() (manifest, error) {
 }
 
 func (s *Store) writeManifest(man manifest) error {
-	data, err := json.MarshalIndent(man, "", "  ")
+	data, err := json.Marshal(man)
 	if err != nil {
 		return err
 	}

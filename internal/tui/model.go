@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -26,6 +27,8 @@ type Options struct {
 	Context  context.Context
 	// DisableSprite forces the sprite panel off regardless of terminal size.
 	DisableSprite bool
+	// DossierWarmer pre-assembles dossier core or full dossiers in the background.
+	DossierWarmer DossierWarmer
 	// Warmer is an optional priority sprite prewarm service.
 	Warmer SpriteWarmer
 	// ArtworkWarmer is an optional background official-artwork downloader.
@@ -98,20 +101,36 @@ type Model struct {
 	selectionGen int
 	trackedID    int
 	resources    map[int]*resourceCache
+	lruIDs       []int
 
-	spriteCancel      context.CancelFunc
-	spriteReqID       int
-	spriteLoadSpecies int
-	prefetchCancel    context.CancelFunc
-	prefetchGen       int
-	nativePaintPending bool
-	nativeOverlayDirty bool
+	imageState   ImageState
+	imageSpinner bool
+	imageANSI        string
+	imageNative      bool
+	imageKind        string
+	imageCells       int
+	imageSpeciesID   int
+	imagePlaceholder bool
+	imageLoading     bool
+	spinner          spinner.Model
+
+	spriteCancel        context.CancelFunc
+	spriteReqID         int
+	spriteLoadSpecies   int
+	dossierCancel       context.CancelFunc
+	dossierLoadCtx      context.Context
+	dossierLoadSpecies  int
+	prefetchCancel      context.CancelFunc
+	prefetchGen         int
+	nativePaintPending  bool
+	nativeOverlayDirty  bool
 	nativeNeedsFollowUp bool
 	nativePaintSpecies  int
 	nativePaintCells    int
 	nativePaintANSI     string
 
 	warmer        SpriteWarmer
+	dossierWarmer DossierWarmer
 	artworkWarmer ArtworkWarmer
 	nativeWarmer  NativeWarmer
 	warmEvents    <-chan WarmProgress
@@ -145,6 +164,9 @@ func NewModel(opts Options) Model {
 			DisableSprite: opts.DisableSprite,
 		},
 		resources:     make(map[int]*resourceCache),
+		lruIDs:        nil,
+		imageState:    ImageBlank,
+		spinner:       spinner.New(),
 		browseView:    BrowseSprite,
 		dialogSection: DialogSummary,
 		keys:          defaultKeyMap(),
@@ -152,6 +174,7 @@ func NewModel(opts Options) Model {
 		search:        newSearchInput(),
 		dialogVP:      newContentViewport(),
 		warmer:        opts.Warmer,
+		dossierWarmer: opts.DossierWarmer,
 		artworkWarmer: opts.ArtworkWarmer,
 		nativeWarmer:  opts.NativeWarmer,
 		warmEvents:    opts.WarmEvents,
@@ -372,7 +395,9 @@ func (m *Model) bumpSelection() {
 	m.browseView = BrowseSprite
 	m.showDialog = false
 	m.dialogVP.GotoTop()
+	m.setImageBlank()
 	m.cancelSprite()
+	m.cancelDossier()
 	m.nativePaintPending = false
 	m.nativeNeedsFollowUp = false
 	if m.sprites != nil {
@@ -388,9 +413,11 @@ func (m *Model) ensureResource(id int) *resourceCache {
 	}
 	r, ok := m.resources[id]
 	if !ok {
+		m.evictResources(id)
 		r = &resourceCache{}
 		m.resources[id] = r
 	}
+	m.touchResource(id)
 	return r
 }
 

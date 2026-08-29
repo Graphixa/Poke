@@ -21,15 +21,18 @@ type fixedClock struct{ t time.Time }
 func (c fixedClock) Now() time.Time { return c.t }
 
 type fakeAPI struct {
-	list      []domain.SpeciesSummary
-	listErr   error
-	pokemon   map[int]domain.Pokemon
-	pokemonFn func(int) (domain.Pokemon, error)
-	species   map[int]domain.Species
-	inFlight  atomic.Int64
-	maxFlight atomic.Int64
-	delay     time.Duration
-	calls     atomic.Int64
+	list       []domain.SpeciesSummary
+	listErr    error
+	pokemon    map[int]domain.Pokemon
+	pokemonFn  func(int) (domain.Pokemon, error)
+	species    map[int]domain.Species
+	evolution  map[int]domain.EvolutionTree
+	encounters map[int][]domain.Encounter
+	moves      map[int]domain.Move
+	inFlight   atomic.Int64
+	maxFlight  atomic.Int64
+	delay      time.Duration
+	calls      atomic.Int64
 }
 
 func (f *fakeAPI) ListSpecies(context.Context) ([]domain.SpeciesSummary, error) {
@@ -67,16 +70,36 @@ func (f *fakeAPI) GetPokemon(ctx context.Context, id int) (domain.Pokemon, error
 	return p, nil
 }
 
-func (f *fakeAPI) GetSpecies(context.Context, int) (domain.Species, error) {
+func (f *fakeAPI) GetSpecies(_ context.Context, id int) (domain.Species, error) {
+	if f.species != nil {
+		if s, ok := f.species[id]; ok {
+			return s, nil
+		}
+	}
 	return domain.Species{}, pokeapi.ErrNotFound
 }
-func (f *fakeAPI) GetEvolutionChain(context.Context, int) (domain.EvolutionTree, error) {
+func (f *fakeAPI) GetEvolutionChain(_ context.Context, id int) (domain.EvolutionTree, error) {
+	if f.evolution != nil {
+		if tree, ok := f.evolution[id]; ok {
+			return tree, nil
+		}
+	}
 	return domain.EvolutionTree{}, pokeapi.ErrNotFound
 }
-func (f *fakeAPI) GetEncounters(context.Context, int) ([]domain.Encounter, error) {
+func (f *fakeAPI) GetEncounters(_ context.Context, id int) ([]domain.Encounter, error) {
+	if f.encounters != nil {
+		if enc, ok := f.encounters[id]; ok {
+			return enc, nil
+		}
+	}
 	return nil, pokeapi.ErrNotFound
 }
-func (f *fakeAPI) GetMove(context.Context, int) (domain.Move, error) {
+func (f *fakeAPI) GetMove(_ context.Context, id int) (domain.Move, error) {
+	if f.moves != nil {
+		if mv, ok := f.moves[id]; ok {
+			return mv, nil
+		}
+	}
 	return domain.Move{}, pokeapi.ErrNotFound
 }
 

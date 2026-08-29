@@ -21,9 +21,9 @@ type NativeSizeStatus struct {
 
 // NativeManifest records per-size native frame cache completeness.
 type NativeManifest struct {
-	Version  string                     `json:"version"`
-	Protocol string                     `json:"protocol"`
-	Sizes    map[int]NativeSizeStatus   `json:"sizes"`
+	Version  string                   `json:"version"`
+	Protocol string                   `json:"protocol"`
+	Sizes    map[int]NativeSizeStatus `json:"sizes"`
 }
 
 func (s *Store) nativeManifestPath() string {
@@ -55,7 +55,7 @@ func (s *Store) WriteNativeManifest(m NativeManifest) error {
 	if m.Sizes == nil {
 		m.Sizes = map[int]NativeSizeStatus{}
 	}
-	data, err := json.MarshalIndent(m, "", "  ")
+	data, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
@@ -178,7 +178,8 @@ func (s *Store) NativeSizeComplete(cells, indexTotal int) bool {
 // CountNativeSpeciesForCells counts unique species with native frames at cells.
 func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, error) {
 	w, h := sprite.FrameSizeFor(cells)
-	dimTag := fmt.Sprintf("-%dx%d-", w, h)
+	pxW, pxH := sprite.PixelSize(w, h)
+	dimTag := fmt.Sprintf("-%dx%d-", pxW, pxH)
 	protoNeedle := "image"
 	if protocol != "" {
 		protoNeedle = "image-" + protocol

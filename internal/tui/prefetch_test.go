@@ -108,12 +108,13 @@ func TestEnsureSpriteLoadTakesOverPrefetchLoading(t *testing.T) {
 
 	// Move to next row — syncSelectionLoads used to skip when loadingSprite was set
 	// by prefetch, then cancelPrefetch abandoned that work.
-	updated, cmd = m.Update(key("down"))
+	updated, _ = m.Update(key("down"))
 	m = updated.(tui.Model)
 	nextID, _ := m.SelectedID()
 	if nextID == firstID {
 		t.Fatal("expected cursor to move")
 	}
+	cmd = m.EnsureSelectionLoadsForTest()
 	if cmd == nil {
 		t.Fatal("expected selection load after landing on prefetched neighbor")
 	}

@@ -30,6 +30,10 @@ const (
 	// FrameWidth / FrameHeight are the preferred (max) frame dimensions.
 	FrameWidth  = MaxFrameSize
 	FrameHeight = MaxFrameSize / CellAspectY
+
+	// SixelCellPxW/H convert terminal cells to sixel pixels (monospace ≈ 8×16).
+	SixelCellPxW = 8
+	SixelCellPxH = 16
 )
 
 // FrameSizeFor returns cell width×height for a longest-side step.
@@ -129,6 +133,17 @@ func LargestFrameFitting(maxOuterW, maxOuterH int) int {
 		}
 	}
 	return best
+}
+
+// PixelSize converts a cell box to the pixel target used by sixel encoding.
+func PixelSize(cellsW, cellsH int) (pxW, pxH int) {
+	if cellsW < 1 {
+		cellsW = 1
+	}
+	if cellsH < 1 {
+		cellsH = 1
+	}
+	return cellsW * SixelCellPxW, cellsH * SixelCellPxH
 }
 
 // RightPanelWidth picks the right column width: about RightPanelSharePercent of

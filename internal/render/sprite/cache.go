@@ -33,28 +33,39 @@ func CacheKey(contentHash string, source SpriteSource, mode string, w, h int, co
 	if color == "" || color == ColorAuto {
 		color = ColorTrueColor
 	}
+	version := AlgorithmVersion
+	if mode == "chafa" {
+		version = AlgorithmVersion + "-" + ChafaRenderVersion
+	}
 	return fmt.Sprintf("%s-%s-%s-%dx%d-%s-%s-%s",
-		contentHash, source, mode, w, h, color, BackgroundHash(bg), AlgorithmVersion)
+		contentHash, source, mode, w, h, color, BackgroundHash(bg), version)
 }
 
 // ParseCacheKey splits a key produced by CacheKey.
 func ParseCacheKey(key string) (hash string, source SpriteSource, mode string, w, h int, color ColorMode, bgHash, version string, err error) {
 	parts := strings.Split(key, "-")
-	// hash + source + mode + dim + color + bg + version = at least 7 segments.
 	if len(parts) < 7 {
 		return "", "", "", 0, 0, "", "", "", fmt.Errorf("sprite: invalid cache key %q", key)
 	}
-	version = parts[len(parts)-1]
-	bgHash = parts[len(parts)-2]
-	color = ColorMode(parts[len(parts)-3])
-	dim := parts[len(parts)-4]
-	mode = parts[len(parts)-5]
-	source = SpriteSource(parts[len(parts)-6])
-	hash = strings.Join(parts[:len(parts)-6], "-")
-	if _, err = fmt.Sscanf(dim, "%dx%d", &w, &h); err != nil {
-		return "", "", "", 0, 0, "", "", "", fmt.Errorf("sprite: invalid dimensions in key %q", key)
+	dimIdx := -1
+	for i, p := range parts {
+		var tw, th int
+		if _, scanErr := fmt.Sscanf(p, "%dx%d", &tw, &th); scanErr == nil && tw > 0 && th > 0 {
+			dimIdx = i
+			w, h = tw, th
+			break
+		}
 	}
-	if hash == "" || mode == "" || w < 1 || h < 1 || bgHash == "" {
+	if dimIdx < 2 || dimIdx+3 >= len(parts) {
+		return "", "", "", 0, 0, "", "", "", fmt.Errorf("sprite: invalid cache key %q", key)
+	}
+	mode = parts[dimIdx-1]
+	source = SpriteSource(parts[dimIdx-2])
+	hash = strings.Join(parts[:dimIdx-2], "-")
+	color = ColorMode(parts[dimIdx+1])
+	bgHash = parts[dimIdx+2]
+	version = strings.Join(parts[dimIdx+3:], "-")
+	if hash == "" || mode == "" || bgHash == "" || version == "" {
 		return "", "", "", 0, 0, "", "", "", fmt.Errorf("sprite: invalid cache key %q", key)
 	}
 	return hash, source, mode, w, h, color, bgHash, version, nil
@@ -70,8 +81,9 @@ func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA) string {
 	if proto != "" {
 		tag = "image-" + proto
 	}
+	pxW, pxH := PixelSize(w, h)
 	return fmt.Sprintf("%s-%s-%dx%d-%s-%s",
-		contentHash, tag, w, h, BackgroundHash(bg), AlgorithmVersion)
+		contentHash, tag, pxW, pxH, BackgroundHash(bg), AlgorithmVersion)
 }
 
 // ParseNativeCacheKey splits a key produced by NativeCacheKey.

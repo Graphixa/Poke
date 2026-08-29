@@ -121,16 +121,25 @@ func (m Model) dialogContentLines() []string {
 	case DialogStats:
 		return formatStatsBars(r.Pokemon)
 	case DialogEvolution:
+		if !r.HasEvolution && r.loadingExtras {
+			return []string{"Loading…"}
+		}
 		if r.EvolutionErr != nil {
 			return []string{usererr.Message(r.EvolutionErr)}
 		}
 		return formatBrowseEvolutionLines(r.Evolution)
 	case DialogMoves:
+		if !r.HasMoves && r.loadingExtras {
+			return []string{"Loading…"}
+		}
 		if r.MovesErr != nil {
 			return []string{usererr.Message(r.MovesErr)}
 		}
 		return formatMoveLines(r.Moves)
 	case DialogLocations:
+		if !r.HasEncounters && r.loadingExtras {
+			return []string{"Loading…"}
+		}
 		if r.EncountersErr != nil {
 			return []string{usererr.Message(r.EncountersErr)}
 		}

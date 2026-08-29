@@ -3,10 +3,10 @@ plans/*
 !plans/MANUAL_RC.md
 .cross-build/
 dist/
-poke
-poke.exe
-pokedex
-pokedex.exe
+/poke
+/poke.exe
+/pokedex
+/pokedex.exe
 plans/DECISIONS.md
 plans/MANUAL_RC.md
 tui-example.md
@@ -15,3 +15,4 @@ poke-out.txt
 poke-err.txt
 sixel-smoke.*
 tui-layout-concept.md
+poke-test.exe

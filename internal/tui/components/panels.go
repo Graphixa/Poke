@@ -199,7 +199,11 @@ func FooterSplit(verbose bool, width int, rightStatus string) string {
 		leftText = " type • ↑↓ • Enter/i • Esc • q"
 	}
 	left := textwidth.PadRight(textwidth.Truncate(leftText, leftW), leftW)
-	return mutedSty().Render(left + right)
+	return footerSty().Render(left + right)
+}
+
+func footerSty() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(style.SecondaryColor())
 }
 
 func padRight(s string, w int) string {

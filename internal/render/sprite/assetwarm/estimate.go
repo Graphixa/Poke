@@ -20,7 +20,7 @@ const ArtworkSizeThreshold int64 = 100 * 1024 * 1024 // 100 MiB
 const FallbackBytesPerArtwork int64 = 120 * 1024
 
 const (
-	defaultSampleSize   = 16
+	defaultSampleSize    = 16
 	estimateProbeWorkers = 8
 )
 

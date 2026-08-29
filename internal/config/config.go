@@ -66,16 +66,16 @@ const (
 )
 
 type Cache struct {
-	AutoRefresh     bool     `yaml:"auto_refresh"`
-	IndexTTL        Duration `yaml:"index_ttl"`
-	DetailTTL       Duration `yaml:"detail_ttl"`
-	MoveTTL         Duration `yaml:"move_ttl"`
-	DossierPrewarm  string   `yaml:"dossier_prewarm"` // all | window | off
+	AutoRefresh    bool     `yaml:"auto_refresh"`
+	IndexTTL       Duration `yaml:"index_ttl"`
+	DetailTTL      Duration `yaml:"detail_ttl"`
+	MoveTTL        Duration `yaml:"move_ttl"`
+	DossierPrewarm string   `yaml:"dossier_prewarm"` // all | window | off
 }
 
 type Render struct {
-	// SpriteMode selects sprite output: auto | off.
-	// auto = native image when supported, else chafa, else placeholder.
+	// SpriteMode selects sprite output: auto | image | text | chafa | halfblock | off
+	// (legacy values kitty, iterm, sixel map to image; braille/ascii map to text).
 	SpriteMode string `yaml:"sprite_mode"`
 	// SpriteSource selects pixel (nearest) or artwork (filtered) resize/assets.
 	// Product default is artwork; pixel remains for tests and fallbacks.
@@ -111,7 +111,7 @@ func Default() Config {
 			IndexTTL:       Duration{24 * time.Hour},
 			DetailTTL:      Duration{7 * 24 * time.Hour},
 			MoveTTL:        Duration{30 * 24 * time.Hour},
-			DossierPrewarm: "off",
+			DossierPrewarm: "window",
 		},
 		Render: Render{
 			SpriteMode:    "auto",
@@ -148,10 +148,12 @@ func (c Config) Validate() error {
 	positiveDuration("cache.move_ttl", c.Cache.MoveTTL.Duration)
 	positiveDuration("network.timeout", c.Network.Timeout.Duration)
 	switch c.Render.SpriteMode {
-	case "", "auto", "off":
+	case "", "auto", "off", "image", "text", "kitty", "iterm", "sixel", "chafa", "halfblock":
 		// Allowed.
+	case "braille", "ascii":
+		// Migrated in Load.
 	default:
-		problems = append(problems, `render.sprite_mode must be one of "auto", "off"`)
+		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "text", "chafa", "halfblock", "off", "kitty", "iterm", "sixel"`)
 	}
 	switch c.Render.SpriteSource {
 	case "", "pixel", "artwork":
@@ -203,13 +205,36 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// EffectiveSpriteMode returns auto or off. Native image vs chafa is chosen by
-// capability detection, not config.
+// EffectiveSpriteMode returns auto, image, chafa, halfblock, or off.
 func (c Config) EffectiveSpriteMode() string {
-	if c.Render.SpriteMode == "off" {
+	switch c.Render.SpriteMode {
+	case "off":
 		return "off"
+	case "image", "kitty", "iterm", "sixel":
+		return "image"
+	case "text", "chafa":
+		return "chafa"
+	case "halfblock":
+		return "halfblock"
+	case "braille", "ascii":
+		return "halfblock"
+	default:
+		return "auto"
 	}
-	return "auto"
+}
+
+// MigrateDeprecatedRenderModes maps retired renderer values onto supported ones.
+func (c *Config) MigrateDeprecatedRenderModes() []string {
+	if c == nil {
+		return nil
+	}
+	var warns []string
+	switch c.Render.SpriteMode {
+	case "braille", "ascii":
+		warns = append(warns, `render.sprite_mode: "`+c.Render.SpriteMode+`" is deprecated; using "halfblock"`)
+		c.Render.SpriteMode = "halfblock"
+	}
+	return warns
 }
 
 // EffectiveSpritePrewarm returns all_pixel | window | off.
@@ -222,13 +247,13 @@ func (c Config) EffectiveSpritePrewarm() string {
 	}
 }
 
-// EffectiveDossierPrewarm returns all | window | off (browse ignores this; dossiers load on Enter).
+// EffectiveDossierPrewarm returns all | window | off.
 func (c Config) EffectiveDossierPrewarm() string {
 	switch c.Cache.DossierPrewarm {
 	case "all", "window", "off":
 		return c.Cache.DossierPrewarm
 	default:
-		return "off"
+		return "window"
 	}
 }
 
@@ -334,22 +359,24 @@ func (r DirectoryResolver) Resolve() (Paths, error) {
 
 // Load overlays a YAML file on the defaults. Unknown fields are ignored so
 // newer config files remain usable by older patch releases.
-func Load(path string) (Config, error) {
+// The returned warnings describe in-memory migration of deprecated values.
+func Load(path string) (Config, []string, error) {
 	cfg := Default()
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
+		return cfg, nil, nil
 	}
 	if err != nil {
-		return Config{}, fmt.Errorf("read config: %w", err)
+		return Config{}, nil, fmt.Errorf("read config: %w", err)
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("parse config: %w", err)
+		return Config{}, nil, fmt.Errorf("parse config: %w", err)
 	}
+	warns := cfg.MigrateDeprecatedRenderModes()
 	if err := cfg.Validate(); err != nil {
-		return Config{}, fmt.Errorf("validate config: %w", err)
+		return Config{}, nil, fmt.Errorf("validate config: %w", err)
 	}
-	return cfg, nil
+	return cfg, warns, nil
 }
 
 // Initialize atomically creates a default config and never replaces an
@@ -431,7 +458,7 @@ func Save(path string, cfg Config) error {
 
 // SetThemeName updates only the theme name and persists the full config.
 func SetThemeName(path, name string) error {
-	cfg, err := Load(path)
+	cfg, _, err := Load(path)
 	if err != nil {
 		return err
 	}

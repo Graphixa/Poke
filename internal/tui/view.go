@@ -85,31 +85,36 @@ func (m Model) browseData() views.BrowseData {
 		data.Selected = sel
 		data.HeaderTypes = style.TypeSummary(sel.Types)
 		data.HeaderGenus = ""
-		if r := m.resources[sel.ID]; r != nil {
-			if r.HasCore {
-				data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
-				data.HeaderGenus = r.Species.Genus
-			}
-			if r.HasSprite && !r.SpritePlaceholder && r.SpriteANSI != "" {
-				if r.SpriteNative {
-					// Sequence stays in the resource cache; View only reserves cells.
-					data.SpriteNative = true
-				} else {
-					data.SpriteANSI = r.SpriteANSI
-				}
+		if r := m.resources[sel.ID]; r != nil && r.HasCore {
+			data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
+			data.HeaderGenus = r.Species.Genus
+		}
+		if m.imageSpeciesID == sel.ID && !m.imagePlaceholder && m.imageANSI != "" {
+			if m.imageNative {
+				data.SpriteNative = true
+			} else {
+				data.SpriteANSI = m.imageANSI
 			}
 		}
 	}
 	if m.warmRight != "" && m.showsWarmHintInView() {
 		data.WarmHint = m.warmRight
 	}
+	data.ImageState = int(m.imageState)
+	if m.imageState == ImageLoading {
+		data.SpriteSpinner = m.spinnerView()
+	}
 	return data
 }
 
-// showsWarmHintInView is false while a native sprite is on screen. Footer warm
-// ticks would otherwise rewrite cells under Sixel and leave "warming N/M" ghosts.
+// showsWarmHintInView is false while a native sprite is on screen or a native
+// warmer is active. Footer "Cache" ticks rewrite cells under Sixel and leak as
+// glyphs mixed with overflow bands.
 // Must not call browseData/nativeOverlayReady (those call back into browseData).
 func (m Model) showsWarmHintInView() bool {
+	if m.nativeWarmer != nil {
+		return false
+	}
 	if m.showHelp || m.showDialog || m.quitting {
 		return true
 	}
@@ -117,8 +122,7 @@ func (m Model) showsWarmHintInView() bool {
 	if !ok {
 		return true
 	}
-	r := m.resources[sel.ID]
-	if r == nil || !r.HasSprite || r.SpritePlaceholder || !r.SpriteNative || r.SpriteANSI == "" {
+	if m.imageSpeciesID != sel.ID || m.imagePlaceholder || !m.imageNative || m.imageANSI == "" {
 		return true
 	}
 	lay := m.layout()

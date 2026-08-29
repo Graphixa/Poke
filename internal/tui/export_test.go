@@ -36,6 +36,28 @@ func (m Model) ResourceName(speciesID int) string {
 
 func (m Model) LayoutFlags() LayoutFlags { return m.layout() }
 
+// DossierCoreMsgForTest builds a core-loaded message for race tests.
+func DossierCoreMsgForTest(gen, speciesID int, dossier domain.Dossier, complete bool, err error) dossierCoreMsg {
+	return dossierCoreMsg{gen: gen, speciesID: speciesID, dossier: dossier, complete: complete, err: err}
+}
+
+// DossierExtrasMsgForTest builds an extras-loaded message for tests.
+func DossierExtrasMsgForTest(gen, speciesID int, dossier domain.Dossier, err error) dossierExtrasMsg {
+	return dossierExtrasMsg{gen: gen, speciesID: speciesID, dossier: dossier, err: err}
+}
+
+// ExtrasReadyForTest reports whether speciesID has all dossier extras loaded.
+func (m Model) ExtrasReadyForTest(speciesID int) bool {
+	r := m.resources[speciesID]
+	return r != nil && r.extrasReady()
+}
+
+// ExtrasLoadingForTest reports whether extras are in flight.
+func (m Model) ExtrasLoadingForTest(speciesID int) bool {
+	r := m.resources[speciesID]
+	return r != nil && r.loadingExtras
+}
+
 // DossierMsgForTest builds a dossier-loaded message for race tests.
 func DossierMsgForTest(gen, speciesID int, dossier domain.Dossier, err error) dossierMsg {
 	return dossierMsg{gen: gen, speciesID: speciesID, dossier: dossier, err: err}
@@ -97,6 +119,11 @@ func ClearCellRectForTest(row, col, w, h int) string {
 	return clearCellRect(row, col, w, h)
 }
 
+// NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite.
+func NativeOverlayPaintSeqForTest(row, col, artW, artH int, ansi string) string {
+	return nativeOverlayPaintSeq(row, col, artW, artH, ansi)
+}
+
 // BrowseWarmHintForTest returns the warm status shown in the browse footer (right segment).
 func (m Model) BrowseWarmHintForTest() string {
 	return m.warmRight
@@ -116,8 +143,7 @@ func (m Model) HasSpriteANSI() bool {
 	if !ok {
 		return false
 	}
-	r := m.resources[sel.ID]
-	return r != nil && r.HasSprite && r.SpriteANSI != ""
+	return m.imageSpeciesID == sel.ID && !m.imagePlaceholder && m.imageANSI != ""
 }
 
 // SelectedSpritePlaceholderForTest reports sticky placeholder state.
@@ -126,18 +152,12 @@ func (m Model) SelectedSpritePlaceholderForTest() bool {
 	if !ok {
 		return false
 	}
-	r := m.resources[sel.ID]
-	return r != nil && r.SpritePlaceholder
+	return m.imageSpeciesID == sel.ID && m.imagePlaceholder
 }
 
 // SelectedSpriteLoadingForTest reports whether a sprite encode is in flight.
 func (m Model) SelectedSpriteLoadingForTest() bool {
-	sel, ok := m.selected()
-	if !ok {
-		return false
-	}
-	r := m.resources[sel.ID]
-	return r != nil && r.loadingSprite
+	return m.imageLoading && m.spriteLoadSpecies != 0
 }
 
 // CurrentSpriteCells exposes the active sprite cell size for tests.
@@ -159,7 +179,7 @@ func (m *Model) EnsureDossierLoadForTest() tea.Cmd { return m.ensureDossierLoad(
 
 // EnsureSelectionLoadsForTest runs the selected-species sprite load only
 // (prefetch is tested separately).
-func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.ensureSpriteLoad() }
+func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.beginSpriteLoad() }
 
 // ScheduleSpritePrefetchForTest starts neighbor sprite encodes.
 func (m *Model) ScheduleSpritePrefetchForTest() tea.Cmd { return m.scheduleSpritePrefetch() }
@@ -171,4 +191,18 @@ func (m Model) PrefetchGenForTest() int { return m.prefetchGen }
 func (m *Model) BumpPrefetchGenForTest() {
 	m.cancelPrefetch()
 	m.prefetchGen++
+}
+
+func (m Model) ResourceCountForTest() int { return len(m.resources) }
+
+func (m Model) ImageStateForTest() int { return int(m.imageState) }
+
+func (m Model) ImageSpinnerForTest() bool { return m.imageSpinner }
+
+func (m Model) ImageSpeciesIDForTest() int { return m.imageSpeciesID }
+
+func (m Model) ImageANSILenForTest() int { return len(m.imageANSI) }
+
+func SpinnerDelayMsgForTest(gen, pokemonID int) tea.Msg {
+	return spinnerDelayMsg{Generation: gen, PokemonID: pokemonID}
 }

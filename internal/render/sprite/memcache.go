@@ -1,8 +1,8 @@
 package sprite
 
 import (
-	"sync"
 	"strings"
+	"sync"
 )
 
 // ansiMemCache is a tiny process-local LRU for rendered ANSI frames so

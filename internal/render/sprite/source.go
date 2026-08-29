@@ -106,7 +106,7 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 		if r.API == nil {
 			continue
 		}
-		data, err := download(ctx, r.API, tryURL)
+		data, err := downloadDeduped(ctx, r.API, tryURL)
 		if err != nil || len(data) == 0 || ValidatePNG(data) != nil {
 			continue
 		}

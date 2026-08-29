@@ -41,10 +41,64 @@ func (s Stats) Total() int {
 	return s.HP + s.Attack + s.Defense + s.SpecialAttack + s.SpecialDefense + s.Speed
 }
 
+// Sprites holds original source-image URLs (not rendered terminal output).
+// OfficialArtwork is sprites.other.official-artwork.front_default.
+// FrontDefault is the pixel sprite (sprites.front_default).
 type Sprites struct {
 	FrontDefault    string
 	HomeFront       string
 	OfficialArtwork string
+}
+
+// Images is the preferred name for source-asset URLs.
+type Images struct {
+	PixelFrontDefault string
+	OfficialArtwork   string
+}
+
+func (s Sprites) Images() Images {
+	return Images{
+		PixelFrontDefault: s.FrontDefault,
+		OfficialArtwork:   s.OfficialArtwork,
+	}
+}
+
+// BrowseEntry is the compact, in-memory row used for list selection.
+type BrowseEntry struct {
+	ID        int      `json:"id"`
+	Slug      string   `json:"slug"`
+	Name      string   `json:"name"`
+	Types     []string `json:"types"`
+	HP        int      `json:"hp"`
+	Attack    int      `json:"attack"`
+	Defence   int      `json:"defence"`
+	SpAttack  int      `json:"sp_attack"`
+	SpDefence int      `json:"sp_defence"`
+	Speed     int      `json:"speed"`
+}
+
+func (b BrowseEntry) Summary() SpeciesSummary {
+	return SpeciesSummary{
+		ID:          b.ID,
+		Slug:        b.Slug,
+		DisplayName: b.Name,
+		Types:       b.Types,
+	}
+}
+
+func BrowseEntryFrom(summary SpeciesSummary, stats Stats) BrowseEntry {
+	return BrowseEntry{
+		ID:        summary.ID,
+		Slug:      summary.Slug,
+		Name:      summary.DisplayName,
+		Types:     summary.Types,
+		HP:        stats.HP,
+		Attack:    stats.Attack,
+		Defence:   stats.Defense,
+		SpAttack:  stats.SpecialAttack,
+		SpDefence: stats.SpecialDefense,
+		Speed:     stats.Speed,
+	}
 }
 
 type Species struct {

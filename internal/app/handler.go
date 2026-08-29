@@ -145,17 +145,9 @@ func (h *Handler) ensureIndex(ctx context.Context) ([]domain.SpeciesSummary, err
 			}
 		}
 	}
-	index, stale, err := svc.Cache.EnsureIndex(ctx, progress)
+	index, _, err := svc.Cache.EnsureIndex(ctx, progress)
 	if err != nil {
 		return nil, err
-	}
-	if stale {
-		if h.Stderr != nil {
-			fmt.Fprintln(h.Stderr, "Index is stale; refreshing in the background…")
-		}
-	}
-	if svc.Cache.ShouldBackgroundRefresh(stale) {
-		svc.Cache.BackgroundRefresh(ctx, nil)
 	}
 	return index, nil
 }

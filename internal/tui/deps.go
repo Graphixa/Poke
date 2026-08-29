@@ -15,12 +15,19 @@ type LevelUpMove struct {
 // DetailSource loads dossier data for the Enter/detail overlay.
 // Browse highlight must not call LoadDossier — only Enter/i does.
 type DetailSource interface {
-	LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error)
+	LoadDossierCore(ctx context.Context, speciesID int, slug string) (domain.Dossier, bool, error)
+	LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error)
 }
 
 // PokemonSource loads default-variety Pokémon (including sprite URLs) for art.
 type PokemonSource interface {
 	PokemonForSprite(ctx context.Context, speciesID int) (domain.Pokemon, error)
+}
+
+// DossierWarmer pre-assembles dossiers or core pairs in the background.
+type DossierWarmer interface {
+	Prioritize(speciesID int)
+	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
 }
 
 // SpriteRenderer produces terminal sprite art for a Pokémon panel.
@@ -29,7 +36,7 @@ type SpriteRenderer interface {
 	Render(ctx context.Context, pokemon domain.Pokemon, cells int) (ansi string, usePlaceholder, native bool, assetKind string)
 	// ClearNative clears prior native graphics placements (Kitty/iTerm/Sixel). May be a no-op.
 	ClearNative()
-	// ClearNativeRegion returns a scoped native clear sequence for WxH cells (Sixel blank fill).
+	// ClearNativeRegion emits a scoped native clear for a WxH cell art box.
 	ClearNativeRegion(cellsW, cellsH int) string
 	// InvalidateSpecies drops in-memory encode caches for a species (artwork pop-in).
 	InvalidateSpecies(speciesID int)

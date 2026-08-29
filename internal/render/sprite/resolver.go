@@ -28,7 +28,7 @@ func (r *ModeResolver) Resolve(caps Capabilities, preference RenderMode) Rendere
 	switch pref {
 	case ModeOff, ModePlaceholder:
 		return r.findByName("placeholder")
-	case ModeImage, ModeChafa:
+	case ModeImage, ModeChafa, ModeHalfblock:
 		if rend := r.findPreferred(pref); rend != nil {
 			return rend
 		}
@@ -84,6 +84,8 @@ func skipBefore(mode RenderMode) string {
 		return "image"
 	case ModeChafa:
 		return "chafa"
+	case ModeHalfblock:
+		return "halfblock"
 	default:
 		return ""
 	}

@@ -101,7 +101,7 @@ func TestSixelPipelineProfile(t *testing.T) {
 
 		var (
 			decodeDs, prepDs, sixelDs, fullNativeDs, chafaDs []time.Duration
-			sixelBytes, nativeBytes, chafaBytes             int
+			sixelBytes, nativeBytes, chafaBytes              int
 		)
 
 		// Warm one pass so first-JIT noise is out of medians.

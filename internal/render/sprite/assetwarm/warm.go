@@ -39,9 +39,9 @@ type ProgressFunc func(cache.Progress)
 type Mode string
 
 const (
-	ModePixel    Mode = "pixel"
-	ModeArtwork  Mode = "artwork"
-	ModeOff      Mode = "off"
+	ModePixel   Mode = "pixel"
+	ModeArtwork Mode = "artwork"
+	ModeOff     Mode = "off"
 )
 
 // Config configures an asset warm Service.
@@ -53,7 +53,7 @@ type Config struct {
 	Index    []domain.SpeciesSummary
 	Progress ProgressFunc
 	// Stage label reported in Progress (default depends on Mode).
-	Stage string
+	Stage   string
 	Message string
 }
 
