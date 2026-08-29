@@ -95,9 +95,11 @@ func (m *memStore) StoreNative(_ context.Context, key, frame string) error {
 type fakeAPI struct {
 	data map[string][]byte
 	err  error
+	gets int
 }
 
 func (f *fakeAPI) GetSprite(_ context.Context, url string) (io.ReadCloser, error) {
+	f.gets++
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -571,5 +573,122 @@ func TestEngineChafaWarmSkipsPNGRead(t *testing.T) {
 	}
 	if store.pngReads != 1 {
 		t.Fatalf("warm chafa must not re-read PNG, pngReads=%d", store.pngReads)
+	}
+}
+
+func TestLookupCachedMissDoesNotHTTPOrReadPNG(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{1, 2, 3, 255})
+	api := &fakeAPI{data: map[string][]byte{"https://example/s.png": png}}
+	engine := &sprite.Engine{
+		Source:     &sprite.SourceResolver{Store: store, API: api},
+		Modes:      sprite.NewModeResolver(spritechafa.Renderer{}, placeholder.Renderer{}),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeChafa,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+	}
+	poke := domain.Pokemon{
+		ID: 4, Slug: "charmander", DisplayName: "Charmander",
+		Sprites: domain.Sprites{FrontDefault: "https://example/s.png"},
+	}
+	res, hit := engine.LookupCached(context.Background(), poke, 24)
+	if hit || res.ANSI != "" {
+		t.Fatalf("expected miss, got hit=%v %+v", hit, res)
+	}
+	if api.gets != 0 {
+		t.Fatalf("LookupCached must not HTTP, gets=%d", api.gets)
+	}
+	if store.pngReads != 0 {
+		t.Fatalf("LookupCached must not read PNG, pngReads=%d", store.pngReads)
+	}
+}
+
+func TestLookupCachedHitsMemWithoutEncode(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			native,
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeAuto,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+		HDOff:      true,
+	}
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	cold := engine.RenderCold(context.Background(), poke, 24)
+	if !cold.Native || cold.ANSI != "NATIVE" {
+		t.Fatalf("cold: %+v", cold)
+	}
+	if native.renders != 1 {
+		t.Fatalf("renders=%d after cold", native.renders)
+	}
+	pngReads := store.pngReads
+	res, hit := engine.LookupCached(context.Background(), poke, 24)
+	if !hit || res.ANSI != "NATIVE" || !res.Native {
+		t.Fatalf("lookup: hit=%v %+v", hit, res)
+	}
+	if native.renders != 1 {
+		t.Fatalf("lookup must not encode, renders=%d", native.renders)
+	}
+	if store.pngReads != pngReads {
+		t.Fatalf("lookup must not read PNG, pngReads=%d", store.pngReads)
+	}
+}
+
+func TestLookupCachedHitsDiskOnFreshEngine(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	mk := func() *sprite.Engine {
+		return &sprite.Engine{
+			Source: &sprite.SourceResolver{Store: store},
+			Modes: sprite.NewModeResolver(
+				native,
+				spritechafa.Renderer{},
+				placeholder.Renderer{},
+			),
+			Artefacts:  store,
+			Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+			Preference: sprite.ModeAuto,
+			Color:      sprite.ColorTrueColor,
+			SourceKind: sprite.SourcePixel,
+			Background: color.RGBA{A: 255},
+			HDOff:      true,
+		}
+	}
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	if res := mk().RenderCold(context.Background(), poke, 24); !res.Native {
+		t.Fatalf("cold: %+v", res)
+	}
+	if native.renders != 1 {
+		t.Fatalf("renders=%d after cold", native.renders)
+	}
+	pngReads := store.pngReads
+	res, hit := mk().LookupCached(context.Background(), poke, 24)
+	if !hit || res.ANSI != "NATIVE" || !res.Native {
+		t.Fatalf("disk lookup: hit=%v %+v", hit, res)
+	}
+	if native.renders != 1 {
+		t.Fatalf("disk lookup must not encode, renders=%d", native.renders)
+	}
+	if store.pngReads != pngReads {
+		t.Fatalf("disk lookup must not read PNG, pngReads=%d", store.pngReads)
 	}
 }

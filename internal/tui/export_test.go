@@ -203,6 +203,8 @@ func (m Model) ImageSpeciesIDForTest() int { return m.imageSpeciesID }
 
 func (m Model) ImageANSILenForTest() int { return len(m.imageANSI) }
 
-func SpinnerDelayMsgForTest(gen, pokemonID int) tea.Msg {
-	return spinnerDelayMsg{Generation: gen, PokemonID: pokemonID}
+// ForceSpriteLoadForTest cancels any in-flight encode and starts a new one.
+func (m *Model) ForceSpriteLoadForTest() tea.Cmd {
+	m.cancelSprite()
+	return m.beginSpriteLoad()
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 // LevelUpMove is a Moves-tab row (level + move metadata).
@@ -33,7 +34,11 @@ type DossierWarmer interface {
 // SpriteRenderer produces terminal sprite art for a Pokémon panel.
 // Implementations must be safe to call from Bubble Tea commands and honour ctx.
 type SpriteRenderer interface {
+	// LookupCached is a cheap mem/disk artefact probe. It must not HTTP, decode PNG, or encode.
+	LookupCached(ctx context.Context, pokemon domain.Pokemon, cells int) (sprite.RenderResult, bool)
 	Render(ctx context.Context, pokemon domain.Pokemon, cells int) (ansi string, usePlaceholder, native bool, assetKind string)
+	// RenderCold encodes a frame. Expensive; call only after LookupCached misses.
+	RenderCold(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
 	// ClearNative clears prior native graphics placements (Kitty/iTerm/Sixel). May be a no-op.
 	ClearNative()
 	// ClearNativeRegion emits a scoped native clear for a WxH cell art box.

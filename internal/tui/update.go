@@ -31,26 +31,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nativeOverlayMsg:
 		return m.emitNativeOverlay(msg.followUp)
 
-	case selectionDebounceMsg:
-		if msg.Generation != m.selectionGen || !m.isSelectedID(msg.PokemonID) {
-			return m, nil
-		}
-		return m, m.ensureSpriteLoad()
-
-	case spinnerDelayMsg:
-		if msg.Generation != m.selectionGen || !m.isSelectedID(msg.PokemonID) {
-			return m, nil
-		}
-		if m.imageState == ImageReady {
-			return m, nil
-		}
-		if !m.imageLoading {
-			return m, nil
-		}
-		m.imageState = ImageLoading
-		m.imageSpinner = true
-		return m, func() tea.Msg { return m.spinner.Tick() }
-
 	case spinner.TickMsg:
 		if m.imageState != ImageLoading {
 			return m, nil
@@ -182,30 +162,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.imageLoading = false
-		m.imageSpeciesID = msg.speciesID
-		m.imageCells = msg.cells
-		if msg.placeholder || msg.ansi == "" {
-			m.imageANSI = ""
-			m.imageNative = false
-			m.imageKind = ""
-			m.imagePlaceholder = true
-			m.imageState = ImageUnavailable
-			m.imageSpinner = false
-			if m.isSelectedID(msg.speciesID) {
-				m.markNativeOverlayDirty()
-			}
-		} else {
-			m.imageANSI = msg.ansi
-			m.imageNative = msg.native
-			m.imageKind = msg.assetKind
-			m.imagePlaceholder = false
-			m.imageState = ImageReady
-			m.imageSpinner = false
-			if msg.native {
-				m.markNativeOverlayDirtyFollowUp()
-			}
-		}
+		m.applySpriteFrame(msg.speciesID, msg.cells, sprite.RenderResult{
+			ANSI:           msg.ansi,
+			UsePlaceholder: msg.placeholder,
+			Native:         msg.native,
+			AssetKind:      msg.assetKind,
+		})
 		return m, nil
 
 	case warmProgressMsg:
@@ -452,8 +414,7 @@ func (m *Model) notifyWarmer() {
 }
 
 func (m *Model) ensureSelectionLoads() tea.Cmd {
-	// Browse: blank + debounce sprite load. Prefetch stays optional/low priority.
-	return tea.Batch(m.scheduleSelectionDebounce(), m.scheduleSpritePrefetch())
+	return tea.Batch(m.ensureSpriteLoad(), m.scheduleSpritePrefetch())
 }
 
 func (m *Model) ensureDossierLoad() tea.Cmd {
@@ -589,11 +550,11 @@ func (m *Model) ensureSpriteLoad() tea.Cmd {
 	if load == nil {
 		return nil
 	}
-	id := 0
-	if sel, ok := m.selected(); ok {
-		id = sel.ID
+	if m.imageState == ImageLoading {
+		tick := m.spinner.Tick()
+		return tea.Batch(load, func() tea.Msg { return tick })
 	}
-	return tea.Batch(load, m.scheduleSpinnerDelay(m.selectionGen, id))
+	return load
 }
 
 func (m *Model) beginSpriteLoad() tea.Cmd {
@@ -633,18 +594,26 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 	if m.imageLoading && m.spriteLoadSpecies == sel.ID && m.spriteCancel != nil {
 		return nil
 	}
+
+	pokemon := r.Pokemon
+	if pokemon.ID == 0 {
+		pokemon = domain.Pokemon{ID: sel.ID, Slug: sel.Slug, DisplayName: sel.DisplayName}
+	}
+	if cached, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit && !cached.UsePlaceholder && cached.ANSI != "" {
+		m.cancelSprite()
+		m.applySpriteFrame(sel.ID, cells, cached)
+		return nil
+	}
+
 	m.cancelSprite()
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.spriteCancel = cancel
 	m.spriteReqID++
 	reqID := m.spriteReqID
 	m.spriteLoadSpecies = sel.ID
-	m.imageLoading = true
+	m.clearNativeDisplay()
+	m.setImageLoading()
 
-	pokemon := r.Pokemon
-	if pokemon.ID == 0 {
-		pokemon = domain.Pokemon{ID: sel.ID, Slug: sel.Slug, DisplayName: sel.DisplayName}
-	}
 	return loadSpriteCmd(ctx, m.sprites, m.pokemonSrc, reqID, m.selectionGen, sel.ID, cells, pokemon)
 }
 

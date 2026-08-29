@@ -114,10 +114,6 @@ func TestEnsureSpriteLoadTakesOverPrefetchLoading(t *testing.T) {
 	if nextID == firstID {
 		t.Fatal("expected cursor to move")
 	}
-	cmd = m.EnsureSelectionLoadsForTest()
-	if cmd == nil {
-		t.Fatal("expected selection load after landing on prefetched neighbor")
-	}
 	if !m.SelectedSpriteLoadingForTest() {
 		t.Fatal("expected selection sprite load in flight after prefetch takeover")
 	}

@@ -122,16 +122,16 @@ func loadSpriteCmd(ctx context.Context, src SpriteRenderer, pokemonSrc PokemonSo
 				pokemon = p
 			}
 		}
-		ansi, placeholder, native, kind := src.Render(ctx, pokemon, cells)
+		res := src.RenderCold(ctx, pokemon, cells)
 		return spriteMsg{
 			reqID:       reqID,
 			gen:         gen,
 			speciesID:   speciesID,
 			cells:       cells,
-			ansi:        ansi,
-			placeholder: placeholder || ansi == "",
-			native:      native && !placeholder && ansi != "",
-			assetKind:   kind,
+			ansi:        res.ANSI,
+			placeholder: res.UsePlaceholder || res.ANSI == "",
+			native:      res.Native && !res.UsePlaceholder && res.ANSI != "",
+			assetKind:   res.AssetKind,
 		}
 	}
 }

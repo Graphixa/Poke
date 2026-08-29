@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui"
 )
@@ -17,7 +18,21 @@ type fakeSprites struct {
 	calls   atomic.Int32
 	block   chan struct{}
 	ansi    string
+	cached  string
+	native  bool
 	started chan struct{}
+}
+
+func (f *fakeSprites) LookupCached(context.Context, domain.Pokemon, int) (sprite.RenderResult, bool) {
+	if f == nil || f.cached == "" {
+		return sprite.RenderResult{}, false
+	}
+	return sprite.RenderResult{ANSI: f.cached, Native: f.native, AssetKind: "artwork"}, true
+}
+
+func (f *fakeSprites) RenderCold(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
+	ansi, ph, native, kind := f.Render(ctx, pokemon, cells)
+	return sprite.RenderResult{ANSI: ansi, UsePlaceholder: ph, Native: native, AssetKind: kind}
 }
 
 func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (string, bool, bool, string) {
@@ -122,7 +137,7 @@ func TestSpriteCancelOnSelectionChange(t *testing.T) {
 	})
 	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-	cmd = m.EnsureSelectionLoadsForTest()
+	cmd = m.ForceSpriteLoadForTest()
 	if cmd == nil {
 		t.Fatal("expected sprite cmd")
 	}
@@ -335,10 +350,13 @@ func TestSelectionChangeBlanksImagePane(t *testing.T) {
 	updated, _ = m.Update(key("down"))
 	m = updated.(tui.Model)
 	if m.HasSpriteANSI() {
-		t.Fatal("image pane must be blank after selection change")
+		t.Fatal("image pane must not keep prior species after selection change")
 	}
-	if m.ImageStateForTest() != 0 {
-		t.Fatalf("image state=%d want blank", m.ImageStateForTest())
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatalf("image state=%d want loading on cold miss", m.ImageStateForTest())
+	}
+	if !m.ImageSpinnerForTest() {
+		t.Fatal("cold miss must show spinner immediately")
 	}
 }
 
@@ -385,7 +403,7 @@ func TestResourceCacheLRUBounded(t *testing.T) {
 	}
 }
 
-func TestSpinnerAppearsAfterDelayNotDuringDebounce(t *testing.T) {
+func TestColdMissShowsSpinnerImmediately(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART", block: make(chan struct{})}
 	m := tui.NewModel(tui.Options{
@@ -395,18 +413,139 @@ func TestSpinnerAppearsAfterDelayNotDuringDebounce(t *testing.T) {
 	})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-	cmd := m.EnsureSelectionLoadsForTest()
-	if cmd == nil {
-		t.Fatal("expected sprite load")
+	_ = m.EnsureSelectionLoadsForTest()
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatalf("image state=%d want loading immediately on cold miss", m.ImageStateForTest())
 	}
-	if m.ImageStateForTest() != 0 {
-		t.Fatalf("image state=%d want blank until spinner delay", m.ImageStateForTest())
+	if !m.ImageSpinnerForTest() {
+		t.Fatal("cold miss must show spinner")
 	}
-	id, _ := m.SelectedID()
-	updated, _ = m.Update(tui.SpinnerDelayMsgForTest(m.SelectionGen(), id))
+	if !m.SelectedSpriteLoadingForTest() {
+		t.Fatal("cold miss must start encode")
+	}
+	close(sprites.block)
+}
+
+func TestWarmCacheHitPaintsImmediatelyWithoutSpinner(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{cached: "WARM", ansi: "COLD"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-	if m.ImageStateForTest() != 1 {
-		t.Fatalf("image state=%d want loading after spinner delay", m.ImageStateForTest())
+	_ = m.EnsureSelectionLoadsForTest()
+	if m.ImageStateForTest() != int(tui.ImageReady) {
+		t.Fatalf("image state=%d want ready on warm hit", m.ImageStateForTest())
+	}
+	if m.ImageSpinnerForTest() {
+		t.Fatal("warm hit must not show spinner")
+	}
+	if !m.HasSpriteANSI() || m.ImageANSILenForTest() != len("WARM") {
+		t.Fatal("warm hit must paint cached frame immediately")
+	}
+	if sprites.calls.Load() != 0 {
+		t.Fatalf("warm hit must not cold-render, calls=%d", sprites.calls.Load())
+	}
+
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if m.ImageStateForTest() != int(tui.ImageReady) {
+		t.Fatalf("after move image state=%d want ready", m.ImageStateForTest())
+	}
+	if m.ImageSpinnerForTest() {
+		t.Fatal("warm navigation must not show spinner")
+	}
+	if sprites.calls.Load() != 0 {
+		t.Fatalf("warm navigation must not cold-render, calls=%d", sprites.calls.Load())
+	}
+}
+
+func TestSelectionStartsSpriteLoadImmediately(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART", block: make(chan struct{})}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	firstID, _ := m.SelectedID()
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	nextID, _ := m.SelectedID()
+	if nextID == firstID {
+		t.Fatal("expected cursor to move")
+	}
+	if m.HasSpriteANSI() {
+		t.Fatal("selection change must blank image pane")
+	}
+	if !m.SelectedSpriteLoadingForTest() {
+		t.Fatal("selection must start sprite load immediately, not after a debounce")
+	}
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatalf("image state=%d want loading", m.ImageStateForTest())
+	}
+	if !m.ImageSpinnerForTest() {
+		t.Fatal("cold selection must show spinner immediately")
+	}
+	close(sprites.block)
+}
+
+func TestRepeatedSelectionStartsSpriteLoadImmediately(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART", block: make(chan struct{})}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	for i := 0; i < 3; i++ {
+		updated, _ = m.Update(key("down"))
+		m = updated.(tui.Model)
+		if !m.SelectedSpriteLoadingForTest() {
+			t.Fatalf("keydown %d: sprite load must start immediately", i+1)
+		}
+		if m.HasSpriteANSI() {
+			t.Fatal("held navigation must not keep prior image")
+		}
+	}
+	close(sprites.block)
+}
+
+func TestSearchSelectionStartsSpriteLoadImmediately(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART", block: make(chan struct{})}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	firstID, _ := m.SelectedID()
+	updated, _ = m.Update(key("p"))
+	m = updated.(tui.Model)
+	if m.Query() != "p" {
+		t.Fatalf("query = %q", m.Query())
+	}
+	nextID, _ := m.SelectedID()
+	if nextID == firstID {
+		t.Fatal("expected filter to change selection")
+	}
+	if m.HasSpriteANSI() {
+		t.Fatal("search selection change must blank image pane")
+	}
+	if !m.SelectedSpriteLoadingForTest() {
+		t.Fatal("search selection must start sprite load immediately")
 	}
 	close(sprites.block)
 }

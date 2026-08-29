@@ -129,8 +129,81 @@ type NativeSpeciesStore interface {
 
 // Render converts a sprite into a frame. cells is the square edge requested by
 // the TUI (bucketed); when ≤0 the engine's configured/default frame size is used.
+// Warm frames are served from LookupCached; misses fall through to RenderCold.
 func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
+	if res, hit := e.LookupCached(ctx, pokemon, cells); hit {
+		return res
+	}
+	return e.RenderCold(ctx, pokemon, cells)
+}
+
+// LookupCached returns a previously rendered frame from the process-local LRU
+// or disk derived/native artefact cache. It never reads original PNG, decodes,
+// resizes, quantises, encodes, or performs HTTP.
+func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells int) (RenderResult, bool) {
+	if e == nil || e.Modes == nil || e.Source == nil {
+		return RenderResult{}, false
+	}
+	if err := ctx.Err(); err != nil {
+		return RenderResult{}, false
+	}
+	if e.Preference == ModeOff {
+		return RenderResult{}, false
+	}
+	fw, fh := e.frameSize()
+	if cells >= MinFrameSize {
+		fw, fh = FrameSizeFor(cells)
+	}
+	rend := e.Modes.Resolve(e.Caps, e.Preference)
+	if rend == nil || rend.Name() == "placeholder" {
+		return RenderResult{}, false
+	}
+	opts := e.renderOptions(displayName(pokemon), fw, fh, "", "")
+	for _, ref := range e.lookupAssetRefs(ctx, pokemon, rend.Name() == "image") {
+		if !ref.Ready || ref.Hash == "" {
+			continue
+		}
+		opts.ContentHash = ref.Hash
+		kind := ref.Kind
+		if kind == "" {
+			kind = namedKindForTier(AssetTierHD)
+			if ref.Source == SourcePixel {
+				kind = namedKindForTier(AssetTierPixel)
+			}
+		}
+		if hit, result := e.lookupDerived(ctx, rend, opts, ref.Hash, kind); hit {
+			return result, true
+		}
+	}
+	return RenderResult{}, false
+}
+
+// RenderCold encodes a frame. Callers must treat this as expensive: PNG read,
+// decode, resize, and backend encode may all run. Prefer LookupCached first.
+func (e *Engine) RenderCold(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
 	return e.renderAtQuality(ctx, pokemon, cells, "", "")
+}
+
+func (e *Engine) lookupAssetRefs(ctx context.Context, pokemon domain.Pokemon, native bool) []AssetRef {
+	if native {
+		ref := e.resolveNativeAssetRef(ctx, pokemon)
+		if ref.Ready && ref.Hash != "" {
+			return []AssetRef{ref}
+		}
+		return nil
+	}
+	tier := AssetTierHD
+	if e.SourceKind == SourcePixel {
+		tier = AssetTierPixel
+	}
+	if e.HDOff {
+		tier = AssetTierPixel
+	}
+	ref := e.Source.ResolveAsset(ctx, pokemon, tier)
+	if ref.Ready && ref.Hash != "" {
+		return []AssetRef{ref}
+	}
+	return nil
 }
 
 // WarmRender forces the chafa backend at interactive (fast) quality for

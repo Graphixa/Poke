@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"time"
-
-	tea "charm.land/bubbletea/v2"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 // ImageState is the sprite pane visual state machine.
@@ -16,21 +14,7 @@ const (
 	ImageUnavailable
 )
 
-const (
-	selectionDebounce = 50 * time.Millisecond
-	spinnerThreshold  = 100 * time.Millisecond
-	detailCacheLimit  = 16
-)
-
-type selectionDebounceMsg struct {
-	Generation int
-	PokemonID  int
-}
-
-type spinnerDelayMsg struct {
-	Generation int
-	PokemonID  int
-}
+const detailCacheLimit = 16
 
 func (m *Model) clearImagePane() {
 	m.imageANSI = ""
@@ -48,26 +32,38 @@ func (m *Model) setImageBlank() {
 	m.clearImagePane()
 }
 
-func (m *Model) scheduleSelectionDebounce() tea.Cmd {
-	m.setImageBlank()
-	m.cancelSprite()
-	if m.sprites != nil {
-		m.sprites.ClearNative()
-	}
-	gen := m.selectionGen
-	id := 0
-	if sel, ok := m.selected(); ok {
-		id = sel.ID
-	}
-	return tea.Tick(selectionDebounce, func(time.Time) tea.Msg {
-		return selectionDebounceMsg{Generation: gen, PokemonID: id}
-	})
+func (m *Model) setImageLoading() {
+	m.clearImagePane()
+	m.imageState = ImageLoading
+	m.imageSpinner = true
+	m.imageLoading = true
 }
 
-func (m *Model) scheduleSpinnerDelay(gen, pokemonID int) tea.Cmd {
-	return tea.Tick(spinnerThreshold, func(time.Time) tea.Msg {
-		return spinnerDelayMsg{Generation: gen, PokemonID: pokemonID}
-	})
+func (m *Model) applySpriteFrame(speciesID, cells int, res sprite.RenderResult) {
+	m.imageLoading = false
+	m.imageSpeciesID = speciesID
+	m.imageCells = cells
+	if res.UsePlaceholder || res.ANSI == "" {
+		m.imageANSI = ""
+		m.imageNative = false
+		m.imageKind = ""
+		m.imagePlaceholder = true
+		m.imageState = ImageUnavailable
+		m.imageSpinner = false
+		if m.isSelectedID(speciesID) {
+			m.markNativeOverlayDirty()
+		}
+		return
+	}
+	m.imageANSI = res.ANSI
+	m.imageNative = res.Native
+	m.imageKind = res.AssetKind
+	m.imagePlaceholder = false
+	m.imageState = ImageReady
+	m.imageSpinner = false
+	if res.Native {
+		m.markNativeOverlayDirtyFollowUp()
+	}
 }
 
 func (m Model) spinnerView() string {
