@@ -62,21 +62,49 @@ func (s *Store) WriteNativeManifest(m NativeManifest) error {
 	return writeAtomic(s.nativeManifestPath(), data, 0o600)
 }
 
-// EnsureNativeManifest resets the manifest when version/protocol changes.
+// EnsureNativeManifest resets the manifest when version/protocol changes and
+// heals per-size counts when version/protocol already match.
 func (s *Store) EnsureNativeManifest(version, protocol string) error {
 	m, err := s.ReadNativeManifest()
 	if err != nil {
 		return err
 	}
-	if m.Version == version && m.Protocol == protocol {
-		return nil
+	if m.Version != version || m.Protocol != protocol {
+		m = NativeManifest{
+			Version:  version,
+			Protocol: protocol,
+			Sizes:    map[int]NativeSizeStatus{},
+		}
+		return s.WriteNativeManifest(m)
 	}
-	m = NativeManifest{
-		Version:  version,
-		Protocol: protocol,
-		Sizes:    map[int]NativeSizeStatus{},
+	for _, cells := range sprite.FrameSteps() {
+		if _, err := s.healNativeSize(cells); err != nil {
+			return err
+		}
 	}
-	return s.WriteNativeManifest(m)
+	return nil
+}
+
+func (s *Store) healNativeSize(cells int) (int, error) {
+	m, err := s.ReadNativeManifest()
+	if err != nil {
+		return 0, err
+	}
+	if m.Sizes == nil {
+		m.Sizes = map[int]NativeSizeStatus{}
+	}
+	done, err := s.CountNativeSpeciesForCells(cells, m.Protocol)
+	if err != nil {
+		return 0, err
+	}
+	entry := m.Sizes[cells]
+	entry.Done = done
+	entry.Complete = entry.Total > 0 && done >= entry.Total
+	m.Sizes[cells] = entry
+	if err := s.WriteNativeManifest(m); err != nil {
+		return done, err
+	}
+	return done, nil
 }
 
 // InitNativeSizePhase prepares manifest tracking for a warm phase.
@@ -154,23 +182,13 @@ func (s *Store) NativeSizeComplete(cells, indexTotal int) bool {
 	if err != nil || m.Version != sprite.AlgorithmVersion {
 		return false
 	}
-	entry, ok := m.Sizes[cells]
-	if !ok {
-		return false
-	}
-	if entry.Complete {
-		return true
-	}
-	if entry.Total > 0 && entry.Done >= entry.Total {
-		return true
-	}
-	if entry.Done >= indexTotal {
-		return true
-	}
-	// Fallback: trust on-disk recount when manifest is stale.
 	done, err := s.CountNativeSpeciesForCells(cells, m.Protocol)
 	if err != nil {
 		return false
+	}
+	entry, ok := m.Sizes[cells]
+	if ok && entry.Total > 0 {
+		return done >= entry.Total
 	}
 	return done >= indexTotal
 }
@@ -192,7 +210,7 @@ func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, err
 	if err != nil {
 		return 0, err
 	}
-	seen := make(map[int]bool)
+	seen := make(map[string]bool)
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -204,10 +222,15 @@ func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, err
 		if !strings.Contains(name, dimTag) || !strings.Contains(name, protoNeedle) {
 			continue
 		}
-		id := speciesIDFromNativeFilename(name)
-		if id > 0 {
-			seen[id] = true
+		key := strings.TrimSuffix(name, ".frame")
+		hash, proto, fw, fh, _, _, parseErr := sprite.ParseNativeCacheKey(key)
+		if parseErr != nil || hash == "" || fw != pxW || fh != pxH {
+			continue
 		}
+		if protocol != "" && proto != protocol {
+			continue
+		}
+		seen[hash] = true
 	}
 	return len(seen), nil
 }

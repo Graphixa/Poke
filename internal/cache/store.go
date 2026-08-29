@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 // Clock provides the current time for TTL and manifest stamps.
@@ -445,13 +446,24 @@ func (s *Store) DeleteNativeForSpecies(speciesID int) error {
 	if err != nil {
 		return err
 	}
+	hashes := s.collectSpeciesAssetHashes(speciesID)
 	prefix := fmt.Sprintf("named-%d-", speciesID)
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".frame") {
+		if !strings.HasSuffix(name, ".frame") {
+			continue
+		}
+		remove := strings.HasPrefix(name, prefix)
+		if !remove {
+			key := strings.TrimSuffix(name, ".frame")
+			if hash, _, _, _, _, _, parseErr := sprite.ParseNativeCacheKey(key); parseErr == nil {
+				_, remove = hashes[hash]
+			}
+		}
+		if !remove {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -459,6 +471,49 @@ func (s *Store) DeleteNativeForSpecies(speciesID int) error {
 		}
 	}
 	return nil
+}
+
+// SpeciesAssetHashes returns PNG content hashes stored for a species (artwork + pixel).
+func (s *Store) SpeciesAssetHashes(speciesID int) map[string]struct{} {
+	return s.collectSpeciesAssetHashes(speciesID)
+}
+
+func (s *Store) collectSpeciesAssetHashes(speciesID int) map[string]struct{} {
+	out := map[string]struct{}{}
+	add := func(h string) {
+		if isHexSHA256(h) {
+			out[h] = struct{}{}
+		}
+	}
+	for _, kind := range []string{SpriteKindArtwork, SpriteKindPixel} {
+		if m, err := s.readAssetMapping(speciesID, kind); err == nil {
+			add(m.Hash)
+		}
+	}
+	for _, tree := range []string{"official-artwork", "sprites"} {
+		root := filepath.Join(s.root, tree)
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		prefix := fmt.Sprintf("%03d-", speciesID)
+		for _, e := range entries {
+			if !e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+				continue
+			}
+			parts := strings.SplitN(e.Name(), "-", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			slug := parts[1]
+			for _, kind := range []string{SpriteKindArtwork, SpriteKindPixel} {
+				if meta, err := s.ReadNamedSpriteMeta(speciesID, slug, kind); err == nil {
+					add(meta.SHA256)
+				}
+			}
+		}
+	}
+	return out
 }
 
 func (s *Store) resourcePath(kind string, id int) (string, error) {

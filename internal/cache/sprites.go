@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"strconv"
-	"strings"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -73,6 +71,11 @@ func (s *Service) InvalidateNativeSpecies(speciesID int) error {
 		return err
 	}
 	return s.store.InvalidateNativeManifestSizes()
+}
+
+// SpeciesAssetHashes returns PNG content hashes for a species.
+func (s *Service) SpeciesAssetHashes(speciesID int) map[string]struct{} {
+	return s.store.SpeciesAssetHashes(speciesID)
 }
 
 func sha256HexBytes(data []byte) string {
@@ -151,7 +154,7 @@ func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
 }
 
 func (s *Service) recordNativeFrameManifest(key string) {
-	hash, _, pxW, pxH, _, ver, err := sprite.ParseNativeCacheKey(key)
+	_, _, pxW, pxH, _, ver, err := sprite.ParseNativeCacheKey(key)
 	if err != nil || ver != sprite.AlgorithmVersion {
 		return
 	}
@@ -170,14 +173,6 @@ func (s *Service) recordNativeFrameManifest(key string) {
 		m.Sizes = map[int]NativeSizeStatus{}
 	}
 	entry := m.Sizes[cells]
-	if entry.Complete {
-		return
-	}
-	id := speciesIDFromNamedAssetHash(hash)
-	if id < 1 {
-		return
-	}
-	// Recount is accurate; hook keeps manifest fresh during interactive encodes.
 	done, err := s.store.CountNativeSpeciesForCells(cells, m.Protocol)
 	if err != nil {
 		return
@@ -186,22 +181,6 @@ func (s *Service) recordNativeFrameManifest(key string) {
 	entry.Complete = entry.Total > 0 && done >= entry.Total
 	m.Sizes[cells] = entry
 	_ = s.store.WriteNativeManifest(m)
-}
-
-func speciesIDFromNamedAssetHash(hash string) int {
-	if !strings.HasPrefix(hash, "named-") {
-		return 0
-	}
-	rest := hash[len("named-"):]
-	i := strings.IndexByte(rest, '-')
-	if i <= 0 {
-		return 0
-	}
-	id, err := strconv.Atoi(rest[:i])
-	if err != nil || id < 1 {
-		return 0
-	}
-	return id
 }
 
 func sha256Hex(s string) string {

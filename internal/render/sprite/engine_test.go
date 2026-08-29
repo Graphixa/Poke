@@ -354,7 +354,7 @@ func TestURLForTier(t *testing.T) {
 	}
 }
 
-func TestNamedHitUsesNamedAssetKey(t *testing.T) {
+func TestNamedHitUsesContentHash(t *testing.T) {
 	png := mustPNG(t, color.RGBA{9, 9, 9, 255})
 	store := newNamedMemStore()
 	if err := store.StoreNamedSprite(context.Background(), 7, "squirtle", "pixel", "", png); err != nil {
@@ -363,16 +363,12 @@ func TestNamedHitUsesNamedAssetKey(t *testing.T) {
 	res := (&sprite.SourceResolver{Store: store}).Resolve(context.Background(), domain.Pokemon{
 		ID: 7, Slug: "squirtle",
 	}, sprite.AssetTierPixel)
-	want := sprite.NamedAssetKey(7, "squirtle", "pixel")
+	want := sprite.ContentHash(png)
 	if res.ContentHash != want {
 		t.Fatalf("hash=%q want %q", res.ContentHash, want)
 	}
 	if res.UsePlaceholder || len(res.PNG) == 0 {
 		t.Fatalf("bad result %+v", res)
-	}
-	// Must not equal raw SHA of PNG (named path skips ContentHash).
-	if res.ContentHash == sprite.ContentHash(png) {
-		t.Fatal("named hit should not use SHA content hash")
 	}
 }
 
@@ -389,11 +385,16 @@ func TestValidatePNG(t *testing.T) {
 type namedMemStore struct {
 	*memStore
 	named    map[string][]byte
+	hashes   map[string]string
 	pngReads int
 }
 
 func newNamedMemStore() *namedMemStore {
-	return &namedMemStore{memStore: newMemStore(), named: make(map[string][]byte)}
+	return &namedMemStore{
+		memStore: newMemStore(),
+		named:    make(map[string][]byte),
+		hashes:   make(map[string]string),
+	}
 }
 
 func namedKey(id int, slug, kind string) string {
@@ -414,18 +415,33 @@ func (m *namedMemStore) NamedSprite(_ context.Context, id int, slug, kind string
 func (m *namedMemStore) NamedAssetMeta(_ context.Context, id int, slug, kind string) (string, string, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ok := m.named[namedKey(id, slug, kind)]
+	k := namedKey(id, slug, kind)
+	data, ok := m.named[k]
 	if !ok {
 		return "", "", false, nil
 	}
-	return sprite.NamedAssetKey(id, slug, kind), "", true, nil
+	if h := m.hashes[k]; sprite.IsHexSHA256(h) {
+		return h, "", true, nil
+	}
+	_ = data
+	return "", "", true, nil
 }
 
-func (m *namedMemStore) StoreNamedSprite(_ context.Context, id int, slug, kind, _ string, data []byte) error {
+func (m *namedMemStore) StoreNamedSprite(_ context.Context, id int, slug, kind, contentHash string, data []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.named[namedKey(id, slug, kind)] = append([]byte(nil), data...)
+	k := namedKey(id, slug, kind)
+	m.named[k] = append([]byte(nil), data...)
+	if sprite.IsHexSHA256(contentHash) {
+		m.hashes[k] = contentHash
+	} else {
+		m.hashes[k] = sprite.ContentHash(data)
+	}
 	return nil
+}
+
+func (m *namedMemStore) StoreNamedSpriteWithURL(_ context.Context, id int, slug, kind, _, sha256 string, data []byte) error {
+	return m.StoreNamedSprite(context.Background(), id, slug, kind, sha256, data)
 }
 
 type stubNativeRenderer struct {
@@ -764,5 +780,234 @@ func TestLookupCachedHitsDiskOnFreshEngine(t *testing.T) {
 	}
 	if store.pngReads != pngReads {
 		t.Fatalf("disk lookup must not read PNG, pngReads=%d", store.pngReads)
+	}
+}
+
+func nativeEngine(store *namedMemStore, native *stubNativeRenderer, bg color.RGBA) *sprite.Engine {
+	return nativeEngineAt(store, native, bg, true)
+}
+
+func artworkNativeEngine(store *namedMemStore, native *stubNativeRenderer, bg color.RGBA) *sprite.Engine {
+	return nativeEngineAt(store, native, bg, false)
+}
+
+func nativeEngineAt(store *namedMemStore, native *stubNativeRenderer, bg color.RGBA, pixel bool) *sprite.Engine {
+	kind := sprite.SourceArtwork
+	if pixel {
+		kind = sprite.SourcePixel
+	}
+	return &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			native,
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeAuto,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: kind,
+		Background: bg,
+		HDOff:      pixel,
+	}
+}
+
+func TestSixelCacheKeyStable(t *testing.T) {
+	bg := color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
+	cases := []struct {
+		id   int
+		slug string
+	}{
+		{1, "bulbasaur"},
+		{25, "pikachu"},
+		{399, "starly"},
+		{400, "staravia"},
+		{401, "staraptor"},
+		{1025, "pecharunt"},
+	}
+	for _, tc := range cases {
+		for _, cells := range sprite.FrameSteps() {
+			w, h := sprite.FrameSizeFor(cells)
+			sha := fmt.Sprintf("%064x", tc.id)
+			gen := sprite.NativeCacheKey(sha, "sixel", w, h, bg)
+			store := newNamedMemStore()
+			png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+			if err := store.StoreNamedSprite(context.Background(), tc.id, tc.slug, "artwork", sha, png); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.StoreNative(context.Background(), gen, "FRAME"); err != nil {
+				t.Fatal(err)
+			}
+			native := &stubNativeRenderer{}
+			engine := artworkNativeEngine(store, native, bg)
+			poke := domain.Pokemon{ID: tc.id, Slug: tc.slug, DisplayName: tc.slug}
+			res, hit := engine.LookupCached(context.Background(), poke, cells)
+			if !hit {
+				t.Fatalf("lookup miss id=%d cells=%d hash=%s gen=%s", tc.id, cells, sha, gen)
+			}
+			if res.CacheKey != gen {
+				t.Fatalf("lookup key %q != generated %q", res.CacheKey, gen)
+			}
+			if native.renders != 0 {
+				t.Fatalf("stable key must not encode, renders=%d", native.renders)
+			}
+		}
+	}
+}
+
+func TestWarmSelectionSkipsPNGRead(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	bg := color.RGBA{A: 255}
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	engine := nativeEngine(store, native, bg)
+	sprite.ResetStats()
+	cold := engine.RenderCold(context.Background(), poke, 24)
+	if !cold.Native {
+		t.Fatalf("cold: %+v", cold)
+	}
+	if store.pngReads != 1 {
+		t.Fatalf("cold pngReads=%d", store.pngReads)
+	}
+	reads := store.pngReads
+	decodes := sprite.Stats().PNGDecodes.Load()
+	res, hit := engine.LookupCached(context.Background(), poke, 24)
+	if !hit || res.ANSI != cold.ANSI {
+		t.Fatalf("warm hit=%v %+v", hit, res)
+	}
+	if store.pngReads != reads {
+		t.Fatalf("warm re-read PNG pngReads=%d", store.pngReads)
+	}
+	if sprite.Stats().PNGDecodes.Load() != decodes {
+		t.Fatalf("warm decoded PNG")
+	}
+	if native.renders != 1 {
+		t.Fatalf("warm encoded, renders=%d", native.renders)
+	}
+}
+
+func TestWarmSelectionSkipsDecode(t *testing.T) {
+	TestWarmSelectionSkipsPNGRead(t)
+}
+
+func TestWarmSelectionSkipsSixelEncode(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 401, "kricketot", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	bg := color.RGBA{A: 255}
+	poke := domain.Pokemon{ID: 401, Slug: "kricketot", DisplayName: "Kricketot"}
+	first := nativeEngine(store, native, bg)
+	if res := first.RenderCold(context.Background(), poke, 32); !res.Native {
+		t.Fatalf("cold: %+v", res)
+	}
+	if native.renders != 1 {
+		t.Fatalf("renders=%d after cold", native.renders)
+	}
+	fresh := nativeEngine(store, native, bg)
+	res, hit := fresh.LookupCached(context.Background(), poke, 32)
+	if !hit || !res.Native {
+		t.Fatalf("disk hit=%v %+v", hit, res)
+	}
+	if native.renders != 1 {
+		t.Fatalf("disk lookup encoded, renders=%d", native.renders)
+	}
+}
+
+func TestMissingSingleArtifactColdRendersOnce(t *testing.T) {
+	store := newNamedMemStore()
+	native := &stubNativeRenderer{}
+	bg := color.RGBA{A: 255}
+	eng := nativeEngine(store, native, bg)
+	for i, p := range []struct {
+		id   int
+		slug string
+		r    uint8
+	}{{399, "starly", 10}, {400, "staravia", 20}, {401, "kricketot", 30}, {402, "kricketune", 40}} {
+		png := mustPNG(t, color.RGBA{p.r, 20, 30, 255})
+		if err := store.StoreNamedSprite(context.Background(), p.id, p.slug, "pixel", "", png); err != nil {
+			t.Fatal(err)
+		}
+		poke := domain.Pokemon{ID: p.id, Slug: p.slug, DisplayName: p.slug}
+		if res := eng.RenderCold(context.Background(), poke, 24); !res.Native {
+			t.Fatalf("seed %d: %+v", i, res)
+		}
+	}
+	if native.renders != 4 {
+		t.Fatalf("seed renders=%d", native.renders)
+	}
+	sha := store.hashes[namedKey(401, "kricketot", "pixel")]
+	w, h := sprite.FrameSizeFor(24)
+	key := sprite.NativeCacheKey(sha, "sixel", w, h, bg)
+	store.mu.Lock()
+	delete(store.native, key)
+	store.mu.Unlock()
+
+	eng2 := nativeEngine(store, native, bg)
+	for _, id := range []int{399, 400, 402} {
+		slug := map[int]string{399: "starly", 400: "staravia", 402: "kricketune"}[id]
+		res, hit := eng2.LookupCached(context.Background(), domain.Pokemon{ID: id, Slug: slug}, 24)
+		if !hit || !res.Native {
+			t.Fatalf("neighbor %d must stay warm hit=%v", id, hit)
+		}
+	}
+	if native.renders != 4 {
+		t.Fatalf("neighbors encoded, renders=%d", native.renders)
+	}
+	miss, hit := eng2.LookupCached(context.Background(), domain.Pokemon{ID: 401, Slug: "kricketot"}, 24)
+	if hit {
+		t.Fatalf("deleted artefact must miss, got %+v", miss)
+	}
+	cold := eng2.RenderCold(context.Background(), domain.Pokemon{ID: 401, Slug: "kricketot", DisplayName: "Kricketot"}, 24)
+	if !cold.Native {
+		t.Fatalf("cold 401: %+v", cold)
+	}
+	if native.renders != 5 {
+		t.Fatalf("401 should encode once, renders=%d", native.renders)
+	}
+	res, hit := nativeEngine(store, native, bg).LookupCached(context.Background(), domain.Pokemon{ID: 401, Slug: "kricketot"}, 24)
+	if !hit || res.ANSI != cold.ANSI {
+		t.Fatalf("revisit 401 hit=%v %+v", hit, res)
+	}
+	if native.renders != 5 {
+		t.Fatalf("revisit encoded, renders=%d", native.renders)
+	}
+}
+
+func TestLookupLegacyNamedHitMigratesToSHA256(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{1, 2, 3, 255})
+	if err := store.StoreNamedSprite(context.Background(), 400, "staravia", "artwork", "", png); err != nil {
+		t.Fatal(err)
+	}
+	bg := color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
+	w, h := sprite.FrameSizeFor(40)
+	sha := store.hashes[namedKey(400, "staravia", "artwork")]
+	namedFile := sprite.NativeCacheKey(sprite.NamedAssetKey(400, "staravia", "artwork"), "sixel", w, h, bg)
+	if err := store.StoreNative(context.Background(), namedFile, "NAMED"); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	engine := artworkNativeEngine(store, native, bg)
+	res, hit := engine.LookupCached(context.Background(), domain.Pokemon{ID: 400, Slug: "staravia"}, 40)
+	if !hit || res.ANSI != "NAMED" {
+		t.Fatalf("legacy fallback miss hit=%v %+v", hit, res)
+	}
+	canonicalKey := sprite.NativeCacheKey(sha, "sixel", w, h, bg)
+	if res.CacheKey != canonicalKey {
+		t.Fatalf("cache key=%q want canonical %q", res.CacheKey, canonicalKey)
+	}
+	if _, err := store.Native(context.Background(), canonicalKey); err != nil {
+		t.Fatal("expected migrated canonical frame on disk")
+	}
+	if native.renders != 0 {
+		t.Fatalf("lookup must not encode, renders=%d", native.renders)
 	}
 }

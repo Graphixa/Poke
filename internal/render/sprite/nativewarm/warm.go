@@ -62,20 +62,22 @@ type Config struct {
 type Service struct {
 	cfg Config
 
-	mu        sync.Mutex
-	pq        priorityQueue
-	seq       int64
-	queued    map[int]bool
-	done      map[int]bool
-	indexByID map[int]domain.SpeciesSummary
-	cells     int
-	wake      chan struct{}
-	started   atomic.Bool
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	doneN     atomic.Int64
-	totalN    atomic.Int64
-	activity  sprite.ActivityGate
+	mu          sync.Mutex
+	pq          priorityQueue
+	seq         int64
+	queued      map[int]bool
+	done        map[int]bool
+	indexByID   map[int]domain.SpeciesSummary
+	cells       int
+	layoutCells int
+	wake        chan struct{}
+	started     atomic.Bool
+	cancel      context.CancelFunc
+	workerCtx   context.Context
+	wg          sync.WaitGroup
+	doneN       atomic.Int64
+	totalN      atomic.Int64
+	activity    sprite.ActivityGate
 }
 
 // New creates a native warm service. Call EnsureStarted when browse layout is known.
@@ -118,7 +120,7 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // EnsureStarted seeds on-disk hits, enqueues only missing species, and starts workers
-// when there is work. No-op when the native cache is already complete for cells.
+// when there is work. Continues through remaining size buckets after the layout size.
 func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 	if s == nil || s.cfg.Renderer == nil || s.cfg.Loader == nil {
 		return
@@ -129,30 +131,39 @@ func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 		if err := s.cfg.Manifest.EnsureManifest(s.cfg.Protocol); err != nil {
 			debuglog.Renderf("nativewarm manifest err=%v", err)
 		}
-		if s.cfg.Manifest.NativeSizeComplete(cells, total) {
+		if s.allSizesComplete(total) {
 			return
 		}
 	}
 
 	s.mu.Lock()
+	s.layoutCells = cells
 	cellsChanged := s.cells != cells
-	if cellsChanged {
-		s.cells = cells
+	workCells := cells
+	if s.cfg.Manifest != nil && s.cfg.Manifest.NativeSizeComplete(cells, total) {
+		if next := s.nextBackgroundSize(total); next > 0 {
+			workCells = next
+		}
+	}
+	if s.cells != workCells {
+		cellsChanged = true
+		s.cells = workCells
 	}
 	alreadyStarted := s.started.Load()
 	s.mu.Unlock()
 
 	if !alreadyStarted {
 		if s.cfg.Manifest != nil {
-			if err := s.cfg.Manifest.InitNativeSizePhase(cells, total); err != nil {
+			if err := s.cfg.Manifest.InitNativeSizePhase(workCells, total); err != nil {
 				debuglog.Renderf("nativewarm init phase err=%v", err)
 			}
 		}
 		s.prepareQueueAtCells(ctx)
 		if s.totalN.Load() == 0 {
 			if s.cfg.Manifest != nil {
-				_ = s.cfg.Manifest.MarkNativeSizeComplete(cells, total)
+				_ = s.cfg.Manifest.MarkNativeSizeComplete(workCells, total)
 			}
+			s.tryAdvanceBackgroundSize(ctx)
 			return
 		}
 		if !s.started.CompareAndSwap(false, true) {
@@ -160,6 +171,7 @@ func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 		}
 		runCtx, cancel := context.WithCancel(ctx)
 		s.cancel = cancel
+		s.workerCtx = runCtx
 		for i := 0; i < s.cfg.Workers; i++ {
 			s.wg.Add(1)
 			go s.worker(runCtx)
@@ -168,15 +180,16 @@ func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 	}
 	if cellsChanged {
 		if s.cfg.Manifest != nil {
-			if err := s.cfg.Manifest.InitNativeSizePhase(cells, total); err != nil {
+			if err := s.cfg.Manifest.InitNativeSizePhase(workCells, total); err != nil {
 				debuglog.Renderf("nativewarm init phase err=%v", err)
 			}
 		}
 		s.prepareQueueAtCells(ctx)
 		if s.totalN.Load() == 0 {
 			if s.cfg.Manifest != nil {
-				_ = s.cfg.Manifest.MarkNativeSizeComplete(cells, total)
+				_ = s.cfg.Manifest.MarkNativeSizeComplete(workCells, total)
 			}
+			s.tryAdvanceBackgroundSize(ctx)
 		}
 	}
 }
@@ -532,9 +545,15 @@ func (s *Service) report(speciesID int) {
 		return
 	}
 	if done >= total {
+		cells := s.cells
 		if s.cfg.Manifest != nil {
-			_ = s.cfg.Manifest.MarkNativeSizeComplete(s.cells, len(s.cfg.Index))
+			_ = s.cfg.Manifest.MarkNativeSizeComplete(cells, len(s.cfg.Index))
 		}
+		ctx := s.workerCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		s.tryAdvanceBackgroundSize(ctx)
 		return
 	}
 	if s.cfg.Progress == nil {
@@ -548,6 +567,66 @@ func (s *Service) report(speciesID int) {
 		Message:   "Building image cache",
 		SpeciesID: speciesID,
 	})
+}
+
+func (s *Service) allSizesComplete(total int) bool {
+	if s.cfg.Manifest == nil {
+		return false
+	}
+	for _, cells := range sprite.FrameSteps() {
+		if !s.cfg.Manifest.NativeSizeComplete(cells, total) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Service) nextBackgroundSize(total int) int {
+	if s.cfg.Manifest == nil {
+		return 0
+	}
+	layout := s.layoutCells
+	for _, cells := range sprite.FrameStepsMaxFirst() {
+		if cells == layout {
+			continue
+		}
+		if !s.cfg.Manifest.NativeSizeComplete(cells, total) {
+			return cells
+		}
+	}
+	return 0
+}
+
+func (s *Service) tryAdvanceBackgroundSize(ctx context.Context) {
+	if s == nil || s.cfg.Manifest == nil {
+		return
+	}
+	if s.layoutCells <= 0 {
+		return
+	}
+	total := len(s.cfg.Index)
+	if s.allSizesComplete(total) {
+		return
+	}
+	next := s.nextBackgroundSize(total)
+	if next == 0 || next == s.cells {
+		return
+	}
+	if err := s.cfg.Manifest.InitNativeSizePhase(next, total); err != nil {
+		debuglog.Renderf("nativewarm init phase err=%v", err)
+	}
+	s.mu.Lock()
+	s.cells = next
+	s.mu.Unlock()
+	s.prepareQueueAtCells(ctx)
+	if s.totalN.Load() == 0 {
+		_ = s.cfg.Manifest.MarkNativeSizeComplete(next, total)
+		s.tryAdvanceBackgroundSize(ctx)
+		return
+	}
+	if s.started.Load() {
+		s.signal()
+	}
 }
 
 // Snapshot returns current done/total counts for in-flight warm work.

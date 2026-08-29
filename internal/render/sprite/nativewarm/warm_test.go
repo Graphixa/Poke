@@ -27,6 +27,7 @@ func (m *manifestStub) InitNativeSizePhase(cells, _ int) error {
 	return nil
 }
 func (m *manifestStub) MarkNativeSizeComplete(cells, _ int) error {
+	m.complete[cells] = true
 	m.marked = append(m.marked, cells)
 	return nil
 }
@@ -72,7 +73,11 @@ func TestEnsureStartedSkipsWhenManifestComplete(t *testing.T) {
 	index := []domain.SpeciesSummary{
 		{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"},
 	}
-	manifest := &manifestStub{complete: map[int]bool{sprite.MaxFrameSize: true}}
+	complete := map[int]bool{}
+	for _, cells := range sprite.FrameSteps() {
+		complete[cells] = true
+	}
+	manifest := &manifestStub{complete: complete}
 	svc := nativewarm.New(nativewarm.Config{
 		Cells:    sprite.MaxFrameSize,
 		Workers:  1,
@@ -117,7 +122,13 @@ func TestEnsureStartedMarksManifestComplete(t *testing.T) {
 		{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"},
 		{ID: 26, Slug: "raichu", DisplayName: "Raichu"},
 	}
-	manifest := &manifestStub{complete: map[int]bool{}}
+	complete := map[int]bool{}
+	for _, cells := range sprite.FrameSteps() {
+		if cells != sprite.MaxFrameSize {
+			complete[cells] = true
+		}
+	}
+	manifest := &manifestStub{complete: complete}
 	rend := &fakeNativeRenderer{cached: map[int]bool{}}
 	svc := nativewarm.New(nativewarm.Config{
 		Cells:    sprite.MaxFrameSize,
@@ -136,6 +147,28 @@ func TestEnsureStartedMarksManifestComplete(t *testing.T) {
 	if len(manifest.marked) != 1 || manifest.marked[0] != sprite.MaxFrameSize {
 		t.Fatalf("marked=%v want [%d]", manifest.marked, sprite.MaxFrameSize)
 	}
+}
+
+func TestEnsureStartedChainsBackgroundSizeAfterLayoutComplete(t *testing.T) {
+	index := []domain.SpeciesSummary{{ID: 25, Slug: "pikachu"}}
+	complete := map[int]bool{sprite.MaxFrameSize: true}
+	manifest := &manifestStub{complete: complete}
+	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	svc := nativewarm.New(nativewarm.Config{
+		Workers:  1,
+		Loader:   fakeLoader{},
+		Renderer: rend,
+		Index:    index,
+		Manifest: manifest,
+		Protocol: "sixel",
+	})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, sprite.MaxFrameSize)
+	waitNativeRenders(t, rend, 1)
+	if len(manifest.init) == 0 || manifest.init[0] != 36 {
+		t.Fatalf("init phases=%v want first background size 36", manifest.init)
+	}
+	svc.Stop()
 }
 
 func TestWarmAllSizesMaxFirst(t *testing.T) {

@@ -72,8 +72,12 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 
 	if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
 		if data, err := named.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind); err == nil && len(data) > 0 {
-			// Trust named on-disk tree; DecodeImage will fail if corrupt.
-			hash := NamedAssetKey(pokemon.ID, pokemon.Slug, kind)
+			hash := ContentHash(data)
+			if meta, ok := r.Store.(NamedAssetMetaStore); ok {
+				if h, _, ready, _ := meta.NamedAssetMeta(ctx, pokemon.ID, pokemon.Slug, kind); ready && IsHexSHA256(h) {
+					hash = h
+				}
+			}
 			url := URLForTier(pokemon, t)
 			if url == "" {
 				url = fallbackCDNURL(pokemon.ID, t)
@@ -97,9 +101,6 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 						_ = urlStore.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, storeKind, tryURL, hash, data)
 					}
 				}
-				if pokemon.ID != 0 {
-					hash = NamedAssetKey(pokemon.ID, pokemon.Slug, storeKind)
-				}
 				return SourceResult{ContentHash: hash, PNG: data, URL: tryURL, AssetKind: storeKind}
 			}
 		}
@@ -120,9 +121,6 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 			} else {
 				_ = r.Store.StoreSpriteByURL(ctx, tryURL, hash, data)
 			}
-		}
-		if pokemon.ID != 0 {
-			hash = NamedAssetKey(pokemon.ID, pokemon.Slug, storeKind)
 		}
 		return SourceResult{ContentHash: hash, PNG: data, URL: tryURL, AssetKind: storeKind}
 	}

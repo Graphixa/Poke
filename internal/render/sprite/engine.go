@@ -118,8 +118,18 @@ func (e *Engine) InvalidateSpeciesNative(ctx context.Context, speciesID int) {
 		return
 	}
 	if nativeStore, ok := e.Artefacts.(NativeSpeciesStore); ok {
+		if hashes, ok := nativeStore.(NativeSpeciesHashes); ok {
+			for h := range hashes.SpeciesAssetHashes(speciesID) {
+				e.memory().InvalidatePrefix(h)
+			}
+		}
 		_ = nativeStore.InvalidateNativeSpecies(speciesID)
 	}
+}
+
+// NativeSpeciesHashes exposes stored PNG hashes for mem-cache invalidation.
+type NativeSpeciesHashes interface {
+	SpeciesAssetHashes(speciesID int) map[string]struct{}
 }
 
 // NativeSpeciesStore deletes on-disk native frames for a species.
@@ -162,10 +172,9 @@ func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells
 	}
 	opts := e.renderOptions(displayName(pokemon), fw, fh, "", "")
 	for _, ref := range e.lookupAssetRefs(ctx, pokemon, rend.Name() == "image") {
-		if !ref.Ready || ref.Hash == "" {
+		if !ref.Ready {
 			continue
 		}
-		opts.ContentHash = ref.Hash
 		kind := ref.Kind
 		if kind == "" {
 			kind = namedKindForTier(AssetTierHD)
@@ -173,7 +182,25 @@ func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells
 				kind = namedKindForTier(AssetTierPixel)
 			}
 		}
-		if hit, result := e.lookupDerived(ctx, rend, opts, ref.Hash, kind); hit {
+		canonical := ref.Hash
+		if rend.Name() == "image" && !IsHexSHA256(canonical) {
+			canonical = ""
+		}
+		legacy := ""
+		if rend.Name() == "image" && pokemon.ID != 0 {
+			legacy = e.legacyHashForRef(pokemon, ref)
+		}
+		opts.ContentHash = canonical
+		if rend.Name() == "image" {
+			if hit, result := e.lookupNativeFrame(ctx, rend, opts, canonical, legacy, kind, true); hit {
+				return result, true
+			}
+			continue
+		}
+		if canonical == "" {
+			continue
+		}
+		if hit, result := e.lookupDerived(ctx, rend, opts, canonical, kind); hit {
 			return result, true
 		}
 	}
@@ -192,7 +219,7 @@ func (e *Engine) RenderCold(ctx context.Context, pokemon domain.Pokemon, cells i
 func (e *Engine) lookupAssetRefs(ctx context.Context, pokemon domain.Pokemon, native bool) []AssetRef {
 	if native {
 		ref := e.resolveNativeAssetRef(ctx, pokemon)
-		if ref.Ready && ref.Hash != "" {
+		if ref.Ready {
 			return []AssetRef{ref}
 		}
 		return nil
@@ -228,15 +255,8 @@ func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cel
 	if e == nil || e.Artefacts == nil || e.Source == nil || pokemon.ID == 0 {
 		return false
 	}
-	tier := AssetTierHD
-	if e.HDOff && e.SourceKind == SourcePixel {
-		tier = AssetTierPixel
-	}
-	ref := e.Source.ResolveAsset(ctx, pokemon, tier)
-	if !ref.Ready || ref.Hash == "" {
-		ref = e.Source.ResolveAsset(ctx, pokemon, AssetTierPixel)
-	}
-	if !ref.Ready || ref.Hash == "" {
+	ref := e.resolveNativeAssetRef(ctx, pokemon)
+	if !ref.Ready {
 		return false
 	}
 	fw, fh := e.frameSize()
@@ -247,9 +267,11 @@ func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cel
 	if bg.A == 0 {
 		bg = DefaultBackground
 	}
-	key := NativeCacheKey(ref.Hash, e.protocolName(), fw, fh, bg)
-	frame, err := e.Artefacts.Native(ctx, key)
-	return err == nil && frame != ""
+	canonical := ref.Hash
+	if !IsHexSHA256(canonical) {
+		canonical = ""
+	}
+	return e.hasNativeFrame(ctx, canonical, e.legacyHashForRef(pokemon, ref), fw, fh, bg)
 }
 
 func (e *Engine) protocolName() string {
@@ -376,11 +398,25 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 			if assetKind == "" {
 				assetKind = namedKindForTier(tier)
 			}
+			if rend.Name() == "image" {
+				hash = e.ensureCanonicalHash(ctx, pokemon, ref, png)
+			}
 			opts.ContentHash = hash
 
-			if hash != "" {
-				if hit, result := e.lookupDerived(ctx, rend, opts, hash, assetKind); hit {
-					return result
+			if hash != "" || (rend.Name() == "image" && ref.Ready) {
+				if rend.Name() == "image" {
+					legacy := e.legacyHashForRef(pokemon, ref)
+					canonical := hash
+					if !IsHexSHA256(canonical) {
+						canonical = ""
+					}
+					if hit, result := e.lookupNativeFrame(ctx, rend, opts, canonical, legacy, assetKind, true); hit {
+						return result
+					}
+				} else if hash != "" {
+					if hit, result := e.lookupDerived(ctx, rend, opts, hash, assetKind); hit {
+						return result
+					}
 				}
 			}
 
@@ -420,7 +456,7 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 
 		key := ""
 		switch {
-		case rend.Name() == "image" && opts.ContentHash != "":
+		case rend.Name() == "image" && IsHexSHA256(opts.ContentHash):
 			key = nativeCacheKey(opts.ContentHash, rend, opts.Width, opts.Height, opts.BackgroundColor)
 		case rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "":
 			color := effectiveColor(opts.ColorMode, e.Caps)
@@ -481,22 +517,7 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 		return false, RenderResult{}
 	}
 	if rend.Name() == "image" {
-		key := nativeCacheKey(hash, rend, opts.Width, opts.Height, opts.BackgroundColor)
-		if cached, ok := e.memory().Get(key); ok {
-			noteMemHit()
-			debuglog.Renderf("render.cache.hit backend=%s store=mem key=%s", rend.Name(), key)
-			return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
-		}
-		if e.Artefacts != nil {
-			if cached, err := e.Artefacts.Native(ctx, key); err == nil && cached != "" {
-				noteDiskHit()
-				e.memory().Put(key, cached)
-				debuglog.Renderf("render.cache.hit backend=%s store=disk key=%s", rend.Name(), key)
-				return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
-			}
-		}
-		debuglog.Renderf("render.cache.miss backend=%s key=%s", rend.Name(), key)
-		return false, RenderResult{}
+		return e.lookupNativeFrame(ctx, rend, opts, hash, "", assetKind, false)
 	}
 	if rend.Name() == "placeholder" {
 		return false, RenderResult{}
@@ -527,7 +548,7 @@ func (e *Engine) resolveNativeAssetRef(ctx context.Context, pokemon domain.Pokem
 	}
 	for _, tier := range tiers {
 		ref := e.Source.ResolveAsset(ctx, pokemon, tier)
-		if ref.Ready && ref.Hash != "" {
+		if ref.Ready {
 			return ref
 		}
 	}

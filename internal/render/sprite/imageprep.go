@@ -232,6 +232,7 @@ func blendOver(dst, src color.RGBA) color.RGBA {
 
 // DecodeImage decodes image bytes (PNG via registered decoder).
 func DecodeImage(data []byte) (image.Image, error) {
+	notePNGDecode()
 	if len(data) == 0 {
 		return nil, fmt.Errorf("sprite: empty image")
 	}

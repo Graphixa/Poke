@@ -13,12 +13,28 @@ type Counters struct {
 	NeighbourRenders atomic.Int64
 	HTTPArtwork      atomic.Int64
 	PNGReads         atomic.Int64
+	PNGDecodes       atomic.Int64
+	SixelEncodes     atomic.Int64
 }
 
 var stats Counters
 
 // Stats returns the process-wide counter set.
 func Stats() *Counters { return &stats }
+
+// ResetStats zeros every counter. Tests and acceptance audits use this.
+func ResetStats() {
+	stats.MemHits.Store(0)
+	stats.DiskHits.Store(0)
+	stats.ColdRenders.Store(0)
+	stats.Cancelled.Store(0)
+	stats.StaleDiscarded.Store(0)
+	stats.NeighbourRenders.Store(0)
+	stats.HTTPArtwork.Store(0)
+	stats.PNGReads.Store(0)
+	stats.PNGDecodes.Store(0)
+	stats.SixelEncodes.Store(0)
+}
 
 func noteMemHit()      { stats.MemHits.Add(1) }
 func noteDiskHit()     { stats.DiskHits.Add(1) }
@@ -28,3 +44,7 @@ func NoteStale()       { stats.StaleDiscarded.Add(1) }
 func NoteNeighbour()   { stats.NeighbourRenders.Add(1) }
 func NoteHTTPArtwork() { stats.HTTPArtwork.Add(1) }
 func notePNGRead()     { stats.PNGReads.Add(1) }
+func notePNGDecode()   { stats.PNGDecodes.Add(1) }
+
+// NoteSixelEncode records one DECSIXEL encode. Called from the sixel package.
+func NoteSixelEncode() { stats.SixelEncodes.Add(1) }

@@ -23,6 +23,7 @@ func Encode(src stdimage.Image) (string, error) {
 		return "", fmt.Errorf("sixel: nil source")
 	}
 	src = cropHeightToSixelBands(src)
+	sprite.NoteSixelEncode()
 	end := debuglog.Trace(debuglog.Render, "sixel.encode")
 	defer end()
 	var buf bytes.Buffer

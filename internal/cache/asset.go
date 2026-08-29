@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
 // AssetMapping is the Pokémon → content-hash pointer (no PNG bytes).
@@ -54,11 +53,13 @@ func (s *Store) NamedAssetMeta(_ context.Context, id int, slug, kind string) (ha
 	if _, statErr := os.Stat(path); statErr != nil {
 		return "", "", false, nil
 	}
-	hash = sprite.NamedAssetKey(id, slug, kind)
-	if meta, merr := s.ReadNamedSpriteMeta(id, slug, kind); merr == nil && meta.SHA256 != "" {
-		hash = meta.SHA256
+	if meta, merr := s.ReadNamedSpriteMeta(id, slug, kind); merr == nil && isHexSHA256(meta.SHA256) {
+		return meta.SHA256, path, true, nil
 	}
-	return hash, path, true, nil
+	if mapping, merr := s.readAssetMapping(id, src); merr == nil && isHexSHA256(mapping.Hash) {
+		return mapping.Hash, path, true, nil
+	}
+	return "", path, true, nil
 }
 
 func (s *Store) readAssetMapping(pokemonID int, source string) (AssetMapping, error) {
