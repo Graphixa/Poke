@@ -119,3 +119,54 @@ func TestEnsureSpriteLoadTakesOverPrefetchLoading(t *testing.T) {
 	}
 	close(sprites.block)
 }
+
+func TestPrefetchRadiusIsOneAtListStart(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "PRE"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	if tui.PrefetchRadiusForTest() != 1 {
+		t.Fatalf("prefetch radius=%d want 1", tui.PrefetchRadiusForTest())
+	}
+	cmd := m.ScheduleSpritePrefetchForTest()
+	if cmd == nil {
+		t.Fatal("expected +1 neighbor prefetch")
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		t.Fatalf("list start prefetch cmds=%d want 1", len(batch))
+	}
+}
+
+func TestPrefetchSkippedWhileForegroundCold(t *testing.T) {
+	details := &fakeDetails{}
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "ART", block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	cmd := m.ForceSpriteLoadForTest()
+	if cmd == nil {
+		t.Fatal("expected cold render")
+	}
+	if !m.SelectedSpriteLoadingForTest() {
+		t.Fatal("expected loading")
+	}
+	before := sprites.calls.Load()
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if sprites.calls.Load() != before {
+		t.Fatalf("prefetch must not encode while foreground is cold, calls=%d", sprites.calls.Load())
+	}
+	close(block)
+}

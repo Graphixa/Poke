@@ -103,8 +103,8 @@ type Model struct {
 	resources    map[int]*resourceCache
 	lruIDs       []int
 
-	imageState   ImageState
-	imageSpinner bool
+	imageState       ImageState
+	imageSpinner     bool
 	imageANSI        string
 	imageNative      bool
 	imageKind        string
@@ -117,6 +117,8 @@ type Model struct {
 	spriteCancel        context.CancelFunc
 	spriteReqID         int
 	spriteLoadSpecies   int
+	fgActive            *fgRenderReq
+	fgPending           *fgRenderReq
 	dossierCancel       context.CancelFunc
 	dossierLoadCtx      context.Context
 	dossierLoadSpecies  int

@@ -45,10 +45,10 @@ type spriteMsg struct {
 
 // spritePrefetchRadius is how many list rows above/below the cursor to warm
 // via background render calls (engine/disk cache only).
-const spritePrefetchRadius = 12
+const spritePrefetchRadius = 1
 
 // spritePrefetchBurst limits how many new neighbor encodes start per selection.
-const spritePrefetchBurst = 4
+const spritePrefetchBurst = 2
 
 // warmHintMinInterval throttles footer "warming N/M" updates to reduce Sixel wipes.
 const warmHintMinInterval = 250 * time.Millisecond

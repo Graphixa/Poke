@@ -144,31 +144,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.ensureSpriteLoad()
 
 	case spriteMsg:
-		if msg.reqID != m.spriteReqID || msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
-			if m.spriteLoadSpecies == msg.speciesID {
-				m.imageLoading = false
-			}
-			if m.isSelectedID(msg.speciesID) {
-				return m, m.ensureSpriteLoad()
-			}
-			return m, nil
-		}
-		if msg.cells != m.currentSpriteCells() {
-			if m.spriteLoadSpecies == msg.speciesID {
-				m.imageLoading = false
-			}
-			if m.isSelectedID(msg.speciesID) {
-				return m, m.ensureSpriteLoad()
-			}
-			return m, nil
-		}
-		m.applySpriteFrame(msg.speciesID, msg.cells, sprite.RenderResult{
-			ANSI:           msg.ansi,
-			UsePlaceholder: msg.placeholder,
-			Native:         msg.native,
-			AssetKind:      msg.assetKind,
-		})
-		return m, nil
+		return m, m.handleSpriteMsg(msg)
 
 	case warmProgressMsg:
 		if msg.closed {
@@ -414,7 +390,12 @@ func (m *Model) notifyWarmer() {
 }
 
 func (m *Model) ensureSelectionLoads() tea.Cmd {
-	return tea.Batch(m.ensureSpriteLoad(), m.scheduleSpritePrefetch())
+	load := m.ensureSpriteLoad()
+	if m.foregroundColdBusy() {
+		m.cancelPrefetch()
+		return load
+	}
+	return tea.Batch(load, m.scheduleSpritePrefetch())
 }
 
 func (m *Model) ensureDossierLoad() tea.Cmd {
@@ -531,6 +512,8 @@ func (m *Model) currentSpriteCells() int {
 func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 	lay := m.layout()
 	if !lay.ShowSprite {
+		m.fgActive = nil
+		m.fgPending = nil
 		m.cancelSprite()
 		m.setImageBlank()
 		m.clearNativeDisplay()
@@ -570,6 +553,7 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 	if cells < 1 {
 		return nil
 	}
+	force := false
 	if m.imageSpeciesID == sel.ID && m.imageCells == cells && !m.imagePlaceholder && m.imageANSI != "" && !m.imageLoading {
 		m.imageState = ImageReady
 		m.imageSpinner = false
@@ -590,9 +574,7 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 		// Artwork is on disk now — fall through to re-encode.
 		m.sprites.InvalidateSpecies(sel.ID)
 		m.clearImagePane()
-	}
-	if m.imageLoading && m.spriteLoadSpecies == sel.ID && m.spriteCancel != nil {
-		return nil
+		force = true
 	}
 
 	pokemon := r.Pokemon
@@ -600,21 +582,21 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 		pokemon = domain.Pokemon{ID: sel.ID, Slug: sel.Slug, DisplayName: sel.DisplayName}
 	}
 	if cached, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit && !cached.UsePlaceholder && cached.ANSI != "" {
-		m.cancelSprite()
+		m.abortFgContext()
+		m.fgActive = nil
+		m.fgPending = nil
+		m.spriteReqID++
 		m.applySpriteFrame(sel.ID, cells, cached)
 		return nil
 	}
 
-	m.cancelSprite()
-	ctx, cancel := context.WithCancel(m.ctx)
-	m.spriteCancel = cancel
-	m.spriteReqID++
-	reqID := m.spriteReqID
-	m.spriteLoadSpecies = sel.ID
-	m.clearNativeDisplay()
-	m.setImageLoading()
-
-	return loadSpriteCmd(ctx, m.sprites, m.pokemonSrc, reqID, m.selectionGen, sel.ID, cells, pokemon)
+	req := fgRenderReq{
+		speciesID: sel.ID,
+		gen:       m.selectionGen,
+		cells:     cells,
+		pokemon:   pokemon,
+	}
+	return m.queueOrStartFgRender(req, force)
 }
 
 // artworkReady reports whether background artwork warm has stored official art
@@ -692,6 +674,9 @@ func (m *Model) scheduleSpritePrefetch() tea.Cmd {
 			if pokemon.ID == 0 {
 				pokemon = domain.Pokemon{ID: sum.ID, Slug: sum.Slug, DisplayName: sum.DisplayName}
 			}
+			if _, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit {
+				continue
+			}
 			cmds = append(cmds, loadSpritePrefetchCmd(ctx, m.sprites, m.pokemonSrc, gen, sum.ID, cells, pokemon))
 			if len(cmds) >= spritePrefetchBurst {
 				break
@@ -742,6 +727,9 @@ func (m *Model) pruneSpriteResources() {
 }
 
 func (m Model) applySpritePrefetch(msg spritePrefetchMsg) (tea.Model, tea.Cmd) {
+	if m.foregroundColdBusy() {
+		return m, nil
+	}
 	if msg.gen != 0 && msg.gen != m.prefetchGen {
 		return m, nil
 	}
@@ -749,10 +737,10 @@ func (m Model) applySpritePrefetch(msg spritePrefetchMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.selectionSpriteOwns(msg.speciesID) {
-		return m, m.scheduleSpritePrefetch()
+		return m, m.scheduleSpritePrefetchIfIdle()
 	}
 	if !m.inPrefetchWindow(msg.speciesID) {
-		return m, m.scheduleSpritePrefetch()
+		return m, m.scheduleSpritePrefetchIfIdle()
 	}
 	// Warm engine/disk cache only — do not retain rendered output on resources.
 	if msg.pokemon.ID != 0 {
@@ -761,7 +749,7 @@ func (m Model) applySpritePrefetch(msg spritePrefetchMsg) (tea.Model, tea.Cmd) {
 			r.Pokemon = msg.pokemon
 		}
 	}
-	return m, m.scheduleSpritePrefetch()
+	return m, m.scheduleSpritePrefetchIfIdle()
 }
 
 // inPrefetchWindow reports whether speciesID is within the keep radius of the cursor.

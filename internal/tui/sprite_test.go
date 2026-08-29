@@ -15,12 +15,14 @@ import (
 )
 
 type fakeSprites struct {
-	calls   atomic.Int32
-	block   chan struct{}
-	ansi    string
-	cached  string
-	native  bool
-	started chan struct{}
+	calls       atomic.Int32
+	inFlight    atomic.Int32
+	maxInFlight atomic.Int32
+	block       chan struct{}
+	ansi        string
+	cached      string
+	native      bool
+	started     chan struct{}
 }
 
 func (f *fakeSprites) LookupCached(context.Context, domain.Pokemon, int) (sprite.RenderResult, bool) {
@@ -36,6 +38,14 @@ func (f *fakeSprites) RenderCold(ctx context.Context, pokemon domain.Pokemon, ce
 }
 
 func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (string, bool, bool, string) {
+	n := f.inFlight.Add(1)
+	for {
+		old := f.maxInFlight.Load()
+		if n <= old || f.maxInFlight.CompareAndSwap(old, n) {
+			break
+		}
+	}
+	defer f.inFlight.Add(-1)
 	f.calls.Add(1)
 	if f.started != nil {
 		select {
@@ -598,5 +608,81 @@ func TestPrefetchDoesNotRetainRenderedImage(t *testing.T) {
 	m = updated.(tui.Model)
 	if m.HasSpriteANSI() {
 		t.Fatal("selection change must blank image pane")
+	}
+}
+
+func TestForegroundLatestSelectionWins(t *testing.T) {
+	details := &fakeDetails{}
+	started := make(chan struct{}, 8)
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "ART", block: block, started: started}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	cmd := m.ForceSpriteLoadForTest()
+	if cmd == nil {
+		t.Fatal("expected first cold render")
+	}
+	firstID, _ := m.SelectedID()
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first render did not start")
+	}
+	if sprites.calls.Load() != 1 {
+		t.Fatalf("calls=%d want 1 active encode", sprites.calls.Load())
+	}
+
+	for i := 0; i < 3; i++ {
+		updated, _ = m.Update(key("down"))
+		m = updated.(tui.Model)
+	}
+	lastID, _ := m.SelectedID()
+	if lastID == firstID {
+		t.Fatal("expected cursor to move")
+	}
+	if sprites.calls.Load() != 1 {
+		t.Fatalf("fast scroll must not start extra encodes, calls=%d", sprites.calls.Load())
+	}
+	if sprites.maxInFlight.Load() != 1 {
+		t.Fatalf("max in-flight=%d want 1", sprites.maxInFlight.Load())
+	}
+	if m.FgPendingSpeciesForTest() != lastID {
+		t.Fatalf("pending=%d want latest %d", m.FgPendingSpeciesForTest(), lastID)
+	}
+	if m.FgActiveSpeciesForTest() != firstID {
+		t.Fatalf("active=%d want first %d", m.FgActiveSpeciesForTest(), firstID)
+	}
+
+	close(block)
+	var msg tea.Msg
+	select {
+	case msg = <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocked render did not finish")
+	}
+	updated, follow := m.Update(msg)
+	m = updated.(tui.Model)
+	if m.HasSpriteANSI() {
+		t.Fatal("stale first encode must not paint after scroll")
+	}
+	if follow == nil {
+		t.Fatal("expected pending latest selection to start after active exits")
+	}
+	if m.FgActiveSpeciesForTest() != lastID {
+		t.Fatalf("active after drain=%d want %d", m.FgActiveSpeciesForTest(), lastID)
+	}
+	if m.FgPendingSpeciesForTest() != 0 {
+		t.Fatalf("pending should be consumed, got %d", m.FgPendingSpeciesForTest())
+	}
+	if sprites.maxInFlight.Load() > 1 {
+		t.Fatalf("max in-flight=%d want 1", sprites.maxInFlight.Load())
 	}
 }

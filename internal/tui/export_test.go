@@ -155,9 +155,9 @@ func (m Model) SelectedSpritePlaceholderForTest() bool {
 	return m.imageSpeciesID == sel.ID && m.imagePlaceholder
 }
 
-// SelectedSpriteLoadingForTest reports whether a sprite encode is in flight.
+// SelectedSpriteLoadingForTest reports whether the selected sprite is waiting on a frame.
 func (m Model) SelectedSpriteLoadingForTest() bool {
-	return m.imageLoading && m.spriteLoadSpecies != 0
+	return m.imageState == ImageLoading
 }
 
 // CurrentSpriteCells exposes the active sprite cell size for tests.
@@ -205,6 +205,24 @@ func (m Model) ImageANSILenForTest() int { return len(m.imageANSI) }
 
 // ForceSpriteLoadForTest cancels any in-flight encode and starts a new one.
 func (m *Model) ForceSpriteLoadForTest() tea.Cmd {
+	m.fgPending = nil
+	m.fgActive = nil
 	m.cancelSprite()
 	return m.beginSpriteLoad()
 }
+
+func (m Model) FgActiveSpeciesForTest() int {
+	if m.fgActive == nil {
+		return 0
+	}
+	return m.fgActive.speciesID
+}
+
+func (m Model) FgPendingSpeciesForTest() int {
+	if m.fgPending == nil {
+		return 0
+	}
+	return m.fgPending.speciesID
+}
+
+func PrefetchRadiusForTest() int { return spritePrefetchRadius }
