@@ -145,6 +145,7 @@ type Model struct {
 	warmTotal     int
 	warmActive    bool
 	warmStage     string
+	warmCells     int
 	warmRight     string
 	warmHintAt    time.Time
 

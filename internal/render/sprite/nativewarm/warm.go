@@ -127,29 +127,36 @@ func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 	}
 	cells = sprite.ClampFrameSide(cells)
 	total := len(s.cfg.Index)
-	if s.cfg.Manifest != nil {
-		if err := s.cfg.Manifest.EnsureManifest(s.cfg.Protocol); err != nil {
-			debuglog.Renderf("nativewarm manifest err=%v", err)
-		}
-		if s.allSizesComplete(total) {
-			return
-		}
-	}
 
 	s.mu.Lock()
+	prevLayout := s.layoutCells
 	s.layoutCells = cells
-	cellsChanged := s.cells != cells
+	currentWorkCells := s.cells
+	alreadyStarted := s.started.Load()
+	s.mu.Unlock()
+
+	if alreadyStarted && prevLayout == cells {
+		return
+	}
+
+	if s.cfg.Manifest != nil && s.allSizesComplete(total) {
+		return
+	}
+
 	workCells := cells
 	if s.cfg.Manifest != nil && s.cfg.Manifest.NativeSizeComplete(cells, total) {
 		if next := s.nextBackgroundSize(total); next > 0 {
 			workCells = next
 		}
 	}
-	if s.cells != workCells {
-		cellsChanged = true
-		s.cells = workCells
+
+	if alreadyStarted && prevLayout == cells && workCells == currentWorkCells {
+		return
 	}
-	alreadyStarted := s.started.Load()
+
+	s.mu.Lock()
+	cellsChanged := s.cells != workCells
+	s.cells = workCells
 	s.mu.Unlock()
 
 	if !alreadyStarted {

@@ -146,14 +146,18 @@ func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
 	if _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(key); err != nil {
 		return err
 	}
+	isNew := !s.store.HasNativeFile(key)
 	if err := s.store.StoreNative(ctx, key, []byte(frame)); err != nil {
 		return err
 	}
-	s.recordNativeFrameManifest(key)
+	s.recordNativeFrameManifest(key, isNew)
 	return nil
 }
 
-func (s *Service) recordNativeFrameManifest(key string) {
+func (s *Service) recordNativeFrameManifest(key string, isNew bool) {
+	if !isNew {
+		return
+	}
 	_, _, pxW, pxH, _, ver, err := sprite.ParseNativeCacheKey(key)
 	if err != nil || ver != sprite.AlgorithmVersion {
 		return
@@ -173,12 +177,8 @@ func (s *Service) recordNativeFrameManifest(key string) {
 		m.Sizes = map[int]NativeSizeStatus{}
 	}
 	entry := m.Sizes[cells]
-	done, err := s.store.CountNativeSpeciesForCells(cells, m.Protocol)
-	if err != nil {
-		return
-	}
-	entry.Done = done
-	entry.Complete = entry.Total > 0 && done >= entry.Total
+	entry.Done++
+	entry.Complete = entry.Total > 0 && entry.Done >= entry.Total
 	m.Sizes[cells] = entry
 	_ = s.store.WriteNativeManifest(m)
 }

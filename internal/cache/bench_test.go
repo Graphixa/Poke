@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -46,6 +47,71 @@ func BenchmarkNamedAssetMeta(b *testing.B) {
 		if err != nil || !ready {
 			b.Fatal(err)
 		}
+	}
+}
+
+func BenchmarkNativeSizeComplete(b *testing.B) {
+	root := b.TempDir()
+	store := NewStore(root, nil)
+	ctx := context.Background()
+	bg := sprite.DefaultBackground
+	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
+	for i := 0; i < 500; i++ {
+		key := sprite.NativeCacheKey("bench-"+string(rune(i)), "sixel", w, h, bg)
+		if err := store.StoreNative(ctx, key, []byte("SIXEL")); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := store.EnsureNativeManifest(sprite.AlgorithmVersion, "sixel"); err != nil {
+		b.Fatal(err)
+	}
+	m, err := store.ReadNativeManifest()
+	if err != nil {
+		b.Fatal(err)
+	}
+	entry := m.Sizes[sprite.MaxFrameSize]
+	entry.Done = 500
+	entry.Total = 500
+	m.Sizes[sprite.MaxFrameSize] = entry
+	if err := store.WriteNativeManifest(m); err != nil {
+		b.Fatal(err)
+	}
+	ResetNativeDirectoryScanCount()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !store.NativeSizeComplete(sprite.MaxFrameSize, 500) {
+			b.Fatal("expected complete")
+		}
+	}
+	if NativeDirectoryScanCount() != 0 {
+		b.Fatalf("NativeSizeComplete scanned disk during benchmark")
+	}
+}
+
+func BenchmarkStoreNativeMany(b *testing.B) {
+	root := b.TempDir()
+	store := NewStore(root, nil)
+	svc := NewService(store, nil, config.Config{}, nil)
+	if err := store.EnsureNativeManifest(sprite.AlgorithmVersion, "sixel"); err != nil {
+		b.Fatal(err)
+	}
+	if err := store.InitNativeSizePhase(sprite.MaxFrameSize, b.N); err != nil {
+		b.Fatal(err)
+	}
+	ctx := context.Background()
+	bg := sprite.DefaultBackground
+	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
+	ResetNativeDirectoryScanCount()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		key := sprite.NativeCacheKey("bench-store-"+string(rune(i)), "sixel", w, h, bg)
+		if err := svc.StoreNative(ctx, key, "SIXEL"); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+	if NativeDirectoryScanCount() != 0 {
+		b.Fatalf("StoreNative scanned disk %d times during benchmark", NativeDirectoryScanCount())
 	}
 }
 

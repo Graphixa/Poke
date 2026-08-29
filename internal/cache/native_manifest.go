@@ -8,9 +8,22 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
+
+var nativeDirectoryScanCount atomic.Int64
+
+// ResetNativeDirectoryScanCount clears the test counter for native ReadDir calls.
+func ResetNativeDirectoryScanCount() {
+	nativeDirectoryScanCount.Store(0)
+}
+
+// NativeDirectoryScanCount returns how many times the native cache directory was read.
+func NativeDirectoryScanCount() int64 {
+	return nativeDirectoryScanCount.Load()
+}
 
 // NativeSizeStatus tracks warm completeness for one cell bucket.
 type NativeSizeStatus struct {
@@ -77,34 +90,21 @@ func (s *Store) EnsureNativeManifest(version, protocol string) error {
 		}
 		return s.WriteNativeManifest(m)
 	}
-	for _, cells := range sprite.FrameSteps() {
-		if _, err := s.healNativeSize(cells); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Store) healNativeSize(cells int) (int, error) {
-	m, err := s.ReadNativeManifest()
+	counts, err := s.auditNativeFrameCounts(m.Protocol)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	if m.Sizes == nil {
 		m.Sizes = map[int]NativeSizeStatus{}
 	}
-	done, err := s.CountNativeSpeciesForCells(cells, m.Protocol)
-	if err != nil {
-		return 0, err
+	for _, cells := range sprite.FrameSteps() {
+		entry := m.Sizes[cells]
+		done := counts[cells]
+		entry.Done = done
+		entry.Complete = entry.Total > 0 && done >= entry.Total
+		m.Sizes[cells] = entry
 	}
-	entry := m.Sizes[cells]
-	entry.Done = done
-	entry.Complete = entry.Total > 0 && done >= entry.Total
-	m.Sizes[cells] = entry
-	if err := s.WriteNativeManifest(m); err != nil {
-		return done, err
-	}
-	return done, nil
+	return s.WriteNativeManifest(m)
 }
 
 // InitNativeSizePhase prepares manifest tracking for a warm phase.
@@ -119,7 +119,8 @@ func (s *Store) InitNativeSizePhase(cells, total int) error {
 	entry := m.Sizes[cells]
 	entry.Total = total
 	entry.Complete = false
-	if done, err := s.CountNativeSpeciesForCells(cells, m.Protocol); err == nil {
+	if counts, err := s.auditNativeFrameCounts(m.Protocol); err == nil {
+		done := counts[cells]
 		entry.Done = done
 		entry.Complete = total > 0 && done >= total
 	}
@@ -136,10 +137,11 @@ func (s *Store) MarkNativeSizeComplete(cells, total int) error {
 	if m.Sizes == nil {
 		m.Sizes = map[int]NativeSizeStatus{}
 	}
-	done, err := s.CountNativeSpeciesForCells(cells, m.Protocol)
+	counts, err := s.auditNativeFrameCounts(m.Protocol)
 	if err != nil {
 		return err
 	}
+	done := counts[cells]
 	entry := m.Sizes[cells]
 	entry.Done = done
 	if total > 0 {
@@ -156,10 +158,11 @@ func (s *Store) RecountNativeSize(cells int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	done, err := s.CountNativeSpeciesForCells(cells, m.Protocol)
+	counts, err := s.auditNativeFrameCounts(m.Protocol)
 	if err != nil {
 		return 0, err
 	}
+	done := counts[cells]
 	if m.Sizes == nil {
 		m.Sizes = map[int]NativeSizeStatus{}
 	}
@@ -174,6 +177,7 @@ func (s *Store) RecountNativeSize(cells int) (int, error) {
 }
 
 // NativeSizeComplete reports whether manifest marks a cell bucket complete.
+// Hot path: manifest JSON only (no disk scan). Recount on store/delete/mark/heal.
 func (s *Store) NativeSizeComplete(cells, indexTotal int) bool {
 	if cells < sprite.MinFrameSize || indexTotal <= 0 {
 		return false
@@ -182,15 +186,11 @@ func (s *Store) NativeSizeComplete(cells, indexTotal int) bool {
 	if err != nil || m.Version != sprite.AlgorithmVersion {
 		return false
 	}
-	done, err := s.CountNativeSpeciesForCells(cells, m.Protocol)
-	if err != nil {
+	entry, ok := m.Sizes[cells]
+	if !ok {
 		return false
 	}
-	entry, ok := m.Sizes[cells]
-	if ok && entry.Total > 0 {
-		return done >= entry.Total
-	}
-	return done >= indexTotal
+	return entry.Total == indexTotal && entry.Done >= indexTotal
 }
 
 // CountNativeSpeciesForCells counts unique species with native frames at cells.
@@ -202,11 +202,7 @@ func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, err
 	if protocol != "" {
 		protoNeedle = "image-" + protocol
 	}
-	dir := filepath.Join(s.root, "native")
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
-	}
+	entries, err := s.readNativeDirEntries()
 	if err != nil {
 		return 0, err
 	}
@@ -261,12 +257,82 @@ func (s *Store) InvalidateNativeManifestSizes() error {
 	if len(m.Sizes) == 0 {
 		return nil
 	}
+	counts, err := s.auditNativeFrameCounts(m.Protocol)
+	if err != nil {
+		return err
+	}
 	for cells := range m.Sizes {
-		if _, err := s.RecountNativeSize(cells); err != nil {
-			return err
+		entry := m.Sizes[cells]
+		entry.Done = counts[cells]
+		entry.Complete = entry.Total > 0 && entry.Done >= entry.Total
+		m.Sizes[cells] = entry
+	}
+	return s.WriteNativeManifest(m)
+}
+
+func (s *Store) readNativeDirEntries() ([]os.DirEntry, error) {
+	dir := filepath.Join(s.root, "native")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	nativeDirectoryScanCount.Add(1)
+	return entries, nil
+}
+
+func (s *Store) auditNativeFrameCounts(protocol string) (map[int]int, error) {
+	entries, err := s.readNativeDirEntries()
+	if err != nil {
+		return nil, err
+	}
+	seen := map[int]map[string]bool{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".frame") {
+			continue
+		}
+		key := strings.TrimSuffix(name, ".frame")
+		hash, proto, fw, fh, _, ver, parseErr := sprite.ParseNativeCacheKey(key)
+		if parseErr != nil || hash == "" {
+			continue
+		}
+		if protocol != "" && proto != protocol {
+			continue
+		}
+		if ver != "" && ver != sprite.AlgorithmVersion {
+			continue
+		}
+		cells := cellsForNativeFrameDims(fw, fh)
+		if cells < sprite.MinFrameSize {
+			continue
+		}
+		if seen[cells] == nil {
+			seen[cells] = map[string]bool{}
+		}
+		seen[cells][hash] = true
+	}
+	counts := map[int]int{}
+	for cells, hashes := range seen {
+		counts[cells] = len(hashes)
+	}
+	return counts, nil
+}
+
+func cellsForNativeFrameDims(fw, fh int) int {
+	for _, cells := range sprite.FrameSteps() {
+		w, h := sprite.FrameSizeFor(cells)
+		pxW, pxH := sprite.PixelSize(w, h)
+		if fw == pxW && fh == pxH {
+			return cells
 		}
 	}
-	return nil
+	return 0
 }
 
 // Service wrappers for native manifest operations.

@@ -107,29 +107,33 @@ func (m Model) browseData() views.BrowseData {
 	return data
 }
 
-// showsWarmHintInView is false while a native sprite is on screen or a native
-// warmer is active. Footer "Cache" ticks rewrite cells under Sixel and leak as
-// glyphs mixed with overflow bands.
-// Must not call browseData/nativeOverlayReady (those call back into browseData).
-func (m Model) showsWarmHintInView() bool {
-	if m.nativeWarmer != nil {
-		return false
-	}
+// nativeSpriteActive reports whether a native frame is shown for the selection
+// without building browse view data (avoids recursion with showsWarmHintInView).
+func (m Model) nativeSpriteActive() bool {
 	if m.showHelp || m.showDialog || m.quitting {
-		return true
+		return false
 	}
 	sel, ok := m.selected()
 	if !ok {
-		return true
+		return false
 	}
 	if m.imageSpeciesID != sel.ID || m.imagePlaceholder || !m.imageNative || m.imageANSI == "" {
-		return true
+		return false
 	}
 	lay := m.layout()
-	if !lay.ShowSprite || lay.SpriteSize < sprite.MinFrameSize {
+	return lay.ShowSprite && lay.SpriteSize >= sprite.MinFrameSize
+}
+
+// showsWarmHintInView is false while native art is on screen (progress uses tea.Raw
+// on the footer instead). Must not call browseData or nativeOverlayReady.
+func (m Model) showsWarmHintInView() bool {
+	if m.showHelp || m.showDialog || m.quitting {
 		return true
 	}
-	return false
+	if m.nativeSpriteActive() {
+		return false
+	}
+	return true
 }
 
 func pokemonTypeNames(p domain.Pokemon) []string {

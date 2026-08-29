@@ -178,9 +178,12 @@ func Footer(verbose bool, width int, warmHint string) string {
 	return FooterSplit(verbose, width, warmHint)
 }
 
+// FooterRightWidth is the fixed character width of the browse footer status segment.
+const FooterRightWidth = 38
+
 // FooterSplit renders help keys on the left and a fixed-width status on the right.
 func FooterSplit(verbose bool, width int, rightStatus string) string {
-	const footerRightWidth = 38
+	footerRightWidth := FooterRightWidth
 	right := strings.TrimSpace(rightStatus)
 	right = textwidth.Truncate(right, footerRightWidth)
 	if w := textwidth.Width(right); w < footerRightWidth {

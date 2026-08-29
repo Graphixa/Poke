@@ -251,6 +251,11 @@ func (s *Store) StoreHalfblock(ctx context.Context, key string, data []byte) err
 	return s.StoreArtefact(ctx, key, data)
 }
 
+func (s *Store) HasNativeFile(key string) bool {
+	_, err := os.Stat(s.nativePath(key))
+	return err == nil
+}
+
 func (s *Store) Native(_ context.Context, key string) ([]byte, error) {
 	data, err := os.ReadFile(s.nativePath(key))
 	if errors.Is(err, os.ErrNotExist) {

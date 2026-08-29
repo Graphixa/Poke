@@ -6,18 +6,17 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-const warmFooterRightWidth = 38
-
-func formatWarmFooterRight(stage string, done, total int) string {
+func formatWarmFooterRight(stage string, done, total, cells int) string {
 	if total <= 0 || done >= total {
 		return ""
 	}
 	switch stage {
 	case "native":
-		return formatNativeCacheBar(done, total)
+		return formatNativeImageCacheFooter(cells, done, total)
 	case "artwork":
 		return formatArtworkCacheBar(done, total)
 	default:
@@ -37,8 +36,12 @@ func warmBarStyles() (label, fill, track, count lipgloss.Style) {
 	return label, fill, track, count
 }
 
-func formatNativeCacheBar(done, total int) string {
-	return formatWarmBar("Cache", done, total)
+func formatNativeImageCacheFooter(cells int, done, total int) string {
+	labelText := "Image Cache"
+	if cells > 0 {
+		labelText = fmt.Sprintf("Image Cache (%d)", cells)
+	}
+	return formatWarmBar(labelText, done, total)
 }
 
 func formatArtworkCacheBar(done, total int) string {
@@ -63,24 +66,13 @@ func formatWarmBar(labelText string, done, total int) string {
 }
 
 func fitWarmFooterRight(s string) string {
-	if lipgloss.Width(s) <= warmFooterRightWidth {
+	if lipgloss.Width(s) <= components.FooterRightWidth {
 		return s
 	}
-	return lipgloss.NewStyle().MaxWidth(warmFooterRightWidth).Render(s)
-}
-
-func repeatRune(r rune, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = r
-	}
-	return string(b)
+	return lipgloss.NewStyle().MaxWidth(components.FooterRightWidth).Render(s)
 }
 
 // FormatNativeCacheBarForTest exports the native progress label for tests.
-func FormatNativeCacheBarForTest(done, total int) string {
-	return formatNativeCacheBar(done, total)
+func FormatNativeCacheBarForTest(cells int, done, total int) string {
+	return formatNativeImageCacheFooter(cells, done, total)
 }

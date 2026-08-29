@@ -100,7 +100,11 @@ func WarmProgressSpeciesStageMsgForTest(done, total, speciesID int, stage string
 	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: stage}
 }
 
-// NativePaintPendingForTest reports whether a native overlay tick is queued.
+// WarmProgressNativeMsgForTest builds a native warm tick with optional size bucket.
+func WarmProgressNativeMsgForTest(done, total, cells int) warmProgressMsg {
+	return warmProgressMsg{Done: done, Total: total, Message: "Building image cache", Stage: "native", Cells: cells}
+}
+
 func (m Model) NativePaintPendingForTest() bool { return m.nativePaintPending }
 
 // NativePaintANSIForTest returns the last painted native sequence (test helper).

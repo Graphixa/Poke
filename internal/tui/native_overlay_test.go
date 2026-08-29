@@ -301,11 +301,14 @@ func TestWarmProgressNativeFooter(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
-	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(5, 10, 0, "native"))
+	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
 	m = updated.(tui.Model)
 	hint := m.BrowseWarmHintForTest()
-	if hint == "" || !strings.Contains(hint, "Cache") {
+	if hint == "" || !strings.Contains(hint, "Image Cache") {
 		t.Fatalf("warm right=%q", hint)
+	}
+	if vis := m.BrowseVisibleWarmHintForTest(); vis == "" {
+		t.Fatal("expected visible footer progress without native sprite")
 	}
 }
 
@@ -332,7 +335,7 @@ func TestWarmHintHiddenUnderNativeSprite(t *testing.T) {
 	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
 	m = updated.(tui.Model)
 
-	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(460, 649, 0, "native"))
+	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(460, 649, 36))
 	m = updated.(tui.Model)
 	if m.BrowseWarmHintForTest() == "" {
 		t.Fatal("expected internal warm state")
@@ -356,7 +359,7 @@ func (fakeNativeWarmer) Snapshot() (int, int)   { return 0, 0 }
 func (fakeNativeWarmer) NoteActivity()          {}
 func (fakeNativeWarmer) SetForegroundBusy(bool) {}
 
-func TestWarmHintHiddenWhenNativeWarmer(t *testing.T) {
+func TestWarmHintVisibleWhenNativeWarmerNoSprite(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}
 	m := tui.NewModel(tui.Options{
@@ -368,13 +371,13 @@ func TestWarmHintHiddenWhenNativeWarmer(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
-	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(5, 10, 0, "native"))
+	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
 	m = updated.(tui.Model)
 	if m.BrowseWarmHintForTest() == "" {
 		t.Fatal("expected internal warm state")
 	}
-	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
-		t.Fatalf("native session must not put Cache in the footer: %q", vis)
+	if vis := m.BrowseVisibleWarmHintForTest(); vis == "" {
+		t.Fatal("expected visible footer progress before native sprite paints")
 	}
 }
 

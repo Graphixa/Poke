@@ -29,7 +29,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case nativeOverlayMsg:
-		return m.emitNativeOverlay(msg.followUp)
+		m, cmd := m.emitNativeOverlay(msg.followUp)
+		return m, tea.Batch(cmd, m.warmFooterPatchIfNeeded())
 
 	case spinner.TickMsg:
 		if m.imageState != ImageLoading {
@@ -151,10 +152,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.warmActive = false
 			m.warmRight = ""
 			m.warmStage = ""
-			if sel, ok := m.selected(); ok {
-				return m, m.refreshSpriteAfterWarm(sel.ID, "artwork")
+			m.warmCells = 0
+			var clear tea.Cmd
+			if m.nativeSpriteActive() {
+				clear = clearWarmFooterRawCmd(m)
 			}
-			return m, nil
+			if sel, ok := m.selected(); ok {
+				return m, tea.Batch(clear, m.refreshSpriteAfterWarm(sel.ID, "artwork"), listenWarmProgress(m.warmEvents))
+			}
+			return m, tea.Batch(clear, listenWarmProgress(m.warmEvents))
 		}
 		m.warmDone = msg.Done
 		m.warmTotal = msg.Total
@@ -162,9 +168,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Stage != "" {
 			m.warmStage = msg.Stage
 		}
+		if msg.Cells > 0 {
+			m.warmCells = msg.Cells
+		}
 		right := ""
 		if m.warmActive {
-			right = formatWarmFooterRight(m.warmStage, m.warmDone, m.warmTotal)
+			right = formatWarmFooterRight(m.warmStage, m.warmDone, m.warmTotal, m.warmCells)
 		}
 		rightChanged := right != m.warmRight
 		now := time.Now()
@@ -178,7 +187,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.SpeciesID != 0 {
 			reload = m.refreshSpriteAfterWarm(msg.SpeciesID, msg.Stage)
 		}
-		return m, tea.Batch(reload, listenWarmProgress(m.warmEvents))
+		var patch tea.Cmd
+		if m.warmActive && m.warmStage == "native" && m.nativeSpriteActive() {
+			patch = patchWarmFooterCmd(m)
+		}
+		return m, tea.Batch(reload, patch, listenWarmProgress(m.warmEvents))
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)

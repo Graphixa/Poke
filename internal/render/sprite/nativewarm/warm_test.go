@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
+	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
@@ -212,6 +213,43 @@ func waitNativeRenders(t *testing.T, rend *fakeNativeRenderer, n int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("renders=%d want >=%d ids=%v", rend.renders(), n, rend.renderedIDs())
+}
+
+func TestEnsureStartedHotPathNoDirectoryScan(t *testing.T) {
+	dir := t.TempDir()
+	store := cache.NewStore(dir, nil)
+	svc := cache.NewService(store, nil, config.Config{}, nil)
+	if err := store.EnsureNativeManifest(sprite.AlgorithmVersion, "sixel"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InitNativeSizePhase(sprite.MaxFrameSize, 2); err != nil {
+		t.Fatal(err)
+	}
+	index := []domain.SpeciesSummary{
+		{ID: 25, Slug: "pikachu"},
+		{ID: 26, Slug: "raichu"},
+	}
+	rend := &fakeNativeRenderer{cached: map[int]bool{}}
+	svcWarm := nativewarm.New(nativewarm.Config{
+		Cells:    sprite.MaxFrameSize,
+		Workers:  1,
+		Loader:   fakeLoader{},
+		Renderer: rend,
+		Index:    index,
+		Manifest: svc,
+		Protocol: "sixel",
+	})
+	ctx := context.Background()
+	svcWarm.EnsureStarted(ctx, sprite.MaxFrameSize)
+	waitNativeRenders(t, rend, 1)
+	cache.ResetNativeDirectoryScanCount()
+	for i := 0; i < 1000; i++ {
+		svcWarm.EnsureStarted(ctx, sprite.MaxFrameSize)
+	}
+	if n := cache.NativeDirectoryScanCount(); n != 0 {
+		t.Fatalf("EnsureStarted scans=%d want 0", n)
+	}
+	svcWarm.Stop()
 }
 
 func TestForegroundBusySkipsBackgroundKeepsSelected(t *testing.T) {
