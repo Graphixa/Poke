@@ -115,3 +115,17 @@ func TestSendWarmProgressNeverBlocks(t *testing.T) {
 		t.Fatal("sendWarmProgress blocked on full channel")
 	}
 }
+
+func TestImageCacheCompletionEventNotDropped(t *testing.T) {
+	ch := make(chan tui.WarmProgress, 1)
+	ch <- tui.WarmProgress{Done: 1024, Total: 1025, Stage: "native"}
+	sendWarmProgress(ch, cache.Progress{Done: 1025, Total: 1025, Stage: "native"})
+	select {
+	case got := <-ch:
+		if got.Done != 1025 || got.Total != 1025 {
+			t.Fatalf("got %+v want 1025/1025", got)
+		}
+	default:
+		t.Fatal("completion event dropped")
+	}
+}

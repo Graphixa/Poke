@@ -184,6 +184,8 @@ func TestImageCacheProgressCountsPokemonNotSizeBuckets(t *testing.T) {
 		seedArtwork(t, store, sum.ID, sum.Slug, testHash(sum.ID))
 	}
 	c := startSession(t, store, index, spec)
+	svc := cache.NewService(store, nil, config.Config{}, nil)
+	seedNativeSizes(t, svc, spec, testHash(index[0].ID), spec.RequiredSizes)
 	var last cache.ImageCacheProgress
 	c.SetProgressFunc(func(p cache.Progress) {
 		last = cache.ImageCacheProgress{Done: p.Done, Total: p.Total, Active: p.Total > 0 && p.Done < p.Total}
@@ -215,6 +217,8 @@ func TestImageCacheProgressCompletesExactlyOncePerPokemon(t *testing.T) {
 	index := testIndex(1)
 	seedArtwork(t, store, index[0].ID, index[0].Slug, testHash(index[0].ID))
 	c := startSession(t, store, index, spec)
+	svc := cache.NewService(store, nil, config.Config{}, nil)
+	seedNativeSizes(t, svc, spec, testHash(index[0].ID), spec.RequiredSizes)
 	emits := 0
 	c.SetProgressFunc(func(cache.Progress) { emits++ })
 	for i := 0; i < 3; i++ {
@@ -318,6 +322,21 @@ func TestImageCacheSpecIDChangesWithRendererVersion(t *testing.T) {
 	b.RendererVersion = "other"
 	if a.ID() == b.ID() {
 		t.Fatal("spec identity must change with renderer version")
+	}
+}
+
+func TestImageCacheNoteVariantRequiresCanonicalFiles(t *testing.T) {
+	store := cache.NewStore(t.TempDir(), nil)
+	spec := testImageSpec()
+	index := testIndex(1)
+	seedArtwork(t, store, index[0].ID, index[0].Slug, testHash(index[0].ID))
+	c := startSession(t, store, index, spec)
+	for _, cells := range spec.RequiredSizes {
+		c.NoteVariant(index[0].ID, cells)
+	}
+	p := c.Progress()
+	if p.Done != 0 || !p.Active {
+		t.Fatalf("legacy/in-memory sizes without SHA-256 frames must stay outstanding: %+v", p)
 	}
 }
 

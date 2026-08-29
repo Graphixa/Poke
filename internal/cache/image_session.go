@@ -307,6 +307,9 @@ func (c *ImageCacheCoordinator) tryCompleteLocked(w *PokemonCacheWork) (PokemonI
 	if !allNativeReady(w, c.spec.RequiredSizes) {
 		return PokemonImageCacheState{}, false
 	}
+	if c.store != nil && !allRequiredNativePresent(c.store, c.spec, w.SourceHash) {
+		return PokemonImageCacheState{}, false
+	}
 	w.Complete = true
 	c.done++
 	debuglog.Cachef("cache species=%d complete", w.SpeciesID)

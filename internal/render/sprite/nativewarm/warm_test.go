@@ -363,9 +363,153 @@ func TestActivityPausesBackgroundUntilIdle(t *testing.T) {
 	}
 }
 
+type memCompleter struct {
+	mu     sync.Mutex
+	sizes  []int
+	ready  map[int]map[int]bool
+	doneAt map[int]bool
+	total  int
+	done   int
+}
+
+func newMemCompleter(ids, sizes []int) *memCompleter {
+	c := &memCompleter{
+		sizes:  sizes,
+		ready:  make(map[int]map[int]bool, len(ids)),
+		doneAt: make(map[int]bool, len(ids)),
+		total:  len(ids),
+	}
+	for _, id := range ids {
+		c.ready[id] = map[int]bool{}
+	}
+	return c
+}
+
+func (c *memCompleter) OutstandingIDs() []int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ids := make([]int, 0, len(c.ready))
+	for id := range c.ready {
+		if !c.doneAt[id] {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func (c *memCompleter) NoteVariant(speciesID, cells int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ready[speciesID] == nil {
+		c.ready[speciesID] = map[int]bool{}
+	}
+	c.ready[speciesID][cells] = true
+	if c.doneAt[speciesID] {
+		return
+	}
+	for _, sz := range c.sizes {
+		if !c.ready[speciesID][sz] {
+			return
+		}
+	}
+	c.doneAt[speciesID] = true
+	c.done++
+}
+
+func (c *memCompleter) IsComplete(speciesID int) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.doneAt[speciesID]
+}
+
+func (c *memCompleter) Progress() cache.ImageCacheProgress {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return cache.ImageCacheProgress{Done: c.done, Total: c.total, Active: c.total > 0 && c.done < c.total}
+}
+
+type gatingNativeRenderer struct {
+	mu     sync.Mutex
+	allow  bool
+	render int
+	cached map[fakeKey]bool
+}
+
+func (f *gatingNativeRenderer) setAllow(v bool) {
+	f.mu.Lock()
+	f.allow = v
+	f.mu.Unlock()
+}
+
+func (f *gatingNativeRenderer) renders() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.render
+}
+
+func (f *gatingNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Pokemon, cells int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cached[fakeKey{pokemon.ID, cells}]
+}
+
+func (f *gatingNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.render++
+	if !f.allow {
+		return sprite.RenderResult{UsePlaceholder: true, Backend: "image"}
+	}
+	if f.cached == nil {
+		f.cached = map[fakeKey]bool{}
+	}
+	f.cached[fakeKey{pokemon.ID, cells}] = true
+	return sprite.RenderResult{ANSI: "X", Native: true, Backend: "image"}
+}
+
+func TestP2DoesNotAbandonIncompletePokemon(t *testing.T) {
+	index := []domain.SpeciesSummary{{ID: 25, Slug: "pikachu"}}
+	sizes := sprite.FrameSteps()
+	comp := newMemCompleter([]int{25}, sizes)
+	rend := &gatingNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{
+		Workers:       1,
+		Loader:        fakeLoader{},
+		Renderer:      rend,
+		Index:         index,
+		Completer:     comp,
+		RequiredSizes: sizes,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	svc.EnsureStarted(ctx, sprite.MaxFrameSize)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if rend.renders() >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if rend.renders() < 1 {
+		t.Fatal("expected placeholder P2 attempts")
+	}
+	if p := comp.Progress(); p.Done != 0 || !p.Active {
+		t.Fatalf("placeholder pass must not complete Pokémon: %+v", p)
+	}
+	rend.setAllow(true)
+	if err := svc.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if p := comp.Progress(); p.Done != 1 || p.Active {
+		t.Fatalf("after successful retry progress=%+v want done=1", p)
+	}
+	svc.Stop()
+}
+
 // compile-time check manifestStub implements interface
 var _ nativewarm.ManifestStore = (*manifestStub)(nil)
 var _ nativewarm.ImageCompleter = (*cache.ImageCacheCoordinator)(nil)
+var _ nativewarm.ImageCompleter = (*memCompleter)(nil)
 
 // unused import guard
 var _ = cache.Progress{}

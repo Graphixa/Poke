@@ -19,6 +19,9 @@ const (
 	PrioritySelected   = 0
 	PriorityNeighbor   = 1
 	PriorityBackground = 2
+
+	maxWarmMisses             = 8
+	outstandingRescanInterval = 2 * time.Second
 )
 
 // PokemonLoader loads Pokémon detail by species ID.
@@ -79,9 +82,11 @@ type Service struct {
 	seq         int64
 	queued      map[int]bool
 	done        map[int]bool
+	misses      map[int]int
 	indexByID   map[int]domain.SpeciesSummary
 	cells       int
 	layoutCells int
+	lastRescan  time.Time
 	wake        chan struct{}
 	started     atomic.Bool
 	cancel      context.CancelFunc
@@ -121,6 +126,7 @@ func New(cfg Config) *Service {
 		cfg:       cfg,
 		queued:    make(map[int]bool),
 		done:      make(map[int]bool),
+		misses:    make(map[int]int),
 		indexByID: indexByID,
 		cells:     cfg.Cells,
 		wake:      make(chan struct{}, 1),
@@ -397,6 +403,7 @@ func (s *Service) worker(ctx context.Context) {
 		}
 		j, ok := s.pop()
 		if !ok {
+			s.rescanOutstanding()
 			wait := sprite.InteractiveIdle
 			select {
 			case <-ctx.Done():
@@ -445,7 +452,7 @@ func (s *Service) runJob(ctx context.Context, j job) {
 	poke, err := s.pokemonForJob(ctx, j.speciesID)
 	if err != nil {
 		debuglog.Renderf("nativewarm skip species=%d err=%v", j.speciesID, err)
-		s.markDone(j.speciesID)
+		s.retryIncomplete(j.speciesID)
 		s.report(j.speciesID)
 		return
 	}
@@ -462,20 +469,25 @@ func (s *Service) runJob(ctx context.Context, j job) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
+		cached := s.cfg.Renderer.HasNativeCache(ctx, poke, cells)
+		if cached {
 			s.noteVariant(j.speciesID, cells)
-			continue
+			if s.cfg.Completer == nil || s.speciesFullyCached(ctx, j.speciesID) {
+				continue
+			}
 		}
 		res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
 		if res.UsePlaceholder || !res.Native {
 			debuglog.Renderf("nativewarm miss species=%d backend=%s", j.speciesID, res.Backend)
-		} else {
-			s.noteVariant(j.speciesID, cells)
+			continue
 		}
+		s.noteVariant(j.speciesID, cells)
 	}
 
-	if j.allSizes || s.speciesFullyCached(ctx, j.speciesID) {
+	if s.speciesFullyCached(ctx, j.speciesID) {
 		s.markDone(j.speciesID)
+	} else if j.allSizes || j.priority >= PriorityBackground {
+		s.retryIncomplete(j.speciesID)
 	} else {
 		s.ensureBackground(j.speciesID)
 	}
@@ -552,6 +564,55 @@ func (s *Service) ensureBackground(speciesID int) {
 	s.signal()
 }
 
+func (s *Service) retryIncomplete(speciesID int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.done[speciesID] {
+		return
+	}
+	s.misses[speciesID]++
+	n := s.misses[speciesID]
+	if n > maxWarmMisses {
+		debuglog.Renderf("nativewarm defer species=%d misses=%d", speciesID, n)
+		s.lastRescan = time.Now()
+		return
+	}
+	s.pushLocked(job{speciesID: speciesID, priority: PriorityBackground, allSizes: true})
+	s.signal()
+}
+
+func (s *Service) rescanOutstanding() {
+	if s.cfg.Completer == nil {
+		return
+	}
+	p := s.cfg.Completer.Progress()
+	if !p.Active {
+		return
+	}
+	s.mu.Lock()
+	if !s.lastRescan.IsZero() && time.Since(s.lastRescan) < outstandingRescanInterval {
+		s.mu.Unlock()
+		return
+	}
+	s.lastRescan = time.Now()
+	s.mu.Unlock()
+
+	ids := s.cfg.Completer.OutstandingIDs()
+	s.mu.Lock()
+	for _, id := range ids {
+		if s.done[id] {
+			delete(s.done, id)
+		}
+		delete(s.misses, id)
+		if s.queued[id] {
+			continue
+		}
+		s.pushLocked(job{speciesID: id, priority: PriorityBackground, allSizes: true})
+	}
+	s.mu.Unlock()
+	s.signal()
+}
+
 func (s *Service) requeue(j job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -567,6 +628,7 @@ func (s *Service) markDone(speciesID int) {
 		s.done[speciesID] = true
 		s.doneN.Add(1)
 	}
+	delete(s.misses, speciesID)
 	s.mu.Unlock()
 }
 
@@ -665,9 +727,15 @@ func (s *Service) Wait(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		done, total := s.Snapshot()
-		if total == 0 || done >= total {
-			return nil
+		if s.cfg.Completer != nil {
+			if !s.cfg.Completer.Progress().Active {
+				return nil
+			}
+		} else {
+			done, total := s.Snapshot()
+			if total == 0 || done >= total {
+				return nil
+			}
 		}
 		select {
 		case <-ctx.Done():

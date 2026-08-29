@@ -77,15 +77,28 @@ func (t tuiSprites) ClearNativeRegion(cellsW, cellsH int) string {
 	return t.Engine.ClearNativeRegion(cellsW, cellsH)
 }
 
-// sendWarmProgress is non-blocking. A full buffer drops ticks so warmers
-// cannot stall the TUI (or hang quit waiting on a closed consumer).
-func sendWarmProgress(ch chan<- tui.WarmProgress, p cache.Progress) {
+// sendWarmProgress is non-blocking for in-progress ticks so warmers cannot
+// stall the TUI. A Done>=Total tick must not be dropped: one stale buffered
+// message is discarded so completion can replace it.
+func sendWarmProgress(ch chan tui.WarmProgress, p cache.Progress) {
 	if ch == nil {
 		return
 	}
 	msg := tui.WarmProgress{
 		Done: p.Done, Total: p.Total, Message: p.Message,
 		SpeciesID: p.SpeciesID, Stage: p.Stage, Cells: p.Cells,
+	}
+	select {
+	case ch <- msg:
+		return
+	default:
+	}
+	if p.Total <= 0 || p.Done < p.Total {
+		return
+	}
+	select {
+	case <-ch:
+	default:
 	}
 	select {
 	case ch <- msg:

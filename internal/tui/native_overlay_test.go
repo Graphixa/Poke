@@ -10,6 +10,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/tui"
+	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
@@ -378,6 +379,100 @@ func TestNativeImageCacheProgressUsesRawFooterPatch(t *testing.T) {
 	raws := collectRawPayloads(cmd)
 	if len(raws) == 0 {
 		t.Fatal("expected tea.Raw footer patch while native sprite is visible")
+	}
+}
+
+func TestNativeImageCacheFooterClearsRawOnComplete(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells,
+		"\x1bP0;0;8q#1~~~\x1b\\", false,
+	))
+	updated, _ = m.Update(msg)
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+
+	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(1024, 1025, 40))
+	m = updated.(tui.Model)
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatal("expected in-progress footer state")
+	}
+
+	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(1025, 1025, 40))
+	m = updated.(tui.Model)
+	if m.BrowseWarmHintForTest() != "" {
+		t.Fatalf("expected cleared hint, got %q", m.BrowseWarmHintForTest())
+	}
+	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
+		t.Fatalf("view hint must stay hidden under native art: %q", vis)
+	}
+	if m.NativeOverlayDirtyForTest() || m.NativePaintPendingForTest() {
+		t.Fatal("completion must not trigger overlay repaint")
+	}
+	raws := collectRawPayloads(cmd)
+	blank := strings.Repeat(" ", components.FooterRightWidth)
+	found := false
+	for _, r := range raws {
+		if strings.Contains(r, blank) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected Raw footer clear on complete, payloads=%v", raws)
+	}
+}
+
+func TestNativeImageCacheFooterClearsWhenDoneEqualsTotal(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells,
+		"\x1bP0;0;8q#1~~~\x1b\\", false,
+	))
+	updated, _ = m.Update(msg)
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+
+	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(8, 8, 40))
+	m = updated.(tui.Model)
+	if m.BrowseWarmHintForTest() != "" {
+		t.Fatalf("expected hidden bar at 8/8, got %q", m.BrowseWarmHintForTest())
+	}
+	raws := collectRawPayloads(cmd)
+	blank := strings.Repeat(" ", components.FooterRightWidth)
+	found := false
+	for _, r := range raws {
+		if strings.Contains(r, blank) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected Raw footer clear at Done==Total, payloads=%v", raws)
 	}
 }
 
