@@ -72,6 +72,9 @@ func TestListFirstColumns(t *testing.T) {
 	if listShare < 54 || listShare > 62 {
 		t.Fatalf("list share %d%% (w=%d) want ~58%%", listShare, f.LeftWidth)
 	}
+	if f.LeftWidth+f.RightWidth+1 != 120 {
+		t.Fatalf("widths must fill frame: left=%d right=%d", f.LeftWidth, f.RightWidth)
+	}
 
 	m = apply(t, m, tea.WindowSizeMsg{Width: 180, Height: 40})
 	f = m.LayoutFlags()

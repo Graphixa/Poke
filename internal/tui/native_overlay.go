@@ -120,6 +120,8 @@ func (m Model) nativeOverlayReady() bool {
 }
 
 func (m Model) emitNativeOverlay(followUp bool) (Model, tea.Cmd) {
+	end := debuglog.Trace(debuglog.Render, "frame.paint")
+	defer end()
 	if !m.nativeOverlayReady() {
 		m.nativePaintPending = false
 		debuglog.Renderf("native overlay stop")

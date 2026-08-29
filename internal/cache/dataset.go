@@ -24,13 +24,18 @@ type activePointer struct {
 
 // DatasetManifest describes one completed (or staging) metadata snapshot.
 type DatasetManifest struct {
-	SchemaVersion  int       `json:"schema_version"`
-	DatasetVersion string    `json:"dataset_version"`
-	CreatedAt      time.Time `json:"created_at"`
-	PokeAPIBase    string    `json:"pokeapi_base"`
-	PokemonCount   int       `json:"pokemon_count"`
-	AppDataVersion int       `json:"app_data_version"`
-	Complete       bool      `json:"complete"`
+	SchemaVersion   int       `json:"schema_version"`
+	DatasetVersion  string    `json:"dataset_version"`
+	CreatedAt       time.Time `json:"created_at"`
+	PokeAPIBase     string    `json:"pokeapi_base"`
+	PokemonCount    int       `json:"pokemon_count"`
+	SpeciesCount    int       `json:"species_count,omitempty"`
+	EncounterCount  int       `json:"encounter_count,omitempty"`
+	EvolutionCount  int       `json:"evolution_count,omitempty"`
+	MoveCount       int       `json:"move_count,omitempty"`
+	StorageFailures int       `json:"storage_failures,omitempty"`
+	AppDataVersion  int       `json:"app_data_version"`
+	Complete        bool      `json:"complete"`
 }
 
 func (s *Store) activePath() string {
@@ -114,6 +119,38 @@ func (s *Store) WriteDatasetManifest(man DatasetManifest) error {
 		return err
 	}
 	return writeAtomic(s.datasetManifestPath(man.DatasetVersion), data, 0o600)
+}
+
+func (s *Store) bootstrapReportPath(id string) string {
+	return filepath.Join(s.datasetDir(id), "bootstrap.json")
+}
+
+// WriteBootstrapReport persists bootstrap diagnostics for a staging snapshot.
+func (s *Store) WriteBootstrapReport(id string, report DatasetBootstrapReport) error {
+	if id == "" {
+		return errors.New("cache: bootstrap report missing dataset id")
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(s.bootstrapReportPath(id), data, 0o600)
+}
+
+// ReadBootstrapReport loads diagnostics for a snapshot.
+func (s *Store) ReadBootstrapReport(id string) (DatasetBootstrapReport, error) {
+	data, err := os.ReadFile(s.bootstrapReportPath(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return DatasetBootstrapReport{}, ErrNotFound
+	}
+	if err != nil {
+		return DatasetBootstrapReport{}, err
+	}
+	var report DatasetBootstrapReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return DatasetBootstrapReport{}, fmt.Errorf("%w: %v", ErrCorrupt, err)
+	}
+	return report, nil
 }
 
 // ActivateDataset atomically points active.json at a complete snapshot.

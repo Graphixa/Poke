@@ -226,7 +226,7 @@ func (s *Store) StoreSpriteURL(_ context.Context, urlHash, contentHash string) e
 	return writeAtomic(s.spriteURLPath(urlHash), []byte(contentHash), 0o600)
 }
 
-func (s *Store) Halfblock(_ context.Context, key string) ([]byte, error) {
+func (s *Store) Artefact(_ context.Context, key string) ([]byte, error) {
 	data, err := os.ReadFile(s.halfblockPath(key))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotFound
@@ -237,8 +237,17 @@ func (s *Store) Halfblock(_ context.Context, key string) ([]byte, error) {
 	return data, nil
 }
 
-func (s *Store) StoreHalfblock(_ context.Context, key string, data []byte) error {
+func (s *Store) StoreArtefact(_ context.Context, key string, data []byte) error {
 	return writeAtomic(s.halfblockPath(key), data, 0o600)
+}
+
+// Halfblock is a legacy alias for Artefact (on-disk directory remains halfblock/).
+func (s *Store) Halfblock(ctx context.Context, key string) ([]byte, error) {
+	return s.Artefact(ctx, key)
+}
+
+func (s *Store) StoreHalfblock(ctx context.Context, key string, data []byte) error {
+	return s.StoreArtefact(ctx, key, data)
 }
 
 func (s *Store) Native(_ context.Context, key string) ([]byte, error) {

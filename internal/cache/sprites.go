@@ -94,26 +94,37 @@ func isHexSHA256(s string) bool {
 	return true
 }
 
-// Halfblock returns a cached derived sprite artefact by key.
-func (s *Service) Halfblock(ctx context.Context, key string) (string, error) {
-	data, err := s.store.Halfblock(ctx, key)
+// Artefact returns a cached derived sprite artefact by key.
+func (s *Service) Artefact(ctx context.Context, key string) (string, error) {
+	data, err := s.store.Artefact(ctx, key)
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
 }
 
-// StoreHalfblock persists a derived sprite artefact (chafa ANSI, …).
-func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
+// StoreArtefact persists a derived sprite artefact (chafa ANSI, …).
+func (s *Service) StoreArtefact(ctx context.Context, key, ansi string) error {
 	if key == "" {
-		return errors.New("cache: refuse to store empty halfblock key")
+		return errors.New("cache: refuse to store empty artefact key")
 	}
-	// Validate key shape so callers cannot write outside halfblock/.
 	if _, _, _, _, _, _, _, _, err := sprite.ParseCacheKey(key); err != nil {
 		return err
 	}
-	return s.store.StoreHalfblock(ctx, key, []byte(ansi))
+	return s.store.StoreArtefact(ctx, key, []byte(ansi))
 }
+
+// Halfblock is a legacy alias for Artefact.
+func (s *Service) Halfblock(ctx context.Context, key string) (string, error) {
+	return s.Artefact(ctx, key)
+}
+
+// StoreHalfblock is a legacy alias for StoreArtefact.
+func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
+	return s.StoreArtefact(ctx, key, ansi)
+}
+
+var _ sprite.ArtefactCache = (*Service)(nil)
 
 // Native returns a cached Kitty/iTerm/Sixel frame by key.
 func (s *Service) Native(ctx context.Context, key string) (string, error) {

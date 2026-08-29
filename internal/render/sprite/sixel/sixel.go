@@ -8,8 +8,12 @@ import (
 
 	"github.com/mattn/go-sixel"
 
+	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
+
+// MaxColors is the sixel palette cap (DECSIXEL ≤256).
+const MaxColors = 256
 
 // Encode converts a prepared image to a single valid DECSIXEL DCS.
 // Height is snapped down to a multiple of 6 so the encoder does not emit a
@@ -19,9 +23,11 @@ func Encode(src stdimage.Image) (string, error) {
 		return "", fmt.Errorf("sixel: nil source")
 	}
 	src = cropHeightToSixelBands(src)
+	end := debuglog.Trace(debuglog.Render, "sixel.encode")
+	defer end()
 	var buf bytes.Buffer
 	enc := sixel.NewEncoder(&buf)
-	enc.Colors = 256
+	enc.Colors = MaxColors
 	if err := enc.Encode(src); err != nil {
 		return "", fmt.Errorf("sixel: encode: %w", err)
 	}

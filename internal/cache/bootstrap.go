@@ -2,12 +2,14 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/Graphixa/Pokedex/internal/cache/typeseed"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/pokeapi"
 )
 
 const datasetWorkerDefault = 6
@@ -110,20 +112,38 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 	entries := make([]domain.BrowseEntry, 0, len(summaries))
 	evoIDs := map[int]struct{}{}
 	moveIDs := map[int]struct{}{}
+	rep := DatasetBootstrapReport{Expected: len(summaries)}
 	var done int
 	total := len(summaries)
 	for res := range results {
 		done++
 		report(progress, Progress{Stage: "dataset", Done: done, Total: total, Message: res.sum.DisplayName, SpeciesID: res.sum.ID})
-		if res.err != nil || ctx.Err() != nil {
+		if err := ctx.Err(); err != nil {
+			rep.add("pokemon", res.sum.ID, err, true)
 			continue
 		}
-		_ = s.store.StoreSnapshotPokemon(id, res.pokemon, now)
-		if res.species.ID != 0 {
-			_ = s.store.StoreSnapshotSpecies(id, res.species, now)
-			if res.species.EvolutionChainID != 0 {
-				evoIDs[res.species.EvolutionChainID] = struct{}{}
-			}
+		if res.err != nil {
+			rep.add("pokemon", res.sum.ID, res.err, true)
+			continue
+		}
+		if res.pokemon.ID == 0 || res.species.ID == 0 {
+			rep.add("pokemon", res.sum.ID, fmt.Errorf("cache: missing pokemon or species record"), true)
+			continue
+		}
+		if err := s.store.StoreSnapshotPokemon(id, res.pokemon, now); err != nil {
+			rep.StorageFailures++
+			rep.add("pokemon", res.pokemon.ID, err, true)
+			continue
+		}
+		rep.PokemonOK++
+		if err := s.store.StoreSnapshotSpecies(id, res.species, now); err != nil {
+			rep.StorageFailures++
+			rep.add("species", res.species.ID, err, true)
+			continue
+		}
+		rep.SpeciesOK++
+		if res.species.EvolutionChainID != 0 {
+			evoIDs[res.species.EvolutionChainID] = struct{}{}
 		}
 		for _, m := range res.pokemon.Moves {
 			if m.MoveID > 0 {
@@ -152,47 +172,82 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 			SpDefence: res.pokemon.Stats.SpecialDefense,
 			Speed:     res.pokemon.Stats.Speed,
 		})
-		if res.pokemon.ID != 0 {
-			if enc, err := s.fetchEncounters(ctx, res.pokemon.ID); err == nil {
-				_ = s.store.StoreSnapshotEncounters(id, res.pokemon.ID, enc, now)
-			}
+		enc, encErr := s.fetchEncounters(ctx, res.pokemon.ID)
+		if encErr := optionalEmpty(encErr); encErr != nil {
+			rep.add("encounter", res.pokemon.ID, encErr, true)
+			continue
 		}
+		if err := s.store.StoreSnapshotEncounters(id, res.pokemon.ID, enc, now); err != nil {
+			rep.StorageFailures++
+			rep.add("encounter", res.pokemon.ID, err, true)
+			continue
+		}
+		rep.EncounterOK++
 	}
 	if err := ctx.Err(); err != nil {
+		s.finalizeIncomplete(id, staging, rep, err)
 		return err
 	}
 
+	rep.EvolutionWanted = len(evoIDs)
 	for evoID := range evoIDs {
 		if err := ctx.Err(); err != nil {
+			s.finalizeIncomplete(id, staging, rep, err)
 			return err
 		}
 		tree, err := s.fetchEvolution(ctx, evoID)
 		if err != nil {
+			rep.add("evolution", evoID, err, true)
 			continue
 		}
-		_ = s.store.StoreSnapshotEvolution(id, evoID, tree, now)
+		if err := s.store.StoreSnapshotEvolution(id, evoID, tree, now); err != nil {
+			rep.StorageFailures++
+			rep.add("evolution", evoID, err, true)
+			continue
+		}
+		rep.EvolutionOK++
 	}
+	rep.MoveWanted = len(moveIDs)
 	for moveID := range moveIDs {
 		if err := ctx.Err(); err != nil {
+			s.finalizeIncomplete(id, staging, rep, err)
 			return err
 		}
 		mv, err := s.fetchMove(ctx, moveID)
 		if err != nil {
+			rep.add("move", moveID, err, true)
 			continue
 		}
-		_ = s.store.StoreSnapshotMove(id, mv, now)
+		if err := s.store.StoreSnapshotMove(id, mv, now); err != nil {
+			rep.StorageFailures++
+			rep.add("move", moveID, err, true)
+			continue
+		}
+		rep.MoveOK++
 	}
 
 	if err := s.store.StoreBrowse(id, entries); err != nil {
+		rep.StorageFailures++
+		rep.add("browse", 0, err, true)
+		s.finalizeIncomplete(id, staging, rep, err)
 		return err
 	}
-	staging.PokemonCount = len(entries)
-	staging.Complete = len(entries) > 0
+	rep.BrowseOK = len(entries)
+	staging.PokemonCount = rep.PokemonOK
+	staging.SpeciesCount = rep.SpeciesOK
+	staging.EncounterCount = rep.EncounterOK
+	staging.EvolutionCount = rep.EvolutionOK
+	staging.MoveCount = rep.MoveOK
+	staging.StorageFailures = rep.StorageFailures
+	staging.Complete = rep.Ready()
+	if err := s.store.WriteBootstrapReport(id, rep); err != nil {
+		return err
+	}
 	if err := s.store.WriteDatasetManifest(staging); err != nil {
 		return err
 	}
 	if !staging.Complete {
-		return fmt.Errorf("cache: dataset %s has no pokemon records", id)
+		return fmt.Errorf("cache: dataset %s incomplete (%s)", id, rep.summary())
 	}
 	if err := s.store.ActivateDataset(id); err != nil {
 		return err
@@ -201,6 +256,32 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 	debuglog.Cachef("dataset.bootstrap.complete id=%s count=%d", id, staging.PokemonCount)
 	report(progress, Progress{Stage: "dataset", Done: 1, Total: 1, Message: fmt.Sprintf("Dataset %s active", id)})
 	return nil
+}
+
+func optionalEmpty(err error) error {
+	if err == nil || errors.Is(err, pokeapi.ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (s *Service) finalizeIncomplete(id string, staging DatasetManifest, rep DatasetBootstrapReport, cause error) {
+	if cause != nil {
+		rep.add("bootstrap", 0, cause, true)
+	}
+	staging.PokemonCount = rep.PokemonOK
+	staging.SpeciesCount = rep.SpeciesOK
+	staging.EncounterCount = rep.EncounterOK
+	staging.EvolutionCount = rep.EvolutionOK
+	staging.MoveCount = rep.MoveOK
+	staging.StorageFailures = rep.StorageFailures
+	staging.Complete = false
+	if err := s.store.WriteBootstrapReport(id, rep); err != nil {
+		debuglog.Cachef("dataset.bootstrap.report err=%v", err)
+	}
+	if err := s.store.WriteDatasetManifest(staging); err != nil {
+		debuglog.Cachef("dataset.bootstrap.manifest err=%v", err)
+	}
 }
 
 func (s *Service) fetchSpecies(ctx context.Context, id int) (domain.Species, error) {

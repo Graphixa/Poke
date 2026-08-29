@@ -34,10 +34,10 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 	}
 
 	key := sprite.CacheKey(hash, sprite.SourcePixel, "chafa", 8, 8, sprite.ColorTrueColor, color.RGBA{A: 255})
-	if err := svc.StoreHalfblock(context.Background(), key, "ANSI"); err != nil {
+	if err := svc.StoreArtefact(context.Background(), key, "ANSI"); err != nil {
 		t.Fatal(err)
 	}
-	ansi, err := svc.Halfblock(context.Background(), key)
+	ansi, err := svc.Artefact(context.Background(), key)
 	if err != nil || ansi != "ANSI" {
 		t.Fatalf("Halfblock = %q err=%v", ansi, err)
 	}

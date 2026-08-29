@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
@@ -397,6 +398,8 @@ func (m *Model) canQuitWithQ() bool {
 }
 
 func (m *Model) bumpSelection() {
+	end := debuglog.Trace(debuglog.Render, "selection.changed")
+	defer end()
 	m.selectionGen++
 	m.browseView = BrowseSprite
 	m.showDialog = false

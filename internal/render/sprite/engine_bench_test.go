@@ -138,3 +138,82 @@ func BenchmarkHalfblockWarmRender(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkLookupCachedMem(b *testing.B) {
+	store := newNamedMemStore()
+	png := mustPNG(b, color.RGBA{0, 128, 255, 255})
+	if err := store.StoreNamedSprite(context.Background(), 4, "charmander", "pixel", "", png); err != nil {
+		b.Fatal(err)
+	}
+	engine := benchEngine(store, sprite.ModeChafa, spritechafa.Renderer{})
+	poke := domain.Pokemon{ID: 4, Slug: "charmander", DisplayName: "Charmander"}
+	if res := engine.Render(context.Background(), poke, 24); res.UsePlaceholder {
+		b.Fatal(res)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		res, hit := engine.LookupCached(context.Background(), poke, 24)
+		if !hit || res.UsePlaceholder {
+			b.Fatal(res)
+		}
+	}
+}
+
+func BenchmarkLookupCachedDisk(b *testing.B) {
+	store := newNamedMemStore()
+	png := mustPNG(b, color.RGBA{0, 128, 255, 255})
+	if err := store.StoreNamedSprite(context.Background(), 4, "charmander", "pixel", "", png); err != nil {
+		b.Fatal(err)
+	}
+	warm := benchEngine(store, sprite.ModeChafa, spritechafa.Renderer{})
+	poke := domain.Pokemon{ID: 4, Slug: "charmander", DisplayName: "Charmander"}
+	if res := warm.Render(context.Background(), poke, 24); res.UsePlaceholder {
+		b.Fatal(res)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		engine := benchEngine(store, sprite.ModeChafa, spritechafa.Renderer{})
+		b.StartTimer()
+		res, hit := engine.LookupCached(context.Background(), poke, 24)
+		if !hit || res.UsePlaceholder {
+			b.Fatal(res)
+		}
+	}
+}
+
+func BenchmarkColdNativeRender(b *testing.B) {
+	png := mustPNG(b, color.RGBA{255, 200, 0, 255})
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		store := newNamedMemStore()
+		if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+			b.Fatal(err)
+		}
+		native := &stubNativeRenderer{}
+		engine := &sprite.Engine{
+			Source: &sprite.SourceResolver{Store: store},
+			Modes: sprite.NewModeResolver(
+				native,
+				spritechafa.Renderer{},
+				placeholder.Renderer{},
+			),
+			Artefacts:  store,
+			Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+			Preference: sprite.ModeAuto,
+			Color:      sprite.ColorTrueColor,
+			SourceKind: sprite.SourcePixel,
+			Background: color.RGBA{A: 255},
+			HDOff:      true,
+		}
+		b.StartTimer()
+		res := engine.RenderCold(context.Background(), poke, 24)
+		if !res.Native {
+			b.Fatal(res)
+		}
+	}
+}

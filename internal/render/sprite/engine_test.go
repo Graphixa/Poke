@@ -16,6 +16,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 )
 
@@ -58,7 +59,7 @@ func (m *memStore) StoreSpriteByURL(_ context.Context, url, contentHash string, 
 	return nil
 }
 
-func (m *memStore) Halfblock(_ context.Context, key string) (string, error) {
+func (m *memStore) Artefact(_ context.Context, key string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	v, ok := m.artefact[key]
@@ -68,7 +69,7 @@ func (m *memStore) Halfblock(_ context.Context, key string) (string, error) {
 	return v, nil
 }
 
-func (m *memStore) StoreHalfblock(_ context.Context, key, ansi string) error {
+func (m *memStore) StoreArtefact(_ context.Context, key, ansi string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.artefact[key] = ansi
@@ -169,6 +170,42 @@ func TestModeResolverPriority(t *testing.T) {
 	}
 }
 
+func TestModeResolverFullChain(t *testing.T) {
+	native := &stubNativeRenderer{}
+	modes := sprite.NewModeResolver(
+		native,
+		spritechafa.Renderer{},
+		halfblock.Renderer{},
+		placeholder.Renderer{},
+	)
+	r := modes.Resolve(sprite.Capabilities{NativeImage: true, TrueColor: true}, sprite.ModeAuto)
+	if r == nil || r.Name() != "image" {
+		t.Fatalf("native auto = %v want image", r)
+	}
+	r = modes.Resolve(sprite.Capabilities{TrueColor: true, ANSI256: true}, sprite.ModeAuto)
+	if r == nil || r.Name() != "chafa" {
+		t.Fatalf("truecolor auto = %v want chafa", r)
+	}
+	r = modes.Resolve(sprite.Capabilities{}, sprite.ModeAuto)
+	if r == nil || r.Name() != "placeholder" {
+		t.Fatalf("empty auto = %v want placeholder", r)
+	}
+}
+
+type countingRenderer struct {
+	inner sprite.Renderer
+	n     int
+}
+
+func (c *countingRenderer) Name() string { return c.inner.Name() }
+func (c *countingRenderer) Supported(caps sprite.Capabilities) bool {
+	return c.inner.Supported(caps)
+}
+func (c *countingRenderer) Render(ctx context.Context, src image.Image, opts sprite.RenderOptions) (sprite.Frame, error) {
+	c.n++
+	return c.inner.Render(ctx, src, opts)
+}
+
 func TestEngineChafaAndCache(t *testing.T) {
 	store := newMemStore()
 	png := mustPNG(t, color.RGBA{0, 128, 255, 255})
@@ -201,6 +238,43 @@ func TestEngineChafaAndCache(t *testing.T) {
 	res2 := engine.Render(context.Background(), poke, 24)
 	if res2.ANSI != res.ANSI || res2.CacheKey != res.CacheKey {
 		t.Fatalf("cache mismatch")
+	}
+}
+
+func TestChafaWarmHitDoesNotRerunEncoder(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{0, 128, 255, 255})
+	if err := store.StoreNamedSprite(context.Background(), 4, "charmander", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	count := &countingRenderer{inner: spritechafa.Renderer{}}
+	engine := &sprite.Engine{
+		Source:     &sprite.SourceResolver{Store: store},
+		Modes:      sprite.NewModeResolver(count, placeholder.Renderer{}),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeChafa,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+		HDOff:      true,
+	}
+	poke := domain.Pokemon{ID: 4, Slug: "charmander", DisplayName: "Charmander"}
+	if res := engine.RenderCold(context.Background(), poke, 24); res.UsePlaceholder || res.Backend != "chafa" {
+		t.Fatalf("cold: %+v", res)
+	}
+	if count.n != 1 {
+		t.Fatalf("cold encodes=%d want 1", count.n)
+	}
+	res, hit := engine.LookupCached(context.Background(), poke, 24)
+	if !hit || res.Backend != "chafa" {
+		t.Fatalf("warm lookup hit=%v res=%+v", hit, res)
+	}
+	if engine.Render(context.Background(), poke, 24).UsePlaceholder {
+		t.Fatal("warm render missed")
+	}
+	if count.n != 1 {
+		t.Fatalf("chafa encoder ran on cache hit, encodes=%d", count.n)
 	}
 }
 

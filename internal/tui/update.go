@@ -680,6 +680,7 @@ func (m *Model) scheduleSpritePrefetch() tea.Cmd {
 			if _, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit {
 				continue
 			}
+			sprite.NoteNeighbour()
 			cmds = append(cmds, loadSpritePrefetchCmd(ctx, m.sprites, m.pokemonSrc, gen, sum.ID, cells, pokemon))
 			if len(cmds) >= spritePrefetchBurst {
 				break

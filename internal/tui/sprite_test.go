@@ -21,12 +21,24 @@ type fakeSprites struct {
 	block       chan struct{}
 	ansi        string
 	cached      string
+	cachedByID  map[int]string
 	native      bool
+	fail        bool
 	started     chan struct{}
 }
 
-func (f *fakeSprites) LookupCached(context.Context, domain.Pokemon, int) (sprite.RenderResult, bool) {
-	if f == nil || f.cached == "" {
+func (f *fakeSprites) LookupCached(_ context.Context, pokemon domain.Pokemon, _ int) (sprite.RenderResult, bool) {
+	if f == nil {
+		return sprite.RenderResult{}, false
+	}
+	if f.cachedByID != nil {
+		s, ok := f.cachedByID[pokemon.ID]
+		if !ok || s == "" {
+			return sprite.RenderResult{}, false
+		}
+		return sprite.RenderResult{ANSI: s, Native: f.native, AssetKind: "artwork"}, true
+	}
+	if f.cached == "" {
 		return sprite.RenderResult{}, false
 	}
 	return sprite.RenderResult{ANSI: f.cached, Native: f.native, AssetKind: "artwork"}, true
@@ -59,6 +71,9 @@ func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (stri
 			return "", true, false, ""
 		case <-f.block:
 		}
+	}
+	if f.fail {
+		return "", true, false, ""
 	}
 	if f.ansi == "" {
 		return "SPRITE", false, false, "artwork"
@@ -685,4 +700,210 @@ func TestForegroundLatestSelectionWins(t *testing.T) {
 	if sprites.maxInFlight.Load() > 1 {
 		t.Fatalf("max in-flight=%d want 1", sprites.maxInFlight.Load())
 	}
+}
+
+func TestWarmSelectionBypassesUnrelatedColdRender(t *testing.T) {
+	details := &fakeDetails{}
+	started := make(chan struct{}, 1)
+	block := make(chan struct{})
+	sprites := &fakeSprites{
+		cachedByID: map[int]string{5: "WARM5"},
+		ansi:       "COLD",
+		block:      block,
+		started:    started,
+	}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	cmd := m.ForceSpriteLoadForTest()
+	if cmd == nil {
+		t.Fatal("expected cold load for first species")
+	}
+	go func() { _ = cmd() }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cold render did not start")
+	}
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	if id != 5 {
+		t.Fatalf("selected=%d want 5", id)
+	}
+	if m.ImageStateForTest() != int(tui.ImageReady) {
+		t.Fatalf("warm neighbor state=%d want ready", m.ImageStateForTest())
+	}
+	if m.ImageSpinnerForTest() {
+		t.Fatal("warm bypass must not show spinner")
+	}
+	if m.ImageANSILenForTest() != len("WARM5") {
+		t.Fatal("warm frame must paint immediately")
+	}
+	close(block)
+}
+
+func TestImageUnavailableClearsPreviousArt(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{cached: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	_ = m.EnsureSelectionLoadsForTest()
+	if m.ImageStateForTest() != int(tui.ImageReady) {
+		t.Fatal("expected ready art")
+	}
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, "", true,
+	))
+	m = updated.(tui.Model)
+	if m.ImageStateForTest() != int(tui.ImageUnavailable) {
+		t.Fatalf("state=%d want unavailable", m.ImageStateForTest())
+	}
+	if m.HasSpriteANSI() {
+		t.Fatal("unavailable must clear previous image")
+	}
+}
+
+func TestSameSizeResizeDoesNotRerender(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{cached: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	_ = m.EnsureSelectionLoadsForTest()
+	calls := sprites.calls.Load()
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	if sprites.calls.Load() != calls {
+		t.Fatalf("same-size resize rerendered, calls %d -> %d", calls, sprites.calls.Load())
+	}
+	if m.ImageStateForTest() != int(tui.ImageReady) {
+		t.Fatal("same-size resize must keep ready art")
+	}
+}
+
+func TestDossierLoadDoesNotBlockWarmSprite(t *testing.T) {
+	details := &fakeDetails{blockLoad: make(chan struct{})}
+	sprites := &fakeSprites{cached: "WARM"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	_ = m.EnsureSelectionLoadsForTest()
+	if m.ImageStateForTest() != int(tui.ImageReady) {
+		t.Fatal("warm sprite must be ready before dossier")
+	}
+	updated, cmd := m.Update(key("enter"))
+	m = updated.(tui.Model)
+	_ = cmd
+	if m.ImageStateForTest() != int(tui.ImageReady) {
+		t.Fatal("opening dossier must not drop warm sprite")
+	}
+	if sprites.calls.Load() != 0 {
+		t.Fatalf("dossier must not force cold render, calls=%d", sprites.calls.Load())
+	}
+	close(details.blockLoad)
+}
+
+func TestMixedWarmColdNavigation(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{
+		cachedByID: map[int]string{4: "W4", 5: "W5", 25: "W25"},
+		ansi:       "COLD",
+		block:      make(chan struct{}),
+	}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	_ = m.EnsureSelectionLoadsForTest()
+	if m.ImageStateForTest() != int(tui.ImageReady) || m.ImageANSILenForTest() != len("W4") {
+		t.Fatal("4 must be warm")
+	}
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if m.ImageStateForTest() != int(tui.ImageReady) || m.ImageANSILenForTest() != len("W5") {
+		t.Fatal("5 must paint immediately")
+	}
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("6 must be cold spinner")
+	}
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	if m.ImageStateForTest() != int(tui.ImageReady) || m.ImageANSILenForTest() != len("W25") {
+		t.Fatal("25 warm must not wait for cold 6")
+	}
+	close(sprites.block)
+}
+
+func TestScroll100CoalescesToLatest(t *testing.T) {
+	n := 100
+	sums := make([]domain.SpeciesSummary, n)
+	for i := 0; i < n; i++ {
+		id := i + 1
+		sums[i] = domain.SpeciesSummary{ID: id, Slug: "s", DisplayName: "P"}
+		sums[i].Slug = "s"
+		sums[i].DisplayName = "P"
+	}
+	details := &fakeDetails{}
+	block := make(chan struct{})
+	started := make(chan struct{}, 8)
+	sprites := &fakeSprites{ansi: "ART", block: block, started: started}
+	m := tui.NewModel(tui.Options{
+		Index:   search.Build(sums),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	cmd := m.ForceSpriteLoadForTest()
+	if cmd == nil {
+		t.Fatal("expected first cold render")
+	}
+	go func() { _ = cmd() }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first render did not start")
+	}
+	firstID, _ := m.SelectedID()
+	var lastID int
+	for i := 0; i < n-1; i++ {
+		updated, _ = m.Update(key("down"))
+		m = updated.(tui.Model)
+		lastID, _ = m.SelectedID()
+	}
+	if lastID == firstID {
+		t.Fatal("expected to reach last species")
+	}
+	if m.FgActiveSpeciesForTest() != firstID {
+		t.Fatalf("active=%d want first %d", m.FgActiveSpeciesForTest(), firstID)
+	}
+	if m.FgPendingSpeciesForTest() != lastID {
+		t.Fatalf("pending=%d want latest %d", m.FgPendingSpeciesForTest(), lastID)
+	}
+	close(block)
 }

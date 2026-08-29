@@ -63,3 +63,9 @@ func TestEncodeCropsHeightToSixelBands(t *testing.T) {
 		t.Fatalf("raster header %q want height 18", head)
 	}
 }
+
+func TestMaxColorsIs256(t *testing.T) {
+	if spritesixel.MaxColors != 256 {
+		t.Fatalf("MaxColors=%d want 256", spritesixel.MaxColors)
+	}
+}

@@ -61,6 +61,9 @@ func (r *SourceResolver) ResolveAsset(ctx context.Context, pokemon domain.Pokemo
 
 // ReadAsset returns original PNG bytes for a ready AssetRef.
 func (r *SourceResolver) ReadAsset(ctx context.Context, pokemon domain.Pokemon, ref AssetRef) ([]byte, error) {
+	notePNGRead()
+	end := debuglog.Trace(debuglog.Render, "asset.read")
+	defer end()
 	if r == nil || !ref.Ready {
 		return nil, errAssetMissing
 	}
@@ -131,6 +134,7 @@ func downloadDeduped(ctx context.Context, api Downloader, url string) ([]byte, e
 		return s.data, s.err
 	}
 	debuglog.Renderf("artwork.download.start url=%s", url)
+	NoteHTTPArtwork()
 	s.data, s.err = download(ctx, api, url)
 	s.wg.Done()
 	inflightURLs.Delete(url)

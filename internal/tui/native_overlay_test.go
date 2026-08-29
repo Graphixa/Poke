@@ -413,6 +413,55 @@ func TestDialogCloseRepaintsNativeOverlay(t *testing.T) {
 	}
 }
 
+func TestNativeOverlayNavigationAndResize(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	paint := func() {
+		id, _ := m.SelectedID()
+		cells := m.CurrentSpriteCells()
+		msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+			m.SpriteReqID(), m.SelectionGen(), id, cells,
+			"\x1bP0;0;8q#1~~~\x1b\\", false,
+		))
+		updated, _ = m.Update(msg)
+		m = updated.(tui.Model)
+	}
+	paint()
+	firstID, _ := m.SelectedID()
+	for _, k := range []string{"down", "up", "pgdown", "pgup", "home", "end"} {
+		updated, _ = m.Update(key(k))
+		m = updated.(tui.Model)
+	}
+	updated, _ = m.Update(key("p"))
+	m = updated.(tui.Model)
+	updated, _ = m.Update(key("esc"))
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 60})
+	m = updated.(tui.Model)
+	updated, _ = m.Update(key("?"))
+	m = updated.(tui.Model)
+	updated, _ = m.Update(key("esc"))
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	if id == 0 {
+		t.Fatal("expected selection after navigation")
+	}
+	_ = firstID
+	f := m.LayoutFlags()
+	if f.LeftWidth+f.RightWidth+1 != f.Width && !f.OnePane {
+		t.Fatalf("panel widths left=%d right=%d width=%d", f.LeftWidth, f.RightWidth, f.Width)
+	}
+}
+
 func countSubstr(s, sub string) int {
 	n := 0
 	for i := 0; i+len(sub) <= len(s); i++ {

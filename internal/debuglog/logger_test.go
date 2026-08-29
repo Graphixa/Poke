@@ -45,3 +45,8 @@ func TestEnableAndSanitize(t *testing.T) {
 func TestDiscardByDefault(t *testing.T) {
 	Requestf("should not panic when discarded")
 }
+
+func TestTraceNoopWhenDiscarded(t *testing.T) {
+	done := Trace(Render, "selection.changed")
+	done()
+}

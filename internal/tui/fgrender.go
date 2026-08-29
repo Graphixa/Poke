@@ -25,6 +25,9 @@ func (a fgRenderReq) same(b fgRenderReq) bool {
 
 func (m *Model) abortFgContext() {
 	if m.spriteCancel != nil {
+		if m.fgActive != nil {
+			sprite.NoteCancelled()
+		}
 		m.spriteCancel()
 		m.spriteCancel = nil
 	}
@@ -106,6 +109,7 @@ func (m *Model) handleSpriteMsg(msg spriteMsg) tea.Cmd {
 	}
 
 	// Stale result: never paint. Drain the latest pending job only.
+	sprite.NoteStale()
 	cmd := m.startPendingFg()
 	m.syncWarmerBusy()
 	return cmd

@@ -12,10 +12,10 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-// ArtefactCache stores derived halfblock ANSI and native graphics frames.
+// ArtefactCache stores derived ANSI and native graphics frames.
 type ArtefactCache interface {
-	Halfblock(ctx context.Context, key string) (string, error)
-	StoreHalfblock(ctx context.Context, key, ansi string) error
+	Artefact(ctx context.Context, key string) (string, error)
+	StoreArtefact(ctx context.Context, key, ansi string) error
 	Native(ctx context.Context, key string) (string, error)
 	StoreNative(ctx context.Context, key, frame string) error
 }
@@ -141,6 +141,8 @@ func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) 
 // or disk derived/native artefact cache. It never reads original PNG, decodes,
 // resizes, quantises, encodes, or performs HTTP.
 func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells int) (RenderResult, bool) {
+	end := debuglog.Trace(debuglog.Render, "asset.meta.lookup")
+	defer end()
 	if e == nil || e.Modes == nil || e.Source == nil {
 		return RenderResult{}, false
 	}
@@ -181,6 +183,9 @@ func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells
 // RenderCold encodes a frame. Callers must treat this as expensive: PNG read,
 // decode, resize, and backend encode may all run. Prefer LookupCached first.
 func (e *Engine) RenderCold(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
+	noteCold()
+	done := debuglog.Trace(debuglog.Render, "render.cache.miss")
+	defer done()
 	return e.renderAtQuality(ctx, pokemon, cells, "", "")
 }
 
@@ -267,6 +272,7 @@ func (e *Engine) renderAtQuality(ctx context.Context, pokemon domain.Pokemon, ce
 	}
 	if err := ctx.Err(); err != nil {
 		debuglog.Renderf("render.cancelled")
+		NoteCancelled()
 		return RenderResult{UsePlaceholder: true}
 	}
 	fw, fh := e.frameSize()
@@ -321,6 +327,7 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		}
 		if err := ctx.Err(); err != nil {
 			debuglog.Renderf("render.cancelled pokemon=%d", pokemonID)
+			NoteCancelled()
 			return RenderResult{UsePlaceholder: true}
 		}
 
@@ -394,7 +401,9 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 				}
 				return e.placeholderResult(opts.Label, opts.Width, opts.Height)
 			}
+			endDecode := debuglog.Trace(debuglog.Render, "png.decode")
 			decoded, err := DecodeImage(png)
+			endDecode()
 			if err != nil {
 				debuglog.Renderf("sprite decode fail pokemon=%d err=%v", pokemonID, err)
 				if rend.Name() == "image" {
@@ -420,7 +429,18 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		}
 
 		debuglog.Renderf("render.generate.start backend=%s pokemon=%d", rend.Name(), pokemonID)
+		encodeName := "native.encode"
+		switch rend.Name() {
+		case "chafa":
+			encodeName = "chafa"
+		case "image":
+			encodeName = "native.encode"
+		default:
+			encodeName = rend.Name() + ".encode"
+		}
+		endEncode := debuglog.Trace(debuglog.Render, encodeName)
 		frame, err := rend.Render(ctx, img, opts)
+		endEncode()
 		if err != nil || frame.IsEmpty() {
 			debuglog.Renderf("%s render fail pokemon=%d err=%v; falling back", rend.Name(), pokemonID, err)
 			if rend.Name() == "image" && e.OnNativeFail != nil && !errors.Is(err, context.Canceled) && ctx.Err() == nil {
@@ -430,15 +450,20 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		}
 		if err := ctx.Err(); err != nil {
 			debuglog.Renderf("render.cancelled backend=%s pokemon=%d", rend.Name(), pokemonID)
+			NoteCancelled()
 			return RenderResult{UsePlaceholder: true}
 		}
 		if key != "" {
 			e.memory().Put(key, frame.Text)
 			if e.Artefacts != nil {
 				if frame.Native {
-					_ = e.Artefacts.StoreNative(ctx, key, frame.Text)
+					if err := e.Artefacts.StoreNative(ctx, key, frame.Text); err != nil {
+						debuglog.Renderf("render.store.native err=%v key=%s", err, key)
+					}
 				} else {
-					_ = e.Artefacts.StoreHalfblock(ctx, key, frame.Text)
+					if err := e.Artefacts.StoreArtefact(ctx, key, frame.Text); err != nil {
+						debuglog.Renderf("render.store.artefact err=%v key=%s", err, key)
+					}
 				}
 			}
 		}
@@ -458,11 +483,13 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 	if rend.Name() == "image" {
 		key := nativeCacheKey(hash, rend, opts.Width, opts.Height, opts.BackgroundColor)
 		if cached, ok := e.memory().Get(key); ok {
+			noteMemHit()
 			debuglog.Renderf("render.cache.hit backend=%s store=mem key=%s", rend.Name(), key)
 			return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
 		}
 		if e.Artefacts != nil {
 			if cached, err := e.Artefacts.Native(ctx, key); err == nil && cached != "" {
+				noteDiskHit()
 				e.memory().Put(key, cached)
 				debuglog.Renderf("render.cache.hit backend=%s store=disk key=%s", rend.Name(), key)
 				return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
@@ -477,11 +504,13 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 	color := effectiveColor(opts.ColorMode, e.Caps)
 	key := CacheKey(hash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
 	if cached, ok := e.memory().Get(key); ok {
+		noteMemHit()
 		debuglog.Renderf("render.cache.hit backend=%s store=mem key=%s", rend.Name(), key)
 		return true, RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}
 	}
 	if e.Artefacts != nil {
-		if cached, err := e.Artefacts.Halfblock(ctx, key); err == nil && cached != "" {
+		if cached, err := e.Artefacts.Artefact(ctx, key); err == nil && cached != "" {
+			noteDiskHit()
 			e.memory().Put(key, cached)
 			debuglog.Renderf("render.cache.hit backend=%s store=disk key=%s", rend.Name(), key)
 			return true, RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}

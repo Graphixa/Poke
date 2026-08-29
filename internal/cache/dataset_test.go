@@ -3,6 +3,7 @@ package cache_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -250,5 +251,99 @@ func TestOfflineReadsFromSnapshotOnly(t *testing.T) {
 	}
 	if api.calls.Load() != before {
 		t.Fatalf("snapshot-only offline path hit network: calls %d -> %d", before, api.calls.Load())
+	}
+}
+
+func TestBootstrapPartialFailureDoesNotActivate(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	clock := fixedClock{t: now}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{
+			{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"},
+			{ID: 26, Slug: "raichu", DisplayName: "Raichu"},
+		},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+			26: {ID: 26, Slug: "raichu", DisplayName: "Raichu", DefaultPokemonID: 26},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err == nil {
+		t.Fatal("expected incomplete bootstrap to fail")
+	}
+	if svc.HasActiveDataset() {
+		t.Fatal("incomplete snapshot must not become active")
+	}
+	id := cache.DatasetIDForTime(now)
+	man, err := store.ReadDatasetManifest(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if man.Complete {
+		t.Fatal("manifest must stay incomplete")
+	}
+	rep, err := store.ReadBootstrapReport(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Ready() {
+		t.Fatalf("report ready with failures: %+v", rep)
+	}
+	if len(rep.Failures) == 0 {
+		t.Fatal("expected persisted failure diagnostics")
+	}
+}
+
+func TestBootstrapFailurePreservesPreviousActive(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	clock := fixedClock{t: now}
+	store := cache.NewStore(root, clock)
+	goodAPI := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+		},
+	}
+	svc := cache.NewService(store, goodAPI, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	goodID, err := store.ActiveDatasetID()
+	if err != nil || goodID == "" {
+		t.Fatalf("active=%q err=%v", goodID, err)
+	}
+
+	later := fixedClock{t: now.Add(time.Hour)}
+	failAPI := &fakeAPI{
+		list: []domain.SpeciesSummary{
+			{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"},
+			{ID: 26, Slug: "raichu", DisplayName: "Raichu"},
+		},
+		pokemonFn: func(id int) (domain.Pokemon, error) {
+			if id == 26 {
+				return domain.Pokemon{}, errors.New("forced pokemon miss")
+			}
+			return domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}, nil
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+		},
+	}
+	svc2 := cache.NewService(store, failAPI, testConfig(), later)
+	if err := svc2.BootstrapDataset(context.Background(), nil); err == nil {
+		t.Fatal("expected second bootstrap to fail")
+	}
+	got, err := store.ActiveDatasetID()
+	if err != nil || got != goodID {
+		t.Fatalf("active=%q err=%v want %s", got, err, goodID)
 	}
 }
