@@ -3,6 +3,7 @@ package cache_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -125,12 +126,11 @@ func testBootstrapCancel(t *testing.T, stage string, run func(context.Context, *
 type cancelAfterRecordsAPI struct {
 	fakeAPI
 	cancelAfter int
-	records     int
+	records     atomic.Int32
 }
 
 func (c *cancelAfterRecordsAPI) GetPokemon(ctx context.Context, id int) (domain.Pokemon, error) {
-	c.records++
-	if c.records > c.cancelAfter {
+	if c.records.Add(1) > int32(c.cancelAfter) {
 		select {
 		case <-ctx.Done():
 			return domain.Pokemon{}, ctx.Err()

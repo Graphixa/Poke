@@ -235,26 +235,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 
 	var imageCoord *cache.ImageCacheCoordinator
 	var imageSpec cache.ImageCacheSpec
-	if caps.NativeImage && !opts.DisableSprite {
-		protocol := img.ProtocolName()
-		_ = svc.Cache.EnsureNativeManifest(protocol)
-		imageSpec = cache.DefaultImageCacheSpec(protocol, string(sourceKind), style.BaseRGBA())
-		coord, err := svc.Cache.StartImageCacheSessionDeferred(index, imageSpec)
-		if err != nil {
-			debuglog.Cachef("image-cache session err=%v", err)
-		} else {
-			imageCoord = coord
-			imageCoord.SetProgressFunc(func(p cache.Progress) {
-				sendWarmProgress(progressCh, p)
-			})
-			if imageCoord.Progress().Active {
-				useProgress = true
-				imageCoord.PublishStart()
-			}
-			go imageCoord.ReconcileImageCacheSession(index)
-			defer func() { _ = imageCoord.Flush() }()
-		}
-	}
+	var nativeWarmer *nativewarm.Service
 
 	forwardWarm := func(p cache.Progress) {
 		if imageCoord != nil {
@@ -267,6 +248,48 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 			}
 		}
 		sendWarmProgress(progressCh, p)
+	}
+
+	nativeImageBrowse := caps.NativeImage && !opts.DisableSprite
+	if nativeImageBrowse {
+		useProgress = true
+		opts.WarmEvents = progressCh
+		protocol := img.ProtocolName()
+		_ = svc.Cache.EnsureNativeManifest(protocol)
+		imageSpec = cache.DefaultImageCacheSpec(protocol, string(sourceKind), style.BaseRGBA())
+		coord, err := svc.Cache.StartImageCacheSessionDeferred(index, imageSpec)
+		if err != nil {
+			debuglog.Cachef("image-cache session err=%v", err)
+		} else {
+			imageCoord = coord
+			imageCoord.SetProgressFunc(forwardWarm)
+			if imageCoord.Progress().Active {
+				imageCoord.PublishStart()
+			}
+			defer func() { _ = imageCoord.Flush() }()
+		}
+		nativeWarmer = nativewarm.New(nativewarm.Config{
+			Workers:       sprite.InteractiveWorkers,
+			Loader:        warmPokemonLoader{details},
+			Renderer:      engine,
+			Index:         index,
+			Manifest:      svc.Cache,
+			Protocol:      imageSpec.Protocol,
+			RequiredSizes: imageSpec.RequiredSizes,
+			Completer:     imageCoord,
+			Progress:      forwardWarm,
+		})
+		defer nativeWarmer.Stop()
+		opts.NativeWarmer = nativeWarmer
+		if imageCoord != nil {
+			imageCoord.SetOnReconcileActive(func() {
+				imageCoord.PublishStart()
+				nativeWarmer.EnsureStarted(runCtx, sprite.MaxFrameSize)
+			})
+			go imageCoord.ReconcileImageCacheSession(index)
+		} else {
+			nativeWarmer.EnsureStarted(runCtx, sprite.MaxFrameSize)
+		}
 	}
 
 	var artworkWarmer *assetwarm.Service
@@ -284,26 +307,6 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		artworkWarmer.Start(runCtx)
 		defer artworkWarmer.Stop()
 		opts.ArtworkWarmer = artworkWarmer
-	}
-
-	var nativeWarmer *nativewarm.Service
-	if caps.NativeImage && !opts.DisableSprite {
-		nativeWarmer = nativewarm.New(nativewarm.Config{
-			Workers:       sprite.InteractiveWorkers,
-			Loader:        warmPokemonLoader{details},
-			Renderer:      engine,
-			Index:         index,
-			Manifest:      svc.Cache,
-			Protocol:      imageSpec.Protocol,
-			RequiredSizes: imageSpec.RequiredSizes,
-			Completer:     imageCoord,
-			Progress:      forwardWarm,
-		})
-		defer nativeWarmer.Stop()
-		opts.NativeWarmer = nativeWarmer
-		if imageCoord == nil || imageCoord.Progress().Active {
-			useProgress = true
-		}
 	}
 
 	dossierMode := dossierwarm.Mode(svc.Config.EffectiveDossierPrewarm())

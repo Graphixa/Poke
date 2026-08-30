@@ -14,6 +14,7 @@ import (
 )
 
 type manifestStub struct {
+	mu       sync.Mutex
 	complete map[int]bool
 	init     []int
 	marked   []int
@@ -21,15 +22,30 @@ type manifestStub struct {
 
 func (m *manifestStub) EnsureManifest(_ string) error { return nil }
 func (m *manifestStub) NativeSizeComplete(cells, _ int) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.complete[cells]
 }
 func (m *manifestStub) InitNativeSizePhase(cells, _ int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.init = append(m.init, cells)
 	return nil
 }
 func (m *manifestStub) MarkNativeSizeComplete(cells, _ int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.complete[cells] = true
 	m.marked = append(m.marked, cells)
+	return nil
+}
+func (m *manifestStub) MarkAllNativeSizesComplete(sizes []int, _ int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, cells := range sizes {
+		m.complete[cells] = true
+		m.marked = append(m.marked, cells)
+	}
 	return nil
 }
 func (m *manifestStub) RecountNativeSize(cells int) (int, error) { return 0, nil }

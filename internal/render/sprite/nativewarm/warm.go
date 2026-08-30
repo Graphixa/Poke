@@ -42,6 +42,7 @@ type ManifestStore interface {
 	NativeSizeComplete(cells, total int) bool
 	InitNativeSizePhase(cells, total int) error
 	MarkNativeSizeComplete(cells, total int) error
+	MarkAllNativeSizesComplete(sizes []int, total int) error
 	RecountNativeSize(cells int) (int, error)
 }
 
@@ -96,6 +97,7 @@ type Service struct {
 	doneN       atomic.Int64
 	totalN      atomic.Int64
 	finished    atomic.Bool
+	sessionDone chan struct{}
 	activity    sprite.ActivityGate
 }
 
@@ -124,13 +126,14 @@ func New(cfg Config) *Service {
 		}
 	}
 	return &Service{
-		cfg:       cfg,
-		queued:    make(map[int]bool),
-		done:      make(map[int]bool),
-		misses:    make(map[int]int),
-		indexByID: indexByID,
-		cells:     cfg.Cells,
-		wake:      make(chan struct{}, 1),
+		cfg:         cfg,
+		queued:      make(map[int]bool),
+		done:        make(map[int]bool),
+		misses:      make(map[int]int),
+		indexByID:   indexByID,
+		cells:       cfg.Cells,
+		wake:        make(chan struct{}, 1),
+		sessionDone: make(chan struct{}),
 	}
 }
 
@@ -201,7 +204,6 @@ func (s *Service) WarmAllSizes(ctx context.Context, sizes []int) error {
 	if err := s.Wait(ctx); err != nil {
 		return err
 	}
-	s.markAllSizesComplete()
 	return nil
 }
 
@@ -712,6 +714,7 @@ func (s *Service) finishSession() {
 		return
 	}
 	s.markAllSizesComplete()
+	close(s.sessionDone)
 }
 
 func (s *Service) markAllSizesComplete() {
@@ -719,9 +722,7 @@ func (s *Service) markAllSizesComplete() {
 		return
 	}
 	total := len(s.cfg.Index)
-	for _, cells := range s.requiredSizes() {
-		_ = s.cfg.Manifest.MarkNativeSizeComplete(cells, total)
-	}
+	_ = s.cfg.Manifest.MarkAllNativeSizesComplete(s.requiredSizes(), total)
 }
 
 func (s *Service) allSizesComplete(total int) bool {
@@ -753,21 +754,27 @@ func (s *Service) Wait(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		workDone := false
 		if s.cfg.Completer != nil {
-			if !s.cfg.Completer.Progress().Active {
-				return nil
-			}
+			workDone = !s.cfg.Completer.Progress().Active
 		} else {
 			done, total := s.Snapshot()
-			if total == 0 || done >= total {
-				return nil
-			}
+			workDone = total == 0 || done >= total
+		}
+		if workDone {
+			break
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
+	}
+	select {
+	case <-s.sessionDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

@@ -28,17 +28,18 @@ type PokemonCacheWork struct {
 
 // ImageCacheCoordinator owns the session outstanding set and Pokémon-level progress.
 type ImageCacheCoordinator struct {
-	mu         sync.Mutex
-	store      *Store
-	spec       ImageCacheSpec
-	specID     string
-	datasetID  string
-	pending    map[int]*PokemonCacheWork
-	total      int
-	done       int
-	writer     *imageManifestWriter
-	progress   ProgressFunc
-	deferAudit bool
+	mu                sync.Mutex
+	store             *Store
+	spec              ImageCacheSpec
+	specID            string
+	datasetID         string
+	pending           map[int]*PokemonCacheWork
+	total             int
+	done              int
+	writer            *imageManifestWriter
+	progress          ProgressFunc
+	deferAudit        bool
+	onReconcileActive func()
 }
 
 // StartImageCacheSession audits the current index against the aggregate
@@ -92,11 +93,6 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 
 	if deferAudit && trusted {
 		writer := newImageManifestWriter(store, man)
-		for _, st := range man.Pokemon {
-			if st.Complete {
-				writer.set(st)
-			}
-		}
 		return &ImageCacheCoordinator{
 			store: store, spec: spec, specID: specID, datasetID: datasetID,
 			pending: pending, writer: writer, deferAudit: true,
@@ -116,11 +112,6 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 			}
 		}
 		writer := newImageManifestWriter(store, man)
-		for _, st := range man.Pokemon {
-			if st.Complete {
-				writer.set(st)
-			}
-		}
 		return &ImageCacheCoordinator{
 			store: store, spec: spec, specID: specID, datasetID: datasetID,
 			pending: pending, total: len(pending), writer: writer, deferAudit: true,
@@ -143,11 +134,6 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 	}
 
 	writer := newImageManifestWriter(store, man)
-	for _, st := range man.Pokemon {
-		if st.Complete {
-			writer.set(st)
-		}
-	}
 	if err := writer.flush(); err != nil {
 		return nil, err
 	}
@@ -267,6 +253,16 @@ func sourceKind(mode string) string {
 		return SpriteKindPixel
 	}
 	return SpriteKindArtwork
+}
+
+// SetOnReconcileActive runs when deferred reconciliation discovers session work.
+func (c *ImageCacheCoordinator) SetOnReconcileActive(fn func()) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.onReconcileActive = fn
+	c.mu.Unlock()
 }
 
 // SetProgressFunc receives aggregate progress (session start/finish and Pokémon completion).
@@ -516,13 +512,15 @@ func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.Specie
 	}
 	c.mu.Unlock()
 
+	manifestSnap := c.writer.snapshot()
+
 	// Trusted fast path started with zero session work; discover any newly outstanding Pokémon.
 	if sessionTotal == 0 && len(pendingIDs) == 0 {
 		for _, sum := range index {
 			if sum.ID < 1 {
 				continue
 			}
-			st := c.writer.snapshot().Pokemon[sum.ID]
+			st := manifestSnap.Pokemon[sum.ID]
 			work := auditPokemonImageWork(c.store, c.spec, c.specID, sum, st, false, false)
 			if !work.Complete {
 				pendingIDs = append(pendingIDs, sum.ID)
@@ -539,7 +537,7 @@ func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.Specie
 		if !ok {
 			continue
 		}
-		st := c.writer.snapshot().Pokemon[id]
+		st := manifestSnap.Pokemon[id]
 		work := auditPokemonImageWork(c.store, c.spec, c.specID, sum, st, false, false)
 		if work.Complete {
 			done++
@@ -562,6 +560,7 @@ func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.Specie
 	c.total = sessionTotal
 	c.done = done
 	fn := c.progress
+	onActive := c.onReconcileActive
 	p := c.snapshotLocked()
 	c.mu.Unlock()
 
@@ -570,6 +569,9 @@ func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.Specie
 	}
 	if fn != nil && p.Total > 0 {
 		fn(Progress{Stage: "native", Done: p.Done, Total: p.Total, Message: "Building image cache"})
+	}
+	if onActive != nil && p.Total > 0 && p.Done < p.Total {
+		onActive()
 	}
 }
 

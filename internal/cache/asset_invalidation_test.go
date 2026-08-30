@@ -97,6 +97,34 @@ func TestChangedArtworkDoesNotInvalidateOtherPokemon(t *testing.T) {
 	}
 }
 
+func TestHashInvalidationDuringActiveSessionNotRestoredByFlush(t *testing.T) {
+	dir := t.TempDir()
+	store := cache.NewStore(dir, nil)
+	svc := cache.NewService(store, nil, config.Config{}, nil)
+	spec := testImageSpec()
+	index := testIndex(2)
+	seedComplete(t, store, svc, spec, index[0])
+	seedComplete(t, store, svc, spec, index[1])
+	c := startSession(t, store, index, spec)
+	if p := c.Progress(); p.Total != 0 {
+		t.Fatalf("setup progress=%+v want idle session", p)
+	}
+	seedArtwork(t, store, index[1].ID, index[1].Slug, testHash(99))
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	man, err := store.ReadImageCacheManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := man.Pokemon[2]; ok {
+		t.Fatal("coordinator flush must not restore hash-invalidated pokemon 2")
+	}
+	if !man.Pokemon[1].Complete {
+		t.Fatal("pokemon 1 should remain complete after flush")
+	}
+}
+
 func TestChangedArtworkRebuildsRequiredNativeSizes(t *testing.T) {
 	dir := t.TempDir()
 	store := cache.NewStore(dir, nil)

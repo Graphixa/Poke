@@ -170,18 +170,7 @@ func (s *Service) recordNativeFrameManifest(key string, isNew bool) {
 	if cells < sprite.MinFrameSize {
 		return
 	}
-	m, err := s.store.ReadNativeManifest()
-	if err != nil || m.Version != sprite.AlgorithmVersion {
-		return
-	}
-	if m.Sizes == nil {
-		m.Sizes = map[int]NativeSizeStatus{}
-	}
-	entry := m.Sizes[cells]
-	entry.Done++
-	entry.Complete = entry.Total > 0 && entry.Done >= entry.Total
-	m.Sizes[cells] = entry
-	_ = s.store.WriteNativeManifest(m)
+	s.store.recordNativeFrameManifest(cells)
 }
 
 func sha256Hex(s string) string {

@@ -154,6 +154,31 @@ func TestNativeSizeCompleteHotPathNoScan(t *testing.T) {
 	}
 }
 
+func TestMarkAllNativeSizesCompleteSingleScan(t *testing.T) {
+	dir := t.TempDir()
+	store := cache.NewStore(dir, nil)
+	svc := cache.NewService(store, nil, config.Config{}, nil)
+	if err := store.EnsureNativeManifest(sprite.AlgorithmVersion, "sixel"); err != nil {
+		t.Fatal(err)
+	}
+	bg := sprite.DefaultBackground
+	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
+	for i := 0; i < 3; i++ {
+		key := sprite.NativeCacheKey(fmt.Sprintf("all-scan-%d", i), "sixel", w, h, bg)
+		if err := svc.StoreNative(context.Background(), key, "F"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cache.ResetNativeDirectoryScanCount()
+	sizes := sprite.FrameSteps()
+	if err := store.MarkAllNativeSizesComplete(sizes, 3); err != nil {
+		t.Fatal(err)
+	}
+	if n := cache.NativeDirectoryScanCount(); n != 1 {
+		t.Fatalf("MarkAllNativeSizesComplete scans=%d want 1", n)
+	}
+}
+
 func TestEnsureNativeManifestSingleDirectoryPass(t *testing.T) {
 	dir := t.TempDir()
 	store := cache.NewStore(dir, nil)

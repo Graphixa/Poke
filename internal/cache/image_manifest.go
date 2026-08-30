@@ -33,8 +33,7 @@ func (s *Store) imageCacheManifestPath() string {
 	return filepath.Join(s.root, "native", "image-manifest.json")
 }
 
-// ReadImageCacheManifest loads the aggregate image-cache manifest when present.
-func (s *Store) ReadImageCacheManifest() (ImageCacheManifest, error) {
+func (s *Store) readImageCacheManifestDisk() (ImageCacheManifest, error) {
 	path := s.imageCacheManifestPath()
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -56,8 +55,27 @@ func (s *Store) ReadImageCacheManifest() (ImageCacheManifest, error) {
 	return m, nil
 }
 
+// ReadImageCacheManifest loads the aggregate image-cache manifest when present.
+func (s *Store) ReadImageCacheManifest() (ImageCacheManifest, error) {
+	return s.imageManifest().Snapshot(), nil
+}
+
 // WriteImageCacheManifest persists the aggregate image-cache manifest.
 func (s *Store) WriteImageCacheManifest(m ImageCacheManifest) error {
+	if err := s.writeImageCacheManifestDisk(m); err != nil {
+		return err
+	}
+	st := s.imageManifest()
+	st.mu.Lock()
+	st.m = m
+	st.loaded = true
+	st.dirty = false
+	st.pending = 0
+	st.mu.Unlock()
+	return nil
+}
+
+func (s *Store) writeImageCacheManifestDisk(m ImageCacheManifest) error {
 	if m.Pokemon == nil {
 		m.Pokemon = map[int]PokemonImageCacheState{}
 	}
@@ -72,18 +90,7 @@ func (s *Store) WriteImageCacheManifest(m ImageCacheManifest) error {
 }
 
 func (s *Store) invalidateImageCachePokemon(speciesID int) error {
-	if speciesID < 1 {
-		return nil
-	}
-	m, err := s.ReadImageCacheManifest()
-	if err != nil {
-		return err
-	}
-	if len(m.Pokemon) == 0 {
-		return nil
-	}
-	delete(m.Pokemon, speciesID)
-	return s.WriteImageCacheManifest(m)
+	return s.imageManifest().Invalidate(speciesID)
 }
 
 const (
@@ -91,73 +98,178 @@ const (
 	imageManifestFlushMaxWait = 500 * time.Millisecond
 )
 
-// imageManifestWriter batches persist of in-memory manifest copies.
-type imageManifestWriter struct {
+// imageManifestState is the single in-memory authority for image-manifest.json.
+type imageManifestState struct {
 	store     *Store
 	mu        sync.Mutex
+	loaded    bool
+	m         ImageCacheManifest
 	dirty     bool
 	pending   int
 	lastFlush time.Time
-	m         ImageCacheManifest
 }
 
-func newImageManifestWriter(store *Store, m ImageCacheManifest) *imageManifestWriter {
+func (s *Store) imageManifest() *imageManifestState {
+	if s.imgManifest == nil {
+		s.imgManifest = &imageManifestState{store: s}
+	}
+	return s.imgManifest
+}
+
+func (st *imageManifestState) ensureLoaded() error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.loaded {
+		return nil
+	}
+	m, err := st.store.readImageCacheManifestDisk()
+	if err != nil {
+		return err
+	}
+	st.m = m
+	st.loaded = true
+	return nil
+}
+
+// SeedSession replaces in-memory manifest at session start (already reconciled).
+func (st *imageManifestState) SeedSession(m ImageCacheManifest) {
 	if m.Pokemon == nil {
 		m.Pokemon = map[int]PokemonImageCacheState{}
 	}
-	w := &imageManifestWriter{store: store, m: m, lastFlush: time.Now()}
-	w.dirty = false
-	return w
+	st.mu.Lock()
+	st.m = m
+	st.loaded = true
+	st.dirty = false
+	st.pending = 0
+	st.lastFlush = time.Now()
+	st.mu.Unlock()
 }
 
-func (w *imageManifestWriter) set(st PokemonImageCacheState) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.m.Pokemon[st.SpeciesID] = st
-	w.dirty = true
-	w.pending++
+func (st *imageManifestState) SetComplete(state PokemonImageCacheState) {
+	st.mu.Lock()
+	st.m.Pokemon[state.SpeciesID] = state
+	st.dirty = true
+	st.pending++
+	st.mu.Unlock()
 }
 
-func (w *imageManifestWriter) snapshot() ImageCacheManifest {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	out := ImageCacheManifest{
-		Version: w.m.Version, SpecID: w.m.SpecID,
-		DatasetID: w.m.DatasetID, PokemonCount: w.m.PokemonCount,
-		Pokemon: make(map[int]PokemonImageCacheState, len(w.m.Pokemon)),
+func (st *imageManifestState) Invalidate(speciesID int) error {
+	if speciesID < 1 {
+		return nil
 	}
-	for id, st := range w.m.Pokemon {
+	if err := st.ensureLoaded(); err != nil {
+		return err
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.m.Pokemon) == 0 {
+		return nil
+	}
+	delete(st.m.Pokemon, speciesID)
+	st.dirty = true
+	m := cloneImageCacheManifest(st.m)
+	if err := st.store.writeImageCacheManifestDisk(m); err != nil {
+		return err
+	}
+	st.dirty = false
+	st.pending = 0
+	st.lastFlush = time.Now()
+	return nil
+}
+
+func (st *imageManifestState) UpdateDatasetMetadata(datasetID string, pokemonCount int, specID string) {
+	st.mu.Lock()
+	if datasetID != "" {
+		st.m.DatasetID = datasetID
+	}
+	if pokemonCount > 0 {
+		st.m.PokemonCount = pokemonCount
+	}
+	if specID != "" {
+		st.m.SpecID = specID
+	}
+	st.mu.Unlock()
+}
+
+func (st *imageManifestState) Snapshot() ImageCacheManifest {
+	if err := st.ensureLoaded(); err != nil {
+		return ImageCacheManifest{Version: ImageCacheManifestVersion, Pokemon: map[int]PokemonImageCacheState{}}
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	out := ImageCacheManifest{
+		Version: st.m.Version, SpecID: st.m.SpecID,
+		DatasetID: st.m.DatasetID, PokemonCount: st.m.PokemonCount,
+		Pokemon: make(map[int]PokemonImageCacheState, len(st.m.Pokemon)),
+	}
+	for id, s := range st.m.Pokemon {
+		out.Pokemon[id] = s
+	}
+	return out
+}
+
+func (st *imageManifestState) MaybeFlush(force bool) error {
+	if err := st.ensureLoaded(); err != nil {
+		return err
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if !st.dirty {
+		return nil
+	}
+	now := time.Now()
+	if !force && st.pending < imageManifestFlushEvery && now.Sub(st.lastFlush) < imageManifestFlushMaxWait {
+		return nil
+	}
+	m := cloneImageCacheManifest(st.m)
+	if err := st.store.writeImageCacheManifestDisk(m); err != nil {
+		return err
+	}
+	st.dirty = false
+	st.pending = 0
+	st.lastFlush = now
+	return nil
+}
+
+func (st *imageManifestState) Flush() error {
+	return st.MaybeFlush(true)
+}
+
+func cloneImageCacheManifest(m ImageCacheManifest) ImageCacheManifest {
+	out := ImageCacheManifest{
+		Version: m.Version, SpecID: m.SpecID,
+		DatasetID: m.DatasetID, PokemonCount: m.PokemonCount,
+		Pokemon: make(map[int]PokemonImageCacheState, len(m.Pokemon)),
+	}
+	for id, st := range m.Pokemon {
 		out.Pokemon[id] = st
 	}
 	return out
 }
 
+// imageManifestWriter batches persist via the store-level manifest state.
+type imageManifestWriter struct {
+	state *imageManifestState
+}
+
+func newImageManifestWriter(store *Store, m ImageCacheManifest) *imageManifestWriter {
+	st := store.imageManifest()
+	st.SeedSession(m)
+	return &imageManifestWriter{state: st}
+}
+
+func (w *imageManifestWriter) set(st PokemonImageCacheState) {
+	w.state.SetComplete(st)
+}
+
+func (w *imageManifestWriter) snapshot() ImageCacheManifest {
+	return w.state.Snapshot()
+}
+
 func (w *imageManifestWriter) maybeFlush(force bool) error {
-	w.mu.Lock()
-	if !w.dirty {
-		w.mu.Unlock()
-		return nil
-	}
-	now := time.Now()
-	if !force && w.pending < imageManifestFlushEvery && now.Sub(w.lastFlush) < imageManifestFlushMaxWait {
-		w.mu.Unlock()
-		return nil
-	}
-	m := ImageCacheManifest{
-		Version: w.m.Version, SpecID: w.m.SpecID,
-		DatasetID: w.m.DatasetID, PokemonCount: w.m.PokemonCount,
-		Pokemon: make(map[int]PokemonImageCacheState, len(w.m.Pokemon)),
-	}
-	for id, st := range w.m.Pokemon {
-		m.Pokemon[id] = st
-	}
-	w.dirty = false
-	w.pending = 0
-	w.lastFlush = now
-	w.mu.Unlock()
-	return w.store.WriteImageCacheManifest(m)
+	return w.state.MaybeFlush(force)
 }
 
 func (w *imageManifestWriter) flush() error {
-	return w.maybeFlush(true)
+	return w.state.Flush()
 }
