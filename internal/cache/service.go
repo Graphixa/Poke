@@ -110,9 +110,14 @@ func (s *Service) Clear() error {
 func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index []domain.SpeciesSummary, stale bool, err error) {
 	if s.store.HasActiveDataset() {
 		s.localOnly.Store(true)
-		if browse, berr := s.store.LoadBrowseSummaries(); berr == nil && len(browse) > 0 {
-			return browse, false, nil
+		browse, berr := s.store.LoadBrowseSummaries()
+		if berr != nil {
+			return nil, false, berr
 		}
+		if len(browse) == 0 {
+			return nil, false, ErrEmpty
+		}
+		return browse, false, nil
 	}
 	index, fetchedAt, err := s.loadIndex()
 	if err == nil && len(index) > 0 {

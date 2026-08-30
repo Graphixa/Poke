@@ -104,13 +104,11 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 	}
 
 	if deferAudit && !trusted {
-		done := 0
 		for _, sum := range index {
 			if sum.ID < 1 {
 				continue
 			}
 			if st, ok := man.Pokemon[sum.ID]; ok && st.Complete && st.SpecID == specID {
-				done++
 				continue
 			}
 			pending[sum.ID] = &PokemonCacheWork{
@@ -125,8 +123,7 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 		}
 		return &ImageCacheCoordinator{
 			store: store, spec: spec, specID: specID, datasetID: datasetID,
-			pending: pending, total: len(pending) + done, done: done,
-			writer: writer, deferAudit: true,
+			pending: pending, total: len(pending), writer: writer, deferAudit: true,
 		}, nil
 	}
 
@@ -505,33 +502,65 @@ func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.Specie
 		return
 	}
 	c.deferAudit = false
+	sessionTotal := c.total
+	sessionDone := c.done
+	pendingIDs := make([]int, 0, len(c.pending))
+	for id := range c.pending {
+		pendingIDs = append(pendingIDs, id)
+	}
+	indexByID := make(map[int]domain.SpeciesSummary, len(index))
+	for _, sum := range index {
+		if sum.ID > 0 {
+			indexByID[sum.ID] = sum
+		}
+	}
 	c.mu.Unlock()
 
+	// Trusted fast path started with zero session work; discover any newly outstanding Pokémon.
+	if sessionTotal == 0 && len(pendingIDs) == 0 {
+		for _, sum := range index {
+			if sum.ID < 1 {
+				continue
+			}
+			st := c.writer.snapshot().Pokemon[sum.ID]
+			work := auditPokemonImageWork(c.store, c.spec, c.specID, sum, st, false, false)
+			if !work.Complete {
+				pendingIDs = append(pendingIDs, sum.ID)
+			}
+		}
+		sessionTotal = len(pendingIDs)
+		sessionDone = 0
+	}
+
 	newPending := make(map[int]*PokemonCacheWork)
-	done := 0
-	for _, sum := range index {
-		if sum.ID < 1 {
+	done := sessionDone
+	for _, id := range pendingIDs {
+		sum, ok := indexByID[id]
+		if !ok {
 			continue
 		}
-		st := c.writer.snapshot().Pokemon[sum.ID]
+		st := c.writer.snapshot().Pokemon[id]
 		work := auditPokemonImageWork(c.store, c.spec, c.specID, sum, st, false, false)
 		if work.Complete {
 			done++
 			if c.writer != nil {
 				c.writer.set(PokemonImageCacheState{
-					SpeciesID: sum.ID, SourceHash: work.SourceHash,
+					SpeciesID: id, SourceHash: work.SourceHash,
 					SpecID: c.specID, Complete: true,
 				})
 			}
 			continue
 		}
-		newPending[sum.ID] = work
+		newPending[id] = work
 	}
 
 	c.mu.Lock()
 	c.pending = newPending
+	if done > sessionTotal {
+		done = sessionTotal
+	}
+	c.total = sessionTotal
 	c.done = done
-	c.total = len(newPending) + done
 	fn := c.progress
 	p := c.snapshotLocked()
 	c.mu.Unlock()

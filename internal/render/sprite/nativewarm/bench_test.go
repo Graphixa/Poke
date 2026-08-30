@@ -102,6 +102,10 @@ func BenchmarkNativeWarmWorkers1(b *testing.B) {
 	benchmarkNativeWarmWorkers(b, 1)
 }
 
+func BenchmarkNativeWarmWorkers2(b *testing.B) {
+	benchmarkNativeWarmWorkers(b, 2)
+}
+
 func BenchmarkNativeWarmWorkers4(b *testing.B) {
 	benchmarkNativeWarmWorkers(b, 4)
 }

@@ -94,6 +94,14 @@ func (s *Store) StoreContentAsset(pokemonID int, source, url, hash string, data 
 	if hash == "" || len(data) == 0 {
 		return errors.New("cache: refuse to store empty artwork")
 	}
+	oldHash := ""
+	if old, err := s.readAssetMapping(pokemonID, source); err == nil {
+		oldHash = old.Hash
+	}
+	hashChanged := oldHash != "" && oldHash != hash
+	if hashChanged {
+		_ = s.DeleteNativeForSpecies(pokemonID)
+	}
 	obj := s.artworkObjectPath(hash)
 	if err := writeAtomic(obj, data, 0o600); err != nil {
 		return err
@@ -110,8 +118,14 @@ func (s *Store) StoreContentAsset(pokemonID int, source, url, hash string, data 
 	if err != nil {
 		return err
 	}
+	if err := writeAtomic(s.artworkMappingPath(pokemonID, source), raw, 0o600); err != nil {
+		return err
+	}
+	if hashChanged {
+		_ = s.invalidateImageCachePokemon(pokemonID)
+	}
 	debuglog.Cachef("artwork.download.complete id=%d source=%s hash=%s", pokemonID, source, hash)
-	return writeAtomic(s.artworkMappingPath(pokemonID, source), raw, 0o600)
+	return nil
 }
 
 // Service.NamedAssetMeta implements sprite.NamedAssetMetaStore.

@@ -220,6 +220,10 @@ func TestRefreshConcurrencyAndTypes(t *testing.T) {
 }
 
 func TestEnsureIndexUsesActiveDatasetWithoutRootIndex(t *testing.T) {
+	TestActiveDatasetStartsWithoutRootIndex(t)
+}
+
+func TestActiveDatasetStartsWithoutRootIndex(t *testing.T) {
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
@@ -250,6 +254,103 @@ func TestEnsureIndexUsesActiveDatasetWithoutRootIndex(t *testing.T) {
 	}
 	if !svc2.LocalOnly() {
 		t.Fatal("expected local-only reads with active dataset index")
+	}
+}
+
+func TestActiveDatasetStartsOfflineWithoutRootIndex(t *testing.T) {
+	root := t.TempDir()
+	clock := fixedClock{t: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90}, Types: []domain.TypeSlot{{Name: "electric"}}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"index", filepath.Join("manifest.json")} {
+		if err := os.RemoveAll(filepath.Join(root, rel)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	blockAPI := &fakeAPI{listErr: errors.New("network must not be used")}
+	svc2 := cache.NewService(store, blockAPI, testConfig(), clock)
+	index, stale, err := svc2.EnsureIndex(context.Background(), nil)
+	if err != nil || stale || len(index) != 1 || index[0].ID != 25 {
+		t.Fatalf("index=%v stale=%v err=%v", index, stale, err)
+	}
+	if blockAPI.listCalls.Load() != 0 {
+		t.Fatalf("ListSpecies calls=%d want 0", blockAPI.listCalls.Load())
+	}
+}
+
+func TestActiveDatasetBrowseDoesNotCallListSpecies(t *testing.T) {
+	root := t.TempDir()
+	clock := fixedClock{t: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 4, Slug: "charmander", DisplayName: "Charmander"}},
+		pokemon: map[int]domain.Pokemon{
+			4: {ID: 4, Slug: "charmander", DisplayName: "Charmander", Types: []domain.TypeSlot{{Name: "fire"}}},
+		},
+		species: map[int]domain.Species{
+			4: {ID: 4, Slug: "charmander", DisplayName: "Charmander", DefaultPokemonID: 4},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	before := api.listCalls.Load()
+	index, _, err := svc.EnsureIndex(context.Background(), nil)
+	if err != nil || len(index) != 1 {
+		t.Fatalf("index=%v err=%v", index, err)
+	}
+	if api.listCalls.Load() != before {
+		t.Fatalf("ListSpecies calls=%d want %d", api.listCalls.Load(), before)
+	}
+}
+
+func TestCorruptActiveBrowseDoesNotSilentlyFallbackToNetwork(t *testing.T) {
+	root := t.TempDir()
+	clock := fixedClock{t: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 7, Slug: "squirtle", DisplayName: "Squirtle"}},
+		pokemon: map[int]domain.Pokemon{
+			7: {ID: 7, Slug: "squirtle", DisplayName: "Squirtle"},
+		},
+		species: map[int]domain.Species{
+			7: {ID: 7, Slug: "squirtle", DisplayName: "Squirtle", DefaultPokemonID: 7},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.ActiveDatasetID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "datasets", id, "browse.json"), []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blockAPI := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 999, Slug: "fallback", DisplayName: "Fallback"}},
+	}
+	svc2 := cache.NewService(store, blockAPI, testConfig(), clock)
+	_, _, err = svc2.EnsureIndex(context.Background(), nil)
+	if !errors.Is(err, cache.ErrCorrupt) {
+		t.Fatalf("err=%v want ErrCorrupt", err)
+	}
+	if blockAPI.listCalls.Load() != 0 {
+		t.Fatalf("ListSpecies calls=%d want 0", blockAPI.listCalls.Load())
 	}
 }
 

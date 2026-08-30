@@ -11,6 +11,10 @@ import (
 )
 
 func TestNativeWarmBatchSingleDecode(t *testing.T) {
+	TestNativeWarmBatchColdSourceSingleDecode(t)
+}
+
+func TestNativeWarmBatchColdSourceSingleDecode(t *testing.T) {
 	store := newNamedMemStore()
 	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
 	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "artwork", "", png); err != nil {
@@ -76,6 +80,10 @@ func TestNativeWarmBatchPartialSizes(t *testing.T) {
 }
 
 func TestNativeWarmBatchColdPathSinglePNGRead(t *testing.T) {
+	TestNativeWarmBatchColdSourceUsesResolvedPNGWithoutSecondRead(t)
+}
+
+func TestNativeWarmBatchColdSourceUsesResolvedPNGWithoutSecondRead(t *testing.T) {
 	store := newNamedMemStore()
 	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
 	hash := sprite.ContentHash(png)

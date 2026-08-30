@@ -58,6 +58,10 @@ func TestDossierCoreHitUnder200ms(t *testing.T) {
 }
 
 func TestDossierExtrasLoadsFromDataset(t *testing.T) {
+	TestDossierExtrasLoadsRequiredData(t)
+}
+
+func TestDossierExtrasLoadsRequiredData(t *testing.T) {
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
@@ -105,6 +109,10 @@ func TestDossierExtrasLoadsFromDataset(t *testing.T) {
 }
 
 func TestDossierCoreMissSkipsMoves(t *testing.T) {
+	TestDossierCoreDoesNotLoadMoves(t)
+}
+
+func TestDossierCoreDoesNotLoadMoves(t *testing.T) {
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
@@ -132,6 +140,63 @@ func TestDossierCoreMissSkipsMoves(t *testing.T) {
 	}
 	if api.moveCalls.Load() != 0 {
 		t.Fatalf("core path fetched moves: %d", api.moveCalls.Load())
+	}
+}
+
+func TestDossierCoreDoesNotLoadLearnsets(t *testing.T) {
+	svc := bootstrapOne(t, cache.NewStore(t.TempDir(), fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}), dossierBootstrapAPI(), fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)})
+	res, err := svc.DossierCore(context.Background(), 25, "pikachu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Dossier.LevelUpMoves) > 0 || res.Complete {
+		t.Fatalf("core loaded learnset: %+v", res.Dossier)
+	}
+}
+
+func TestDossierCoreDoesNotLoadEncounters(t *testing.T) {
+	svc := bootstrapOne(t, cache.NewStore(t.TempDir(), fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}), dossierBootstrapAPI(), fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)})
+	res, err := svc.DossierCore(context.Background(), 25, "pikachu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Dossier.Encounters != nil || res.Complete {
+		t.Fatalf("core loaded encounters: %+v", res.Dossier)
+	}
+}
+
+func TestDossierCoreDoesNotLoadEvolution(t *testing.T) {
+	svc := bootstrapOne(t, cache.NewStore(t.TempDir(), fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}), dossierBootstrapAPI(), fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)})
+	res, err := svc.DossierCore(context.Background(), 25, "pikachu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Dossier.Evolution != nil || res.Complete {
+		t.Fatalf("core loaded evolution: %+v", res.Dossier)
+	}
+}
+
+func dossierBootstrapAPI() *fakeAPI {
+	return &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {
+				ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90},
+				Moves: []domain.LearnedMove{{MoveID: 1, Learnings: []domain.MoveLearning{{Method: "level-up", Level: 1, VersionGroup: "red-blue", VersionGroupOrder: 1}}}},
+			},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25, EvolutionChainID: 10},
+		},
+		evolution: map[int]domain.EvolutionTree{
+			10: {Root: domain.EvolutionNode{SpeciesID: 25, SpeciesSlug: "pikachu", DisplayName: "Pikachu"}},
+		},
+		encounters: map[int][]domain.Encounter{
+			25: {{Area: "forest"}},
+		},
+		moves: map[int]domain.Move{
+			1: {ID: 1, Slug: "pound", DisplayName: "Pound"},
+		},
 	}
 }
 
