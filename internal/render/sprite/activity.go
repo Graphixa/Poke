@@ -11,7 +11,8 @@ const InteractiveIdle = 400 * time.Millisecond
 
 // InteractiveWorkers is the preferred background encoder count while the TUI
 // is running. Non-interactive commands (poke update) may use more.
-// Kept at 1 until native manifest persistence is batched (avoids per-frame fsync).
+// Windows Terminal/sixel benchmark: 2+ workers improve throughput but CPU
+// contention is too high for typical hardware; keep 1 for interactive browse.
 const InteractiveWorkers = 1
 
 // ActivityGate pauses full-dex background warming during navigation.
