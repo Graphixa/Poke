@@ -146,6 +146,7 @@ func SpeciesToDomain(s DatasetSpecies) domain.Species {
 	}
 	return out
 }
+
 // LearnedMovesFromLearnset rebuilds domain move-learning stubs for dossier resolution.
 func LearnedMovesFromLearnset(rows []DatasetLearn, slugs map[int]string) []domain.LearnedMove {
 	if len(rows) == 0 {

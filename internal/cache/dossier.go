@@ -78,15 +78,7 @@ func (s *Service) getDossierCore(ctx context.Context, speciesID int, slug string
 		if err != nil {
 			return DossierCoreResult{}, err
 		}
-		extras, err := s.assembleExtras(ctx, d)
-		if err != nil {
-			return DossierCoreResult{Dossier: d, Complete: false}, nil
-		}
-		complete, err := s.dossierComplete(ctx, extras)
-		if err != nil {
-			return DossierCoreResult{}, err
-		}
-		return DossierCoreResult{Dossier: extras, Complete: complete}, nil
+		return DossierCoreResult{Dossier: d, Complete: false}, nil
 	}
 	d, err := s.assembleCore(ctx, speciesID)
 	if err != nil {

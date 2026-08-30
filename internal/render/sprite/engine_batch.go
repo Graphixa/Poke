@@ -64,6 +64,7 @@ func (e *Engine) NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, si
 	}
 
 	ref := e.resolveNativeAssetRef(ctx, pokemon)
+	var png []byte
 	if !ref.Ready {
 		res, _ := e.resolveNativeAsset(ctx, pokemon, pokemon.ID)
 		if res.UsePlaceholder || len(res.PNG) == 0 {
@@ -71,16 +72,18 @@ func (e *Engine) NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, si
 			out.FailedSizes = append(out.FailedSizes, missing...)
 			return out
 		}
+		png = res.PNG
 		ref.Hash = res.ContentHash
 		ref.Ready = true
 		ref.Kind = res.AssetKind
-	}
-
-	png, err := e.readNativePNG(ctx, pokemon, ref)
-	if err != nil || len(png) == 0 {
-		out.Last = e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)
-		out.FailedSizes = append(out.FailedSizes, missing...)
-		return out
+	} else {
+		var err error
+		png, err = e.readNativePNG(ctx, pokemon, ref)
+		if err != nil || len(png) == 0 {
+			out.Last = e.placeholderResult(displayName(pokemon), FrameWidth, FrameHeight)
+			out.FailedSizes = append(out.FailedSizes, missing...)
+			return out
+		}
 	}
 	hash := e.ensureCanonicalHash(ctx, pokemon, ref, png)
 	if !IsHexSHA256(hash) {

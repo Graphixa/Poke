@@ -38,7 +38,7 @@ func TestClientUserAgentAndMapping(t *testing.T) {
 					{"base_stat": 50, "stat": map[string]string{"name": "special-defense", "url": "https://pokeapi.co/api/v2/stat/5/"}},
 					{"base_stat": 90, "stat": map[string]string{"name": "speed", "url": "https://pokeapi.co/api/v2/stat/6/"}},
 				},
-				"moves":   []any{},
+				"moves": []any{},
 				"sprites": map[string]any{
 					"front_default": "https://example.test/pikachu.png",
 					"other": map[string]any{

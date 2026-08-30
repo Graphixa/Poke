@@ -34,7 +34,7 @@ func TestBootstrapCancelDuringEvolution(t *testing.T) {
 		evolution[evoID] = domain.EvolutionTree{Root: domain.EvolutionNode{SpeciesID: id}}
 	}
 	api := &cancelAfterRecordsAPI{
-		fakeAPI: fakeAPI{list: list, pokemon: pokemon, species: species, evolution: evolution, delay: 30 * time.Millisecond},
+		fakeAPI:     fakeAPI{list: list, pokemon: pokemon, species: species, evolution: evolution, delay: 30 * time.Millisecond},
 		cancelAfter: 2,
 	}
 	svc := cache.NewService(store, api, testConfig(), clock)

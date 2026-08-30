@@ -107,9 +107,9 @@ type DatasetEvolutionTree struct {
 }
 
 type DatasetEvolutionNode struct {
-	SpeciesID   int                    `json:"species_id"`
-	SpeciesSlug string                 `json:"species_slug"`
-	DisplayName string                 `json:"display_name"`
+	SpeciesID   int                      `json:"species_id"`
+	SpeciesSlug string                   `json:"species_slug"`
+	DisplayName string                   `json:"display_name"`
 	Children    []DatasetEvolutionBranch `json:"children,omitempty"`
 }
 

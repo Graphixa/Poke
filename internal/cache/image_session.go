@@ -99,16 +99,18 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 		}
 		return &ImageCacheCoordinator{
 			store: store, spec: spec, specID: specID, datasetID: datasetID,
-			pending: pending, writer: writer,
+			pending: pending, writer: writer, deferAudit: true,
 		}, nil
 	}
 
 	if deferAudit && !trusted {
+		done := 0
 		for _, sum := range index {
 			if sum.ID < 1 {
 				continue
 			}
 			if st, ok := man.Pokemon[sum.ID]; ok && st.Complete && st.SpecID == specID {
+				done++
 				continue
 			}
 			pending[sum.ID] = &PokemonCacheWork{
@@ -123,7 +125,8 @@ func startImageCacheSession(store *Store, index []domain.SpeciesSummary, spec Im
 		}
 		return &ImageCacheCoordinator{
 			store: store, spec: spec, specID: specID, datasetID: datasetID,
-			pending: pending, total: len(pending), writer: writer, deferAudit: true,
+			pending: pending, total: len(pending) + done, done: done,
+			writer: writer, deferAudit: true,
 		}, nil
 	}
 

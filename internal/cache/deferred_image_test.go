@@ -71,6 +71,60 @@ func TestDeferredImageSessionUntrustedReturnsBeforeAudit(t *testing.T) {
 	}
 }
 
+func TestDeferredProgressIncludesManifestComplete(t *testing.T) {
+	dir := t.TempDir()
+	store := cache.NewStore(dir, nil)
+	svc := cache.NewService(store, nil, config.Config{}, nil)
+	spec := testImageSpec()
+	index := testIndex(5)
+	for i := 0; i < 3; i++ {
+		seedComplete(t, store, svc, spec, index[i])
+	}
+	c1 := startSession(t, store, index, spec)
+	if p := c1.Progress(); p.Total != 2 {
+		t.Fatalf("setup progress=%+v want 2 outstanding", p)
+	}
+	cache.ResetNamedAssetMetaCount()
+	c, err := cache.StartImageCacheSessionDeferred(store, index, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Progress()
+	if p.Total != 5 || p.Done != 3 || !p.Active {
+		t.Fatalf("progress=%+v want done=3 total=5 active", p)
+	}
+	if n := cache.NamedAssetMetaCount(); n != 0 {
+		t.Fatalf("deferred startup audited assets: %d lookups", n)
+	}
+}
+
+func TestDeferredTrustedReconcileInvalidatesChangedSourceHash(t *testing.T) {
+	dir := t.TempDir()
+	store := cache.NewStore(dir, nil)
+	svc := cache.NewService(store, nil, config.Config{}, nil)
+	spec := testImageSpec()
+	index := testIndex(2)
+	for _, sum := range index {
+		seedComplete(t, store, svc, spec, sum)
+	}
+	startSession(t, store, index, spec)
+	c, err := cache.StartImageCacheSessionDeferred(store, index, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := c.Progress(); p.Total != 0 {
+		t.Fatalf("trusted deferred progress=%+v", p)
+	}
+	seedArtwork(t, store, index[0].ID, index[0].Slug, testHash(99))
+	c.ReconcileImageCacheSession(index)
+	if p := c.Progress(); p.Total != 2 || p.Done != 1 || !p.Active {
+		t.Fatalf("after reconcile progress=%+v want done=1 total=2 active", p)
+	}
+	if len(c.OutstandingIDs()) != 1 {
+		t.Fatalf("outstanding=%v", c.OutstandingIDs())
+	}
+}
+
 func TestDeferredReconcileRunsOnce(t *testing.T) {
 	store := cache.NewStore(t.TempDir(), nil)
 	index := testIndex(3)

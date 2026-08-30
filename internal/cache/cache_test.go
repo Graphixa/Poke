@@ -219,6 +219,40 @@ func TestRefreshConcurrencyAndTypes(t *testing.T) {
 	}
 }
 
+func TestEnsureIndexUsesActiveDatasetWithoutRootIndex(t *testing.T) {
+	root := t.TempDir()
+	clock := fixedClock{t: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90}, Types: []domain.TypeSlot{{Name: "electric"}}},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25},
+		},
+	}
+	svc := cache.NewService(store, api, testConfig(), clock)
+	if err := svc.BootstrapDataset(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "index")); err != nil {
+		t.Fatal(err)
+	}
+	if store.HasSpeciesIndex() {
+		t.Fatal("fixture must not retain root species index")
+	}
+	blockAPI := &fakeAPI{listErr: errors.New("network must not be used")}
+	svc2 := cache.NewService(store, blockAPI, testConfig(), clock)
+	index, stale, err := svc2.EnsureIndex(context.Background(), nil)
+	if err != nil || stale || len(index) != 1 || index[0].ID != 25 {
+		t.Fatalf("index=%v stale=%v err=%v", index, stale, err)
+	}
+	if !svc2.LocalOnly() {
+		t.Fatal("expected local-only reads with active dataset index")
+	}
+}
+
 func TestEnsureIndexStartupPolicy(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)

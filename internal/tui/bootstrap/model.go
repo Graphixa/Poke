@@ -47,9 +47,9 @@ type Model struct {
 }
 
 type progressMsg struct {
-	stage           string
-	done, total     int
-	message         string
+	stage       string
+	done, total int
+	message     string
 }
 type doneMsg struct {
 	err error

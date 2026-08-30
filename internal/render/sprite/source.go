@@ -72,6 +72,7 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 
 	if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
 		if data, err := named.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind); err == nil && len(data) > 0 {
+			notePNGRead()
 			hash := ContentHash(data)
 			if meta, ok := r.Store.(NamedAssetMetaStore); ok {
 				if h, _, ready, _ := meta.NamedAssetMeta(ctx, pokemon.ID, pokemon.Slug, kind); ready && IsHexSHA256(h) {
@@ -95,6 +96,7 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 		if r.Store != nil {
 			hash, data, err := r.Store.SpriteByURL(ctx, tryURL)
 			if err == nil && len(data) > 0 && ValidatePNG(data) == nil {
+				notePNGRead()
 				if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
 					_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
 					if urlStore, ok := r.Store.(NamedPNGStoreWithURL); ok {

@@ -93,12 +93,12 @@ const (
 
 // imageManifestWriter batches persist of in-memory manifest copies.
 type imageManifestWriter struct {
-	store        *Store
-	mu           sync.Mutex
-	dirty        bool
-	pending      int
-	lastFlush    time.Time
-	m            ImageCacheManifest
+	store     *Store
+	mu        sync.Mutex
+	dirty     bool
+	pending   int
+	lastFlush time.Time
+	m         ImageCacheManifest
 }
 
 func newImageManifestWriter(store *Store, m ImageCacheManifest) *imageManifestWriter {

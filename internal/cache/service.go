@@ -108,6 +108,12 @@ func (s *Service) Clear() error {
 // otherwise the cached species index. An empty cache triggers a blocking thin
 // index fetch only (full metadata bootstrap is explicit via BootstrapDataset).
 func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index []domain.SpeciesSummary, stale bool, err error) {
+	if s.store.HasActiveDataset() {
+		s.localOnly.Store(true)
+		if browse, berr := s.store.LoadBrowseSummaries(); berr == nil && len(browse) > 0 {
+			return browse, false, nil
+		}
+	}
 	index, fetchedAt, err := s.loadIndex()
 	if err == nil && len(index) > 0 {
 		stale = s.isStale(fetchedAt, s.cfg.Cache.IndexTTL.Duration)

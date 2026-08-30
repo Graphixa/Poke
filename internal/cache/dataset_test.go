@@ -378,7 +378,7 @@ func TestOfflineSpeciesSummaryRead(t *testing.T) {
 	clock := fixedClock{t: now}
 	store := cache.NewStore(root, clock)
 	api := &fakeAPI{
-		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		list:    []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
 		pokemon: map[int]domain.Pokemon{25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", SpeciesID: 25}},
 		species: map[int]domain.Species{25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25, Genus: "Mouse"}},
 	}

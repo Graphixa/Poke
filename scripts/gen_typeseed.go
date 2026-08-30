@@ -35,7 +35,7 @@ type listResp struct {
 type pokemonDTO struct {
 	ID    int `json:"id"`
 	Types []struct {
-		Slot int `json:"slot"`
+		Slot int      `json:"slot"`
 		Type namedURL `json:"type"`
 	} `json:"types"`
 }

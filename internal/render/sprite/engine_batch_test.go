@@ -75,6 +75,38 @@ func TestNativeWarmBatchPartialSizes(t *testing.T) {
 	}
 }
 
+func TestNativeWarmBatchColdPathSinglePNGRead(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	hash := sprite.ContentHash(png)
+	url := "https://example/pikachu.png"
+	if err := store.StoreSpriteByURL(context.Background(), url, hash, png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	engine := artworkNativeEngine(store, native, color.RGBA{A: 255})
+	poke := domain.Pokemon{
+		ID: 25, Slug: "pikachu", DisplayName: "Pikachu",
+		Sprites: domain.Sprites{OfficialArtwork: url},
+	}
+	sprite.ResetStats()
+	store.pngReads = 0
+
+	res := engine.NativeWarmBatch(context.Background(), poke, sprite.FrameSteps())
+	if res.Encoded != len(sprite.FrameSteps()) {
+		t.Fatalf("encoded=%d want %d", res.Encoded, len(sprite.FrameSteps()))
+	}
+	if store.pngReads != 1 {
+		t.Fatalf("pngReads=%d want 1", store.pngReads)
+	}
+	if got := sprite.Stats().PNGReads.Load(); got != 1 {
+		t.Fatalf("stats pngReads=%d want 1", got)
+	}
+	if got := sprite.Stats().PNGDecodes.Load(); got != 1 {
+		t.Fatalf("pngDecodes=%d want 1", got)
+	}
+}
+
 func TestNativeWarmBatchFallsBackToSingleSizeRenderer(t *testing.T) {
 	store := newNamedMemStore()
 	png := mustPNG(t, color.RGBA{10, 20, 30, 255})
@@ -83,12 +115,12 @@ func TestNativeWarmBatchFallsBackToSingleSizeRenderer(t *testing.T) {
 	}
 	chafa := spritechafa.Renderer{}
 	engine := &sprite.Engine{
-		Source: &sprite.SourceResolver{Store: store},
-		Modes:  sprite.NewModeResolver(chafa, spritechafa.Renderer{}),
-		Artefacts: store,
-		Caps: sprite.Capabilities{TrueColor: true, ANSI256: true},
+		Source:     &sprite.SourceResolver{Store: store},
+		Modes:      sprite.NewModeResolver(chafa, spritechafa.Renderer{}),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{TrueColor: true, ANSI256: true},
 		Preference: sprite.ModeChafa,
-		Color: sprite.ColorTrueColor,
+		Color:      sprite.ColorTrueColor,
 		SourceKind: sprite.SourcePixel,
 		Background: color.RGBA{A: 255},
 	}

@@ -43,14 +43,64 @@ func TestDossierCoreHitUnder200ms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Complete {
-		t.Fatal("expected complete dossier from dataset")
+	if res.Complete {
+		t.Fatal("core path must not load extras eagerly")
+	}
+	if res.Dossier.Evolution != nil || res.Dossier.Encounters != nil || len(res.Dossier.LevelUpMoves) > 0 {
+		t.Fatalf("core loaded extras: %+v", res.Dossier)
 	}
 	if res.Dossier.Pokemon.DisplayName != "Pikachu" {
 		t.Fatalf("name = %q", res.Dossier.Pokemon.DisplayName)
 	}
 	if elapsed > 200*time.Millisecond {
 		t.Fatalf("dataset dossier core took %v want <200ms", elapsed)
+	}
+}
+
+func TestDossierExtrasLoadsFromDataset(t *testing.T) {
+	root := t.TempDir()
+	clock := fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}
+	store := cache.NewStore(root, clock)
+	api := &fakeAPI{
+		list: []domain.SpeciesSummary{{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}},
+		pokemon: map[int]domain.Pokemon{
+			25: {
+				ID: 25, Slug: "pikachu", DisplayName: "Pikachu", Stats: domain.Stats{Speed: 90},
+				Moves: []domain.LearnedMove{{MoveID: 1, Learnings: []domain.MoveLearning{{Method: "level-up", Level: 1, VersionGroup: "red-blue", VersionGroupOrder: 1}}}},
+			},
+		},
+		species: map[int]domain.Species{
+			25: {ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25, EvolutionChainID: 10},
+		},
+		evolution: map[int]domain.EvolutionTree{
+			10: {Root: domain.EvolutionNode{SpeciesID: 25, SpeciesSlug: "pikachu", DisplayName: "Pikachu"}},
+		},
+		encounters: map[int][]domain.Encounter{
+			25: {{Area: "forest"}},
+		},
+		moves: map[int]domain.Move{
+			1: {ID: 1, Slug: "pound", DisplayName: "Pound"},
+		},
+	}
+	svc := bootstrapOne(t, store, api, clock)
+	core, err := svc.DossierCore(context.Background(), 25, "pikachu")
+	if err != nil || core.Complete {
+		t.Fatalf("core=%+v err=%v", core, err)
+	}
+	extras, err := svc.DossierExtras(context.Background(), 25, "pikachu", core.Dossier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extras.Evolution == nil || len(extras.Encounters) != 1 || len(extras.LevelUpMoves) != 1 {
+		t.Fatalf("extras=%+v", extras)
+	}
+	before := api.calls.Load()
+	_, err = svc.DossierExtras(context.Background(), 25, "pikachu", core.Dossier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api.calls.Load() != before {
+		t.Fatal("extras must stay offline after dataset bootstrap")
 	}
 }
 

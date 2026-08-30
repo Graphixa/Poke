@@ -80,12 +80,12 @@ func main() {
 	}
 
 	m := tui.NewModel(tui.Options{
-		Index:              idx,
-		Details:            src,
-		Sprites:            spriteAdapter{engine},
-		Selected:           selected,
-		Prefill:            "c",
-		Context:            ctx,
+		Index:    idx,
+		Details:  src,
+		Sprites:  spriteAdapter{engine},
+		Selected: selected,
+		Prefill:  "c",
+		Context:  ctx,
 	})
 
 	var model tea.Model = m
