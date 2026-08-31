@@ -13,6 +13,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/coldsched"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
@@ -122,8 +123,8 @@ type Model struct {
 	spriteCancel        context.CancelFunc
 	spriteReqID         int
 	spriteLoadSpecies   int
-	fgActive            *fgRenderReq
-	fgPending           *fgRenderReq
+	coldSched           *coldsched.Scheduler
+	coldFrameCh         chan coldFrameMsg
 	dossierCancel       context.CancelFunc
 	dossierLoadCtx      context.Context
 	dossierLoadSpecies  int

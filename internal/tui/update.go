@@ -135,6 +135,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.ensureSpriteLoad()
 
+	case coldFrameMsg:
+		return m, m.handleColdFrame(msg)
+
 	case spriteMsg:
 		return m, m.handleSpriteMsg(msg)
 
@@ -398,12 +401,7 @@ func (m *Model) notifyWarmer() {
 }
 
 func (m *Model) ensureSelectionLoads() tea.Cmd {
-	load := m.ensureSpriteLoad()
-	if m.foregroundColdBusy() {
-		m.cancelPrefetch()
-		return load
-	}
-	return tea.Batch(load, m.scheduleSpritePrefetch())
+	return m.ensureSpriteLoad()
 }
 
 func (m *Model) ensureDossierLoad() tea.Cmd {
@@ -484,8 +482,8 @@ func (m *Model) cancelSprite() {
 // selectionSpriteOwns reports whether the selection encode path owns speciesID.
 func (m Model) selectionSpriteOwns(speciesID int) bool {
 	return m.isSelectedID(speciesID) &&
-		m.spriteLoadSpecies == speciesID &&
-		m.spriteCancel != nil
+		m.foregroundColdBusy() &&
+		m.spriteLoadSpecies == speciesID
 }
 
 func (m *Model) clearStaleFlag(speciesID int, clear func(*resourceCache)) {
@@ -520,8 +518,6 @@ func (m *Model) currentSpriteCells() int {
 func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 	lay := m.layout()
 	if !lay.ShowSprite {
-		m.fgActive = nil
-		m.fgPending = nil
 		m.cancelSprite()
 		m.setImageBlank()
 		m.clearNativeDisplay()
@@ -590,22 +586,7 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 	if pokemon.ID == 0 {
 		pokemon = domain.Pokemon{ID: sel.ID, Slug: sel.Slug, DisplayName: sel.DisplayName}
 	}
-	if cached, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit && !cached.UsePlaceholder && cached.ANSI != "" {
-		m.abortFgContext()
-		m.fgActive = nil
-		m.fgPending = nil
-		m.spriteReqID++
-		m.applySpriteFrame(sel.ID, cells, cached)
-		return nil
-	}
-
-	req := fgRenderReq{
-		speciesID: sel.ID,
-		gen:       m.selectionGen,
-		cells:     cells,
-		pokemon:   pokemon,
-	}
-	return m.queueOrStartFgRender(req, force)
+	return m.queueOrStartFgRender(pokemon, cells, force)
 }
 
 // artworkReady reports whether background artwork warm has stored official art
@@ -642,7 +623,12 @@ func (m *Model) refreshSpriteAfterWarm(speciesID int, stage string) tea.Cmd {
 		m.sprites.InvalidateSpecies(speciesID)
 	}
 	m.clearImagePane()
-	return m.ensureSpriteLoad()
+	r := m.ensureResource(sel.ID)
+	pokemon := r.Pokemon
+	if pokemon.ID == 0 {
+		pokemon = domain.Pokemon{ID: sel.ID, Slug: sel.Slug, DisplayName: sel.DisplayName}
+	}
+	return m.queueOrStartFgRender(pokemon, m.currentSpriteCells(), true)
 }
 
 // scheduleSpritePrefetch warms engine/disk render caches for nearby list rows.

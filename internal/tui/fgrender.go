@@ -1,47 +1,22 @@
 package tui
 
 import (
-	"context"
-
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-// fgRenderReq is one foreground cold-render identity.
-// At most one active job and one latest pending request exist.
-type fgRenderReq struct {
-	reqID     int
-	speciesID int
-	gen       int
-	cells     int
-	pokemon   domain.Pokemon
-}
-
-func (a fgRenderReq) same(b fgRenderReq) bool {
-	return a.speciesID == b.speciesID && a.gen == b.gen && a.cells == b.cells
-}
-
-func (m *Model) abortFgContext() {
-	if m.spriteCancel != nil {
-		if m.fgActive != nil {
-			sprite.NoteCancelled()
-		}
-		m.spriteCancel()
-		m.spriteCancel = nil
-	}
-}
-
 func (m *Model) foregroundColdBusy() bool {
+	if m.coldSched != nil {
+		return m.coldSched.ForegroundBusy()
+	}
 	return m.imageState == ImageLoading
 }
 
 func (m *Model) scheduleSpritePrefetchIfIdle() tea.Cmd {
-	if m.foregroundColdBusy() {
-		return nil
-	}
-	return m.scheduleSpritePrefetch()
+	// Foreground ±1 speculative prewarm removed; background warmer handles this (phase 8).
+	return nil
 }
 
 func (m *Model) syncWarmerBusy() {
@@ -54,86 +29,107 @@ func (m *Model) syncWarmerBusy() {
 	}
 }
 
-func (m *Model) queueOrStartFgRender(req fgRenderReq, force bool) tea.Cmd {
-	if m.fgActive != nil {
-		if m.fgActive.same(req) && !force {
-			return nil
-		}
-		cp := req
-		m.fgPending = &cp
-		m.abortFgContext()
-		m.clearNativeDisplay()
-		m.setImageLoading()
-		m.spriteLoadSpecies = req.speciesID
+func (m *Model) runColdSelection(pokemon domain.Pokemon, cells int, force bool) tea.Cmd {
+	m.initColdScheduler()
+	if m.coldSched == nil || cells < 1 {
 		return nil
 	}
-	return m.startFgRender(req)
+	m.clearNativeDisplay()
+	m.spriteLoadSpecies = pokemon.ID
+
+	if res, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit && !res.UsePlaceholder && res.ANSI != "" {
+		m.applySpriteFrame(pokemon.ID, cells, res)
+		m.syncWarmerBusy()
+		return nil
+	}
+
+	m.setImageLoading()
+	m.syncWarmerBusy()
+	m.coldSched.Select(m.ctx, m.selectionGen, pokemon, cells, force)
+
+	select {
+	case msg := <-m.coldFrameCh:
+		return m.finishColdSelection(msg)
+	default:
+		return m.coldListenCmd()
+	}
 }
 
-func (m *Model) startFgRender(req fgRenderReq) tea.Cmd {
-	m.cancelSprite()
-	ctx, cancel := context.WithCancel(m.ctx)
-	m.spriteCancel = cancel
-	m.spriteReqID++
-	req.reqID = m.spriteReqID
-	cp := req
-	m.fgActive = &cp
-	m.fgPending = nil
-	m.spriteLoadSpecies = req.speciesID
-	m.clearNativeDisplay()
-	m.setImageLoading()
-	return loadSpriteCmd(ctx, m.sprites, m.pokemonSrc, req.reqID, req.gen, req.speciesID, req.cells, req.pokemon)
+func (m *Model) coldListenCmd() tea.Cmd {
+	var spin tea.Cmd
+	if m.imageState == ImageLoading {
+		spin = func() tea.Msg { return m.spinner.Tick() }
+	}
+	return tea.Batch(listenColdFrame(m.coldFrameCh), spin)
+}
+
+func (m *Model) finishColdSelection(msg coldFrameMsg) tea.Cmd {
+	follow := m.applyColdFrame(msg)
+	if follow != nil {
+		var spin tea.Cmd
+		if m.imageState == ImageLoading {
+			spin = func() tea.Msg { return m.spinner.Tick() }
+		}
+		return tea.Batch(follow, spin)
+	}
+	if m.imageState == ImageLoading {
+		return m.coldListenCmd()
+	}
+	return nil
+}
+
+func (m *Model) applyColdFrame(msg coldFrameMsg) tea.Cmd {
+	current := msg.gen == m.selectionGen &&
+		m.isSelectedID(msg.speciesID) &&
+		msg.cells == m.currentSpriteCells()
+	if !current {
+		sprite.NoteStale()
+		m.syncWarmerBusy()
+		if m.coldSched != nil && m.coldSched.ForegroundBusy() {
+			return listenColdFrame(m.coldFrameCh)
+		}
+		return nil
+	}
+	m.imageLoading = false
+	m.applySpriteFrame(msg.speciesID, msg.cells, sprite.RenderResult{
+		ANSI:           msg.ansi,
+		UsePlaceholder: msg.placeholder,
+		Native:         msg.native,
+		AssetKind:      msg.assetKind,
+	})
+	m.syncWarmerBusy()
+	if m.coldSched != nil && m.coldSched.ForegroundBusy() {
+		return listenColdFrame(m.coldFrameCh)
+	}
+	return nil
+}
+
+func (m *Model) handleColdFrame(msg coldFrameMsg) tea.Cmd {
+	return m.finishColdSelection(msg)
+}
+
+func (m *Model) queueOrStartFgRender(pokemon domain.Pokemon, cells int, force bool) tea.Cmd {
+	return m.runColdSelection(pokemon, cells, force)
 }
 
 func (m *Model) handleSpriteMsg(msg spriteMsg) tea.Cmd {
-	if m.fgActive != nil && m.fgActive.reqID == msg.reqID {
-		m.fgActive = nil
-		m.spriteCancel = nil
-	}
-
+	// Legacy spriteMsg path retained for tests; production uses coldFrameMsg.
 	current := msg.reqID == m.spriteReqID &&
 		msg.gen == m.selectionGen &&
 		m.isSelectedID(msg.speciesID) &&
 		msg.cells == m.currentSpriteCells()
-	if current {
-		m.imageLoading = false
-		m.applySpriteFrame(msg.speciesID, msg.cells, sprite.RenderResult{
-			ANSI:           msg.ansi,
-			UsePlaceholder: msg.placeholder,
-			Native:         msg.native,
-			AssetKind:      msg.assetKind,
-		})
-		m.fgPending = nil
+	if !current {
+		sprite.NoteStale()
 		m.syncWarmerBusy()
-		return m.scheduleSpritePrefetchIfIdle()
-	}
-
-	// Stale result: never paint. Drain the latest pending job only.
-	sprite.NoteStale()
-	cmd := m.startPendingFg()
-	m.syncWarmerBusy()
-	return cmd
-}
-
-func (m *Model) startPendingFg() tea.Cmd {
-	if m.fgActive != nil {
 		return nil
 	}
-	if m.fgPending == nil {
-		if m.imageState != ImageReady && m.imageState != ImageUnavailable {
-			return m.beginSpriteLoad()
-		}
-		return m.scheduleSpritePrefetchIfIdle()
-	}
-	p := *m.fgPending
-	m.fgPending = nil
-	if !m.isSelectedID(p.speciesID) || p.cells != m.currentSpriteCells() || p.gen != m.selectionGen {
-		return m.beginSpriteLoad()
-	}
-	pokemon := p.pokemon
-	if cached, hit := m.sprites.LookupCached(m.ctx, pokemon, p.cells); hit && !cached.UsePlaceholder && cached.ANSI != "" {
-		m.applySpriteFrame(p.speciesID, p.cells, cached)
-		return m.scheduleSpritePrefetchIfIdle()
-	}
-	return m.startFgRender(p)
+	m.imageLoading = false
+	m.applySpriteFrame(msg.speciesID, msg.cells, sprite.RenderResult{
+		ANSI:           msg.ansi,
+		UsePlaceholder: msg.placeholder,
+		Native:         msg.native,
+		AssetKind:      msg.assetKind,
+	})
+	m.syncWarmerBusy()
+	return nil
 }

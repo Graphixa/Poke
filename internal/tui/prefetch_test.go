@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -147,7 +148,8 @@ func TestPrefetchRadiusIsOneAtListStart(t *testing.T) {
 func TestPrefetchSkippedWhileForegroundCold(t *testing.T) {
 	details := &fakeDetails{}
 	block := make(chan struct{})
-	sprites := &fakeSprites{ansi: "ART", block: block}
+	started := make(chan struct{}, 1)
+	sprites := &fakeSprites{ansi: "ART", block: block, started: started}
 	m := tui.NewModel(tui.Options{
 		Index:   fixtureIndex(),
 		Details: details,
@@ -158,6 +160,12 @@ func TestPrefetchSkippedWhileForegroundCold(t *testing.T) {
 	cmd := m.ForceSpriteLoadForTest()
 	if cmd == nil {
 		t.Fatal("expected cold render")
+	}
+	go func() { _ = cmd() }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cold render did not start")
 	}
 	if !m.SelectedSpriteLoadingForTest() {
 		t.Fatal("expected loading")

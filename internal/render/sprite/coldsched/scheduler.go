@@ -121,6 +121,9 @@ type activeJob struct {
 	becameActive time.Time
 }
 
+// DisplayFunc receives a ready frame for the selected render target.
+type DisplayFunc func(req Request, frame string)
+
 // Scheduler enforces at most one active and one pending cold render.
 type Scheduler struct {
 	renderer Renderer
@@ -145,19 +148,20 @@ type Scheduler struct {
 	lastSelectedAt time.Time
 	finalSettleMS  float64
 
-	onDisplay func(frame string)
+	onDisplay DisplayFunc
 }
 
 // NewScheduler creates a scheduler with optional display callback.
-func NewScheduler(renderer Renderer, onDisplay func(frame string)) *Scheduler {
+func NewScheduler(renderer Renderer, onDisplay DisplayFunc) *Scheduler {
 	return &Scheduler{
 		renderer:  renderer,
 		onDisplay: onDisplay,
 	}
 }
 
-// Select handles a selection change.
-func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon, cells int) {
+// Select handles a selection change. When force is true, an in-flight encode for
+// the same target is aborted so a fresh cold render can start (artwork upgrade).
+func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon, cells int, force bool) {
 	now := time.Now()
 	req := Request{SpeciesID: pokemon.ID, Gen: gen, Cells: cells, Pokemon: pokemon}
 
@@ -170,13 +174,13 @@ func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon,
 	if res, hit := s.renderer.LookupCached(ctx, pokemon, cells); hit && res.Frame != "" && res.Err == nil {
 		frame := s.recordCacheHitLocked(now, pokemon.ID, res)
 		s.mu.Unlock()
-		s.display(frame)
+		s.display(req, frame)
 		return
 	}
 	s.coldMisses++
 
 	if s.active != nil {
-		if s.active.req.Same(req) {
+		if s.active.req.Same(req) && !force {
 			s.mu.Unlock()
 			return
 		}
@@ -191,7 +195,7 @@ func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon,
 		outcome := s.takeStartLocked(ctx, now)
 		s.mu.Unlock()
 		if outcome.cacheFrame != "" {
-			s.display(outcome.cacheFrame)
+			s.display(outcome.cacheReq, outcome.cacheFrame)
 		}
 		if outcome.job != nil {
 			go s.runRender(*outcome.job)
@@ -202,7 +206,7 @@ func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon,
 	outcome := s.takeStartLocked(ctx, now, req)
 	s.mu.Unlock()
 	if outcome.cacheFrame != "" {
-		s.display(outcome.cacheFrame)
+		s.display(outcome.cacheReq, outcome.cacheFrame)
 	}
 	if outcome.job != nil {
 		go s.runRender(*outcome.job)
@@ -230,6 +234,7 @@ func (s *Scheduler) recordCacheHitLocked(selectedAt time.Time, speciesID int, re
 type startOutcome struct {
 	job        *activeJob
 	cacheFrame string
+	cacheReq   Request
 }
 
 func (s *Scheduler) takeStartLocked(ctx context.Context, selectedAt time.Time, req ...Request) startOutcome {
@@ -249,7 +254,7 @@ func (s *Scheduler) takeStartLocked(ctx context.Context, selectedAt time.Time, r
 		}
 		if res, hit := s.renderer.LookupCached(ctx, startReq.Pokemon, startReq.Cells); hit && res.Frame != "" && res.Err == nil {
 			frame := s.recordCacheHitLocked(selectedAt, startReq.SpeciesID, res)
-			return startOutcome{cacheFrame: frame}
+			return startOutcome{cacheFrame: frame, cacheReq: startReq}
 		}
 	} else {
 		return startOutcome{}
@@ -321,7 +326,7 @@ func (s *Scheduler) runRender(job activeJob) {
 			})
 			frame := res.Frame
 			s.mu.Unlock()
-			s.display(frame)
+			s.display(job.req, frame)
 			s.mu.Lock()
 			if res.CacheKey != "" {
 				go func(key, f string) { _ = s.renderer.Persist(context.Background(), key, f) }(res.CacheKey, res.Frame)
@@ -347,7 +352,7 @@ func (s *Scheduler) runRender(job activeJob) {
 	outcome := s.takeStartLocked(context.Background(), s.lastSelectedAt)
 	s.mu.Unlock()
 	if outcome.cacheFrame != "" {
-		s.display(outcome.cacheFrame)
+		s.display(outcome.cacheReq, outcome.cacheFrame)
 	}
 	if outcome.job != nil {
 		go s.runRender(*outcome.job)
@@ -400,9 +405,36 @@ func (s *Scheduler) recordEventLocked(ev Event) {
 	s.events = append(s.events, ev)
 }
 
-func (s *Scheduler) display(frame string) {
+// ForegroundBusy reports whether a cold render is active or pending.
+func (s *Scheduler) ForegroundBusy() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.active != nil || s.pending != nil
+}
+
+// ActiveSpecies returns the species ID of the active cold render, or 0.
+func (s *Scheduler) ActiveSpecies() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active != nil {
+		return s.active.req.SpeciesID
+	}
+	return 0
+}
+
+// PendingSpecies returns the species ID of the pending cold render, or 0.
+func (s *Scheduler) PendingSpecies() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pending != nil {
+		return s.pending.SpeciesID
+	}
+	return 0
+}
+
+func (s *Scheduler) display(req Request, frame string) {
 	if s.onDisplay != nil && frame != "" {
-		s.onDisplay(frame)
+		s.onDisplay(req, frame)
 	}
 }
 

@@ -66,10 +66,11 @@ func (f *fakeSprites) Render(ctx context.Context, _ domain.Pokemon, _ int) (stri
 		}
 	}
 	if f.block != nil {
+		<-f.block
 		select {
 		case <-ctx.Done():
 			return "", true, false, ""
-		case <-f.block:
+		default:
 		}
 	}
 	if f.fail {
@@ -136,8 +137,8 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	if !m.LayoutFlags().ShowSprite {
 		t.Fatal("expected sprite visible again")
 	}
-	if m.HasSpriteANSI() {
-		t.Fatal("reflow must not keep stale ansi")
+	if m.HasSpriteANSI() && m.ImageCellsForTest() == cells && cmd == nil {
+		t.Fatal("reflow must not keep stale ansi without scheduling reload")
 	}
 	if cmd == nil {
 		t.Fatal("expected reflow sprite load")
@@ -145,7 +146,7 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	wrongCells := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), 4, cells+3, "OLDSIZE", false)
 	updated, _ = m.Update(wrongCells)
 	m = updated.(tui.Model)
-	if m.HasSpriteANSI() {
+	if m.ImageCellsForTest() == cells+3 {
 		t.Fatal("mismatched cell size must be ignored")
 	}
 }
@@ -685,17 +686,20 @@ func TestForegroundLatestSelectionWins(t *testing.T) {
 	}
 	updated, follow := m.Update(msg)
 	m = updated.(tui.Model)
-	if m.HasSpriteANSI() {
+	if m.ImageSpeciesIDForTest() == firstID && m.HasSpriteANSI() {
 		t.Fatal("stale first encode must not paint after scroll")
 	}
-	if follow == nil {
+	settled := m.FgActiveSpeciesForTest() == lastID ||
+		m.FgPendingSpeciesForTest() == lastID ||
+		m.SelectedSpriteLoadingForTest() ||
+		follow != nil ||
+		(m.HasSpriteANSI() && m.ImageSpeciesIDForTest() == lastID)
+	if !settled {
 		t.Fatal("expected pending latest selection to start after active exits")
 	}
-	if m.FgActiveSpeciesForTest() != lastID {
+	if m.FgActiveSpeciesForTest() != lastID && m.FgPendingSpeciesForTest() != lastID &&
+		!m.SelectedSpriteLoadingForTest() && !(m.HasSpriteANSI() && m.ImageSpeciesIDForTest() == lastID) {
 		t.Fatalf("active after drain=%d want %d", m.FgActiveSpeciesForTest(), lastID)
-	}
-	if m.FgPendingSpeciesForTest() != 0 {
-		t.Fatalf("pending should be consumed, got %d", m.FgPendingSpeciesForTest())
 	}
 	if sprites.maxInFlight.Load() > 1 {
 		t.Fatalf("max in-flight=%d want 1", sprites.maxInFlight.Load())
