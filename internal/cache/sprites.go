@@ -139,7 +139,7 @@ func (s *Service) Native(ctx context.Context, key string) (string, error) {
 	return string(data), nil
 }
 
-// StoreNative persists an encoded native graphics frame (Sixel/Kitty/iTerm).
+// StoreNative persists a gzip native frame. Correctness is keyed by exact artefact path.
 func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
 	if key == "" {
 		return errors.New("cache: refuse to store empty native key")
