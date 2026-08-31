@@ -34,7 +34,7 @@ func (e *Engine) lookupNativeFrame(ctx context.Context, rend Renderer, opts Rend
 	}
 	colors := EffectiveSixelColors(opts.SixelColors)
 	key := nativeCacheKey(canonicalHash, rend, opts.Width, opts.Height, opts.BackgroundColor, colors)
-	if cached, ok := e.memory().Get(key); ok {
+	if cached, ok := e.nativeMemory().Get(key); ok {
 		noteMemHit()
 		debuglog.Renderf("render.cache.hit backend=%s store=mem key=%s", rend.Name(), key)
 		return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
@@ -42,7 +42,7 @@ func (e *Engine) lookupNativeFrame(ctx context.Context, rend Renderer, opts Rend
 	if e.Artefacts != nil {
 		if cached, err := e.Artefacts.Native(ctx, key); err == nil && cached != "" {
 			noteDiskHit()
-			e.memory().Put(key, cached)
+			e.nativeMemory().Put(key, cached)
 			debuglog.Renderf("render.cache.hit backend=%s store=disk key=%s", rend.Name(), key)
 			return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
 		}

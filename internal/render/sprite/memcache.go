@@ -9,9 +9,14 @@ import (
 // Disk artefact cache remains the durable store for older frames.
 const defaultMemCacheBytes = 6 << 20
 
-// ansiMemCache is a process-local LRU for rendered frames so selection
-// changes that re-hit the same key skip disk and encode work.
-type ansiMemCache struct {
+// defaultNativeMemCacheBytes holds decompressed sixel/native frames (4 MiB).
+const defaultNativeMemCacheBytes = 4 << 20
+
+// defaultAnsiMemCacheBytes holds chafa/halfblock ANSI frames (2 MiB).
+const defaultAnsiMemCacheBytes = 2 << 20
+
+// frameMemCache is a process-local byte-budgeted LRU for rendered frame text.
+type frameMemCache struct {
 	mu       sync.Mutex
 	order    []string
 	items    map[string]string
@@ -19,17 +24,17 @@ type ansiMemCache struct {
 	maxBytes int
 }
 
-func newANSIMemCacheBytes(maxBytes int) *ansiMemCache {
+func newFrameMemCacheBytes(maxBytes int) *frameMemCache {
 	if maxBytes < 1 {
 		maxBytes = defaultMemCacheBytes
 	}
-	return &ansiMemCache{
+	return &frameMemCache{
 		items:    make(map[string]string),
 		maxBytes: maxBytes,
 	}
 }
 
-func (c *ansiMemCache) Get(key string) (string, bool) {
+func (c *frameMemCache) Get(key string) (string, bool) {
 	if c == nil || key == "" {
 		return "", false
 	}
@@ -49,7 +54,7 @@ func (c *ansiMemCache) Get(key string) (string, bool) {
 	return v, true
 }
 
-func (c *ansiMemCache) Put(key, ansi string) {
+func (c *frameMemCache) Put(key, ansi string) {
 	if c == nil || key == "" || ansi == "" {
 		return
 	}
@@ -76,7 +81,7 @@ func (c *ansiMemCache) Put(key, ansi string) {
 	c.evictLocked()
 }
 
-func (c *ansiMemCache) evictLocked() {
+func (c *frameMemCache) evictLocked() {
 	for c.bytes > c.maxBytes && len(c.order) > 1 {
 		oldest := c.order[0]
 		c.order = c.order[1:]
@@ -87,7 +92,7 @@ func (c *ansiMemCache) evictLocked() {
 	}
 }
 
-func (c *ansiMemCache) byteSize() int {
+func (c *frameMemCache) byteSize() int {
 	if c == nil {
 		return 0
 	}
@@ -96,7 +101,7 @@ func (c *ansiMemCache) byteSize() int {
 	return c.bytes
 }
 
-func (c *ansiMemCache) len() int {
+func (c *frameMemCache) len() int {
 	if c == nil {
 		return 0
 	}
@@ -106,7 +111,7 @@ func (c *ansiMemCache) len() int {
 }
 
 // InvalidatePrefix removes all keys that contain substr (species named keys).
-func (c *ansiMemCache) InvalidatePrefix(substr string) {
+func (c *frameMemCache) InvalidatePrefix(substr string) {
 	if c == nil || substr == "" {
 		return
 	}

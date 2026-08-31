@@ -3,7 +3,7 @@ package sprite
 import "testing"
 
 func TestMemCacheByteBudgetEvictsOldest(t *testing.T) {
-	c := newANSIMemCacheBytes(10)
+	c := newFrameMemCacheBytes(10)
 	c.Put("a", "aaaa") // 4
 	c.Put("b", "bbbb") // 8
 	c.Put("c", "cccc") // 12 > 10, evict a
@@ -22,7 +22,7 @@ func TestMemCacheByteBudgetEvictsOldest(t *testing.T) {
 }
 
 func TestMemCacheGetKeepsEntryHot(t *testing.T) {
-	c := newANSIMemCacheBytes(8)
+	c := newFrameMemCacheBytes(8)
 	c.Put("a", "aaaa")
 	c.Put("b", "bbbb")
 	if _, ok := c.Get("a"); !ok {
@@ -38,7 +38,7 @@ func TestMemCacheGetKeepsEntryHot(t *testing.T) {
 }
 
 func TestMemCacheSingleFrameMayExceedBudget(t *testing.T) {
-	c := newANSIMemCacheBytes(4)
+	c := newFrameMemCacheBytes(4)
 	c.Put("big", "0123456789")
 	if c.len() != 1 {
 		t.Fatalf("len=%d want 1 oversized frame", c.len())
@@ -49,7 +49,7 @@ func TestMemCacheSingleFrameMayExceedBudget(t *testing.T) {
 }
 
 func TestMemCacheInvalidatePrefixDropsBytes(t *testing.T) {
-	c := newANSIMemCacheBytes(100)
+	c := newFrameMemCacheBytes(100)
 	c.Put("named-1-x", "aaaa")
 	c.Put("named-2-y", "bbbb")
 	c.InvalidatePrefix("named-1-")
@@ -62,8 +62,21 @@ func TestMemCacheInvalidatePrefixDropsBytes(t *testing.T) {
 }
 
 func TestDefaultMemCacheBudget(t *testing.T) {
-	if defaultMemCacheBytes < 4<<20 || defaultMemCacheBytes > 8<<20 {
-		t.Fatalf("budget=%d want 4–8 MiB", defaultMemCacheBytes)
+	if defaultNativeMemCacheBytes+defaultAnsiMemCacheBytes != defaultMemCacheBytes {
+		t.Fatalf("native+ansi=%d want total %d", defaultNativeMemCacheBytes+defaultAnsiMemCacheBytes, defaultMemCacheBytes)
+	}
+}
+
+func TestNativeAndAnsiMemCachesAreIndependent(t *testing.T) {
+	native := newFrameMemCacheBytes(100)
+	ansi := newFrameMemCacheBytes(100)
+	native.Put("native-key", "NATIVE")
+	ansi.Put("ansi-key", "ANSI")
+	if _, ok := ansi.Get("native-key"); ok {
+		t.Fatal("ansi cache must not see native entries")
+	}
+	if _, ok := native.Get("ansi-key"); ok {
+		t.Fatal("native cache must not see ansi entries")
 	}
 }
 

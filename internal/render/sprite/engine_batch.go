@@ -159,7 +159,7 @@ func (e *Engine) encodeNativeFrameDirect(ctx context.Context, rend Renderer, img
 		return RenderResult{}, false
 	}
 	if key != "" {
-		e.memory().Put(key, frame.Text)
+		e.nativeMemory().Put(key, frame.Text)
 		if e.Artefacts != nil && frame.Native {
 			if err := e.Artefacts.StoreNative(ctx, key, frame.Text); err != nil {
 				debuglog.Renderf("render.store.native err=%v key=%s", err, key)

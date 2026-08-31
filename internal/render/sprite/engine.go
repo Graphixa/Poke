@@ -53,18 +53,30 @@ type Engine struct {
 	// OnNativeFail is called when native image rendering fails (session fallback).
 	OnNativeFail func()
 
-	memOnce sync.Once
-	mem     *ansiMemCache
+	memOnce       sync.Once
+	nativeMemOnce sync.Once
+	ansiMem       *frameMemCache
+	nativeMem     *frameMemCache
 }
 
-func (e *Engine) memory() *ansiMemCache {
+func (e *Engine) ansiMemory() *frameMemCache {
 	if e == nil {
 		return nil
 	}
 	e.memOnce.Do(func() {
-		e.mem = newANSIMemCacheBytes(defaultMemCacheBytes)
+		e.ansiMem = newFrameMemCacheBytes(defaultAnsiMemCacheBytes)
 	})
-	return e.mem
+	return e.ansiMem
+}
+
+func (e *Engine) nativeMemory() *frameMemCache {
+	if e == nil {
+		return nil
+	}
+	e.nativeMemOnce.Do(func() {
+		e.nativeMem = newFrameMemCacheBytes(defaultNativeMemCacheBytes)
+	})
+	return e.nativeMem
 }
 
 // RenderResult is either ANSI cell-art or a placeholder request.
@@ -110,7 +122,8 @@ func (e *Engine) InvalidateSpecies(speciesID int) {
 		return
 	}
 	// NamedAssetKey format: named-{id}-{slug}-{kind}; match on named-{id}-
-	e.memory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
+	e.ansiMemory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
+	e.nativeMemory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
 }
 
 // InvalidateSpeciesNative drops mem + disk native frames for a species.
@@ -122,7 +135,8 @@ func (e *Engine) InvalidateSpeciesNative(ctx context.Context, speciesID int) {
 	if nativeStore, ok := e.Artefacts.(NativeSpeciesStore); ok {
 		if hashes, ok := nativeStore.(NativeSpeciesHashes); ok {
 			for h := range hashes.SpeciesAssetHashes(speciesID) {
-				e.memory().InvalidatePrefix(h)
+				e.ansiMemory().InvalidatePrefix(h)
+				e.nativeMemory().InvalidatePrefix(h)
 			}
 		}
 		_ = nativeStore.InvalidateNativeSpecies(speciesID)
@@ -487,7 +501,7 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 			return RenderResult{UsePlaceholder: true}
 		}
 		if key != "" {
-			e.memory().Put(key, frame.Text)
+			e.nativeMemory().Put(key, frame.Text)
 			if e.Artefacts != nil {
 				if frame.Native {
 					if err := e.Artefacts.StoreNative(ctx, key, frame.Text); err != nil {
@@ -521,7 +535,7 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 	}
 	color := effectiveColor(opts.ColorMode, e.Caps)
 	key := CacheKey(hash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
-	if cached, ok := e.memory().Get(key); ok {
+	if cached, ok := e.ansiMemory().Get(key); ok {
 		noteMemHit()
 		debuglog.Renderf("render.cache.hit backend=%s store=mem key=%s", rend.Name(), key)
 		return true, RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}
@@ -529,7 +543,7 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 	if e.Artefacts != nil {
 		if cached, err := e.Artefacts.Artefact(ctx, key); err == nil && cached != "" {
 			noteDiskHit()
-			e.memory().Put(key, cached)
+			e.ansiMemory().Put(key, cached)
 			debuglog.Renderf("render.cache.hit backend=%s store=disk key=%s", rend.Name(), key)
 			return true, RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}
 		}
