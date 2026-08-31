@@ -1,28 +1,19 @@
-// Package nativewarm pre-encodes Kitty/iTerm/Sixel frames into the native disk cache.
+// Package nativewarm opportunistically pre-encodes native frames for the
+// active terminal bucket (24/32/40) while the user browses.
 package nativewarm
 
 import (
-	"container/heap"
 	"context"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-const (
-	PrioritySelected   = 0
-	PriorityNeighbor   = 1
-	PriorityBackground = 2
-
-	maxWarmMisses             = 8
-	outstandingRescanInterval = 2 * time.Second
-)
+const maxWarmQueue = 16
 
 // PokemonLoader loads Pokémon detail by species ID.
 type PokemonLoader interface {
@@ -33,92 +24,40 @@ type PokemonLoader interface {
 type NativeRenderer interface {
 	HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cells int) bool
 	NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
-	NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult
 }
 
-// ManifestStore tracks per-size native cache completeness on disk.
-type ManifestStore interface {
-	EnsureManifest(protocol string) error
-	NativeSizeComplete(cells, total int) bool
-	InitNativeSizePhase(cells, total int) error
-	MarkNativeSizeComplete(cells, total int) error
-	MarkAllNativeSizesComplete(sizes []int, total int) error
-	RecountNativeSize(cells int) (int, error)
-}
-
-// ProgressFunc receives warm progress updates.
-type ProgressFunc func(cache.Progress)
-
-// Config configures a native warm Service.
+// Config configures the opportunistic native warm service.
 type Config struct {
-	Cells    int
-	Workers  int
 	Loader   PokemonLoader
 	Renderer NativeRenderer
 	Index    []domain.SpeciesSummary
-	Progress ProgressFunc
-	Manifest ManifestStore
-	Protocol string
-	// RequiredSizes lists native cell buckets that must exist for Pokémon completeness.
-	RequiredSizes []int
-	// Completer tracks aggregate Pokémon-level image-cache progress (optional).
-	Completer ImageCompleter
-	// OnlyIDs when non-empty restricts background encode to these species (poke update).
+	// OnlyIDs when non-empty restricts warm targets (poke update tooling).
 	OnlyIDs map[int]struct{}
 }
 
-// ImageCompleter is the aggregate image-cache session (Pokémon completeness).
-type ImageCompleter interface {
-	OutstandingIDs() []int
-	NoteVariant(speciesID, cells int)
-	IsComplete(speciesID int) bool
-	Progress() cache.ImageCacheProgress
-}
-
-// Service owns the native encode priority queue.
+// Service owns a single-lane background native encoder for the active bucket.
 type Service struct {
 	cfg Config
 
 	mu          sync.Mutex
-	pq          priorityQueue
-	seq         int64
-	queued      map[int]bool
-	done        map[int]bool
-	misses      map[int]int
-	indexByID   map[int]domain.SpeciesSummary
 	cells       int
-	layoutCells int
-	lastRescan  time.Time
-	wake        chan struct{}
-	started     atomic.Bool
-	cancel      context.CancelFunc
-	workerCtx   context.Context
-	wg          sync.WaitGroup
-	doneN       atomic.Int64
-	totalN      atomic.Int64
-	finished    atomic.Bool
-	sessionDone chan struct{}
-	activity    sprite.ActivityGate
+	list        []domain.SpeciesSummary
+	cursor      int
+	neighborRad int
+	queue       []int
+	queued      map[int]bool
+	indexByID   map[int]domain.SpeciesSummary
+
+	wake      chan struct{}
+	started   atomic.Bool
+	cancel    context.CancelFunc
+	workerCtx context.Context
+	wg        sync.WaitGroup
+	activity  sprite.ActivityGate
 }
 
 // New creates a native warm service. Call EnsureStarted when browse layout is known.
 func New(cfg Config) *Service {
-	if cfg.Workers < 1 {
-		cfg.Workers = runtime.GOMAXPROCS(0)
-		if cfg.Workers < 1 {
-			cfg.Workers = 2
-		}
-		if cfg.Workers > 2 {
-			cfg.Workers = 2
-		}
-	}
-	if len(cfg.RequiredSizes) == 0 {
-		cfg.RequiredSizes = sprite.FrameSteps()
-	}
-	if cfg.Cells < sprite.MinFrameSize {
-		cfg.Cells = sprite.MaxFrameSize
-	}
-	cfg.Cells = sprite.ClampFrameSide(cfg.Cells)
 	indexByID := make(map[int]domain.SpeciesSummary, len(cfg.Index))
 	for _, sum := range cfg.Index {
 		if sum.ID > 0 {
@@ -126,49 +65,28 @@ func New(cfg Config) *Service {
 		}
 	}
 	return &Service{
-		cfg:         cfg,
-		queued:      make(map[int]bool),
-		done:        make(map[int]bool),
-		misses:      make(map[int]int),
-		indexByID:   indexByID,
-		cells:       cfg.Cells,
-		wake:        make(chan struct{}, 1),
-		sessionDone: make(chan struct{}),
+		cfg:       cfg,
+		queued:    make(map[int]bool),
+		indexByID: indexByID,
+		wake:      make(chan struct{}, 1),
 	}
 }
 
-// Start launches workers for cfg.Cells. Prefer EnsureStarted with the browse frame size.
+// Start launches the worker using cells as the initial bucket.
 func (s *Service) Start(ctx context.Context) {
 	if s == nil {
 		return
 	}
-	s.EnsureStarted(ctx, s.cells)
+	s.EnsureStarted(ctx, sprite.MaxFrameSize)
 }
 
-// EnsureStarted seeds missing Pokémon and starts workers when image-cache work remains.
-// Layout cell changes only affect P0/P1; they do not rebuild the P2 work set.
+// EnsureStarted starts the single background worker when needed.
 func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 	if s == nil || s.cfg.Renderer == nil || s.cfg.Loader == nil {
 		return
 	}
-	cells = sprite.ClampFrameSide(cells)
-
-	s.mu.Lock()
-	s.layoutCells = cells
-	s.cells = cells
-	alreadyStarted := s.started.Load()
-	s.mu.Unlock()
-
-	if alreadyStarted {
-		return
-	}
-	if s.noImageCacheWork(len(s.cfg.Index)) {
-		return
-	}
-
-	s.prepareQueue(ctx)
-	if s.totalN.Load() == 0 {
-		s.finishSession()
+	s.SetCells(cells)
+	if s.started.Load() {
 		return
 	}
 	if !s.started.CompareAndSwap(false, true) {
@@ -177,37 +95,11 @@ func (s *Service) EnsureStarted(ctx context.Context, cells int) {
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 	s.workerCtx = runCtx
-	for i := 0; i < s.cfg.Workers; i++ {
-		s.wg.Add(1)
-		go s.worker(runCtx)
-	}
+	s.wg.Add(1)
+	go s.worker(runCtx)
 }
 
-// WarmAllSizes encodes every required bucket, completing one Pokémon at a time. Blocks until done.
-func (s *Service) WarmAllSizes(ctx context.Context, sizes []int) error {
-	if s == nil {
-		return nil
-	}
-	if len(sizes) > 0 {
-		s.cfg.RequiredSizes = append([]int(nil), sizes...)
-	}
-	if s.cfg.Manifest != nil {
-		if err := s.cfg.Manifest.EnsureManifest(s.cfg.Protocol); err != nil {
-			return err
-		}
-	}
-	if len(sizes) > 0 {
-		s.EnsureStarted(ctx, sprite.ClampFrameSide(sizes[0]))
-	} else {
-		s.EnsureStarted(ctx, s.cells)
-	}
-	if err := s.Wait(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Stop cancels workers and waits for them to exit.
+// Stop cancels the worker and waits for exit.
 func (s *Service) Stop() {
 	if s == nil || !s.started.Load() {
 		return
@@ -218,41 +110,51 @@ func (s *Service) Stop() {
 	s.wg.Wait()
 }
 
-// SetCells updates the frame bucket and re-queues only species missing disk cache.
+// SetCells switches the active bucket; future work targets the new size only.
 func (s *Service) SetCells(cells int) {
 	if s == nil {
 		return
 	}
-	s.EnsureStarted(context.Background(), cells)
+	cells = sprite.ClampFrameSide(cells)
+	s.mu.Lock()
+	if s.cells != cells {
+		s.cells = cells
+		s.queue = nil
+		s.queued = make(map[int]bool)
+	}
+	s.mu.Unlock()
+	s.signal()
 }
 
-// Prioritize bumps the selected species to P0.
+// ActiveCells returns the current warm bucket (for tests).
+func (s *Service) ActiveCells() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cells
+}
+
+// Prioritize bumps speciesID to the front of the warm queue.
 func (s *Service) Prioritize(speciesID int) {
 	if s == nil || speciesID < 1 {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done[speciesID] {
+	if !s.shouldWarm(speciesID) {
 		return
 	}
-	if s.cfg.Completer != nil && s.cfg.Completer.IsComplete(speciesID) {
-		return
-	}
-	s.pushLocked(job{speciesID: speciesID, priority: PrioritySelected, allSizes: false})
+	s.enqueueFrontLocked(speciesID)
 	s.signal()
 }
 
-// NoteActivity records TUI selection motion so full-dex (P2) work pauses.
-func (s *Service) NoteActivity() {
-	if s == nil {
-		return
-	}
-	s.activity.NoteActivity()
-	s.signal()
-}
+// NoteActivity is retained for interface compatibility; opportunistic warming
+// does not throttle on scroll activity.
+func (s *Service) NoteActivity() {}
 
-// SetForegroundBusy pauses P2 work while a foreground cold encode is running.
+// SetForegroundBusy pauses background encode while foreground cold work runs.
 func (s *Service) SetForegroundBusy(busy bool) {
 	if s == nil {
 		return
@@ -261,109 +163,36 @@ func (s *Service) SetForegroundBusy(busy bool) {
 	s.signal()
 }
 
-// SetNeighborsFromList enqueues list neighbors at P1.
+// SetNeighborsFromList rebuilds the warm queue from list neighbors at the active bucket.
+// Order: N+1..max, then N-1..1.
 func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int) {
 	if s == nil || radius < 1 || len(list) == 0 {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if cursor < 0 {
 		cursor = 0
 	}
 	if cursor >= len(list) {
 		cursor = len(list) - 1
 	}
-	for d := 1; d <= radius; d++ {
-		if i := cursor - d; i >= 0 {
-			id := list[i].ID
-			if s.canQueue(id) {
-				s.pushLocked(job{speciesID: id, priority: PriorityNeighbor, allSizes: false})
-			}
-		}
-		if i := cursor + d; i < len(list) {
-			id := list[i].ID
-			if s.canQueue(id) {
-				s.pushLocked(job{speciesID: id, priority: PriorityNeighbor, allSizes: false})
-			}
-		}
-	}
+	s.mu.Lock()
+	s.list = list
+	s.cursor = cursor
+	s.neighborRad = radius
+	s.rebuildQueueLocked()
+	s.mu.Unlock()
 	s.signal()
 }
 
-func (s *Service) canQueue(speciesID int) bool {
-	if speciesID < 1 || s.done[speciesID] {
+// Snapshot returns 0,0 — full-dex completion progress was removed.
+func (s *Service) Snapshot() (done, total int) {
+	return 0, 0
+}
+
+func (s *Service) shouldWarm(speciesID int) bool {
+	if speciesID < 1 {
 		return false
 	}
-	if s.cfg.Completer != nil && s.cfg.Completer.IsComplete(speciesID) {
-		return false
-	}
-	return true
-}
-
-func (s *Service) prepareQueue(ctx context.Context) {
-	s.mu.Lock()
-	s.pq = priorityQueue{}
-	s.queued = make(map[int]bool)
-	s.done = make(map[int]bool)
-	s.doneN.Store(0)
-	s.mu.Unlock()
-
-	ids := s.workIDs()
-	s.mu.Lock()
-	for _, id := range ids {
-		if !s.shouldEnqueue(id) || s.done[id] || s.queued[id] {
-			continue
-		}
-		if s.cfg.Completer != nil && s.cfg.Completer.IsComplete(id) {
-			s.done[id] = true
-			continue
-		}
-		s.pushLocked(job{speciesID: id, priority: PriorityBackground, allSizes: true})
-	}
-	remaining := s.countRemainingLocked()
-	s.totalN.Store(int64(remaining))
-	s.mu.Unlock()
-	if remaining > 0 {
-		s.signal()
-	}
-}
-
-func (s *Service) workIDs() []int {
-	if s.cfg.Completer != nil {
-		return s.cfg.Completer.OutstandingIDs()
-	}
-	ids := make([]int, 0, len(s.cfg.Index))
-	for _, sum := range s.cfg.Index {
-		if sum.ID > 0 {
-			ids = append(ids, sum.ID)
-		}
-	}
-	return ids
-}
-
-func (s *Service) indexPokemon(speciesID int) domain.Pokemon {
-	if sum, ok := s.indexByID[speciesID]; ok {
-		return domain.Pokemon{ID: sum.ID, Slug: sum.Slug, DisplayName: sum.DisplayName}
-	}
-	return domain.Pokemon{ID: speciesID}
-}
-
-func (s *Service) pokemonForJob(ctx context.Context, speciesID int) (domain.Pokemon, error) {
-	poke, err := s.cfg.Loader.Pokemon(ctx, speciesID)
-	if err != nil {
-		return domain.Pokemon{}, err
-	}
-	if sum, ok := s.indexByID[speciesID]; ok && sum.Slug != "" {
-		poke.Slug = sum.Slug
-	}
-	if poke.ID == 0 {
-		poke.ID = speciesID
-	}
-	return poke, nil
-}
-
-func (s *Service) shouldEnqueue(speciesID int) bool {
 	if len(s.cfg.OnlyIDs) == 0 {
 		return true
 	}
@@ -371,24 +200,73 @@ func (s *Service) shouldEnqueue(speciesID int) bool {
 	return ok
 }
 
-func (s *Service) countRemainingLocked() int {
-	n := 0
-	for _, sum := range s.cfg.Index {
-		if s.shouldEnqueue(sum.ID) && !s.done[sum.ID] {
-			n++
-		}
-	}
-	return n
-}
-
-func (s *Service) pushLocked(j job) {
-	if j.speciesID < 1 || !s.shouldEnqueue(j.speciesID) {
+func (s *Service) rebuildQueueLocked() {
+	if len(s.list) == 0 {
 		return
 	}
-	s.seq++
-	j.seq = s.seq
-	heap.Push(&s.pq, j)
-	s.queued[j.speciesID] = true
+	order := s.neighborOrderLocked()
+	s.queue = nil
+	s.queued = make(map[int]bool)
+	for _, id := range order {
+		s.enqueueBackLocked(id)
+		if len(s.queue) >= maxWarmQueue {
+			break
+		}
+	}
+}
+
+func (s *Service) neighborOrderLocked() []int {
+	list := s.list
+	cursor := s.cursor
+	radius := s.neighborRad
+	if radius < 1 {
+		radius = 1
+	}
+	var ids []int
+	for d := 1; d <= radius; d++ {
+		if i := cursor + d; i < len(list) {
+			ids = append(ids, list[i].ID)
+		}
+	}
+	for d := 1; d <= radius; d++ {
+		if i := cursor - d; i >= 0 {
+			ids = append(ids, list[i].ID)
+		}
+	}
+	return ids
+}
+
+func (s *Service) enqueueFrontLocked(speciesID int) {
+	if !s.shouldWarm(speciesID) {
+		return
+	}
+	if s.queued[speciesID] {
+		for i, id := range s.queue {
+			if id == speciesID {
+				copy(s.queue[1:i+1], s.queue[0:i])
+				s.queue[0] = speciesID
+				return
+			}
+		}
+	}
+	if len(s.queue) >= maxWarmQueue {
+		oldest := s.queue[len(s.queue)-1]
+		delete(s.queued, oldest)
+		s.queue = s.queue[:len(s.queue)-1]
+	}
+	s.queue = append([]int{speciesID}, s.queue...)
+	s.queued[speciesID] = true
+}
+
+func (s *Service) enqueueBackLocked(speciesID int) {
+	if !s.shouldWarm(speciesID) || s.queued[speciesID] {
+		return
+	}
+	if len(s.queue) >= maxWarmQueue {
+		return
+	}
+	s.queue = append(s.queue, speciesID)
+	s.queued[speciesID] = true
 }
 
 func (s *Service) signal() {
@@ -404,402 +282,70 @@ func (s *Service) worker(ctx context.Context) {
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		j, ok := s.pop()
-		if !ok {
-			s.rescanOutstanding()
-			wait := sprite.InteractiveIdle
-			select {
-			case <-ctx.Done():
+		if s.activity.ForegroundBusy() {
+			if !s.wait(ctx) {
 				return
-			case <-s.wake:
-			case <-time.After(wait):
 			}
 			continue
 		}
-		s.runJob(ctx, j)
+		id, ok := s.popNext()
+		if !ok {
+			if !s.wait(ctx) {
+				return
+			}
+			continue
+		}
+		s.warmOne(ctx, id)
 	}
 }
 
-func (s *Service) pop() (job, bool) {
+func (s *Service) wait(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-s.wake:
+		return true
+	case <-time.After(250 * time.Millisecond):
+		return true
+	}
+}
+
+func (s *Service) popNext() (int, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	throttle := s.activity.ThrottleBackground()
-	var skipped []job
-	for s.pq.Len() > 0 {
-		j := heap.Pop(&s.pq).(job)
-		if s.done[j.speciesID] {
-			delete(s.queued, j.speciesID)
-			continue
-		}
-		if throttle && j.priority >= PriorityBackground {
-			skipped = append(skipped, j)
-			continue
-		}
-		delete(s.queued, j.speciesID)
-		for _, sk := range skipped {
-			heap.Push(&s.pq, sk)
-		}
-		return j, true
+	for len(s.queue) > 0 {
+		id := s.queue[0]
+		s.queue = s.queue[1:]
+		delete(s.queued, id)
+		return id, true
 	}
-	for _, sk := range skipped {
-		heap.Push(&s.pq, sk)
-	}
-	return job{}, false
+	return 0, false
 }
 
-func (s *Service) warmOneSize(ctx context.Context, j job, poke domain.Pokemon, cells int) {
-	if j.priority >= PriorityBackground && s.activity.ThrottleBackground() {
-		s.requeue(job{speciesID: j.speciesID, priority: j.priority, allSizes: true})
+func (s *Service) warmOne(ctx context.Context, speciesID int) {
+	cells := s.ActiveCells()
+	if cells < sprite.MinFrameSize {
 		return
+	}
+	poke, err := s.cfg.Loader.Pokemon(ctx, speciesID)
+	if err != nil {
+		debuglog.Renderf("nativewarm skip species=%d err=%v", speciesID, err)
+		return
+	}
+	if sum, ok := s.indexByID[speciesID]; ok && sum.Slug != "" {
+		poke.Slug = sum.Slug
+	}
+	if poke.ID == 0 {
+		poke.ID = speciesID
 	}
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	cached := s.cfg.Renderer.HasNativeCache(ctx, poke, cells)
-	if cached {
-		s.noteVariant(j.speciesID, cells)
-		if s.cfg.Completer == nil || s.speciesFullyCached(ctx, j.speciesID) {
-			return
-		}
+	if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
+		return
 	}
 	res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
 	if res.UsePlaceholder || !res.Native {
-		debuglog.Renderf("nativewarm miss species=%d backend=%s", j.speciesID, res.Backend)
-		return
+		debuglog.Renderf("nativewarm miss species=%d backend=%s", speciesID, res.Backend)
 	}
-	s.noteVariant(j.speciesID, cells)
-}
-
-func (s *Service) runJob(ctx context.Context, j job) {
-	if j.priority >= PriorityBackground && s.activity.ThrottleBackground() {
-		s.requeue(j)
-		return
-	}
-	poke, err := s.pokemonForJob(ctx, j.speciesID)
-	if err != nil {
-		debuglog.Renderf("nativewarm skip species=%d err=%v", j.speciesID, err)
-		s.retryIncomplete(j.speciesID)
-		s.report(j.speciesID)
-		return
-	}
-	if err := ctx.Err(); err != nil {
-		return
-	}
-
-	sizes := s.jobSizes(j)
-	if j.allSizes && len(sizes) > 1 {
-		if batch, ok := s.cfg.Renderer.(interface {
-			NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult
-		}); ok {
-			res := batch.NativeWarmBatch(ctx, poke, sizes)
-			for _, cells := range res.ReadySizes {
-				s.noteVariant(j.speciesID, cells)
-			}
-			for _, cells := range res.EncodedSizes {
-				s.noteVariant(j.speciesID, cells)
-			}
-			if res.Encoded == 0 && len(res.ReadySizes) == 0 && (res.Last.UsePlaceholder || !res.Last.Native) {
-				debuglog.Renderf("nativewarm batch miss species=%d backend=%s", j.speciesID, res.Last.Backend)
-			}
-		} else {
-			for _, cells := range sizes {
-				s.warmOneSize(ctx, j, poke, cells)
-			}
-		}
-	} else {
-		for _, cells := range sizes {
-			s.warmOneSize(ctx, j, poke, cells)
-		}
-	}
-
-	if s.speciesFullyCached(ctx, j.speciesID) {
-		s.markDone(j.speciesID)
-	} else if j.allSizes || j.priority >= PriorityBackground {
-		s.retryIncomplete(j.speciesID)
-	} else {
-		s.ensureBackground(j.speciesID)
-	}
-	s.report(j.speciesID)
-}
-
-func (s *Service) jobSizes(j job) []int {
-	if !j.allSizes {
-		cells := s.layoutCells
-		if cells < sprite.MinFrameSize {
-			cells = s.cells
-		}
-		return []int{sprite.ClampFrameSide(cells)}
-	}
-	return s.sizeOrder()
-}
-
-func (s *Service) sizeOrder() []int {
-	layout := s.layoutCells
-	req := s.requiredSizes()
-	inReq := map[int]bool{}
-	for _, cells := range req {
-		inReq[cells] = true
-	}
-	out := make([]int, 0, len(req))
-	if layout >= sprite.MinFrameSize && inReq[layout] {
-		out = append(out, layout)
-	}
-	for _, cells := range sprite.FrameStepsMaxFirst() {
-		if !inReq[cells] || cells == layout {
-			continue
-		}
-		out = append(out, cells)
-	}
-	return out
-}
-
-func (s *Service) requiredSizes() []int {
-	if len(s.cfg.RequiredSizes) > 0 {
-		return s.cfg.RequiredSizes
-	}
-	return sprite.FrameSteps()
-}
-
-func (s *Service) noteVariant(speciesID, cells int) {
-	if s.cfg.Completer != nil {
-		s.cfg.Completer.NoteVariant(speciesID, cells)
-	}
-}
-
-func (s *Service) speciesFullyCached(ctx context.Context, speciesID int) bool {
-	if s.cfg.Completer != nil {
-		return s.cfg.Completer.IsComplete(speciesID)
-	}
-	if s.cfg.Renderer == nil {
-		return false
-	}
-	poke := s.indexPokemon(speciesID)
-	for _, cells := range s.requiredSizes() {
-		if !s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
-			return false
-		}
-	}
-	return true
-}
-
-func (s *Service) ensureBackground(speciesID int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.done[speciesID] {
-		return
-	}
-	s.pushLocked(job{speciesID: speciesID, priority: PriorityBackground, allSizes: true})
-	s.signal()
-}
-
-func (s *Service) retryIncomplete(speciesID int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.done[speciesID] {
-		return
-	}
-	s.misses[speciesID]++
-	n := s.misses[speciesID]
-	if n > maxWarmMisses {
-		debuglog.Renderf("nativewarm defer species=%d misses=%d", speciesID, n)
-		s.lastRescan = time.Now()
-		return
-	}
-	s.pushLocked(job{speciesID: speciesID, priority: PriorityBackground, allSizes: true})
-	s.signal()
-}
-
-func (s *Service) rescanOutstanding() {
-	if s.cfg.Completer == nil {
-		return
-	}
-	p := s.cfg.Completer.Progress()
-	if !p.Active {
-		return
-	}
-	s.mu.Lock()
-	if !s.lastRescan.IsZero() && time.Since(s.lastRescan) < outstandingRescanInterval {
-		s.mu.Unlock()
-		return
-	}
-	s.lastRescan = time.Now()
-	s.mu.Unlock()
-
-	ids := s.cfg.Completer.OutstandingIDs()
-	s.mu.Lock()
-	for _, id := range ids {
-		if s.done[id] {
-			delete(s.done, id)
-		}
-		delete(s.misses, id)
-		if s.queued[id] {
-			continue
-		}
-		s.pushLocked(job{speciesID: id, priority: PriorityBackground, allSizes: true})
-	}
-	s.mu.Unlock()
-	s.signal()
-}
-
-func (s *Service) requeue(j job) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.done[j.speciesID] {
-		return
-	}
-	s.pushLocked(j)
-}
-
-func (s *Service) markDone(speciesID int) {
-	s.mu.Lock()
-	if !s.done[speciesID] {
-		s.done[speciesID] = true
-		s.doneN.Add(1)
-	}
-	delete(s.misses, speciesID)
-	s.mu.Unlock()
-}
-
-func (s *Service) report(speciesID int) {
-	if s.cfg.Completer != nil {
-		p := s.cfg.Completer.Progress()
-		if p.Total <= 0 {
-			return
-		}
-		if !p.Active {
-			s.finishSession()
-		}
-		if s.cfg.Progress == nil {
-			return
-		}
-		s.cfg.Progress(cache.Progress{
-			Stage:     "native",
-			Done:      p.Done,
-			Total:     p.Total,
-			Message:   "Building image cache",
-			SpeciesID: speciesID,
-		})
-		return
-	}
-	done := int(s.doneN.Load())
-	total := int(s.totalN.Load())
-	if total <= 0 {
-		return
-	}
-	if done >= total {
-		s.finishSession()
-	}
-	if s.cfg.Progress == nil {
-		return
-	}
-	s.cfg.Progress(cache.Progress{
-		Stage:     "native",
-		Done:      done,
-		Total:     total,
-		Message:   "Building image cache",
-		SpeciesID: speciesID,
-	})
-}
-
-func (s *Service) noImageCacheWork(indexTotal int) bool {
-	if s.cfg.Completer != nil {
-		p := s.cfg.Completer.Progress()
-		return !p.Active
-	}
-	return s.cfg.Manifest != nil && s.allSizesComplete(indexTotal)
-}
-
-func (s *Service) finishSession() {
-	if !s.finished.CompareAndSwap(false, true) {
-		return
-	}
-	s.markAllSizesComplete()
-	close(s.sessionDone)
-}
-
-func (s *Service) markAllSizesComplete() {
-	if s.cfg.Manifest == nil {
-		return
-	}
-	total := len(s.cfg.Index)
-	_ = s.cfg.Manifest.MarkAllNativeSizesComplete(s.requiredSizes(), total)
-}
-
-func (s *Service) allSizesComplete(total int) bool {
-	if s.cfg.Manifest == nil {
-		return false
-	}
-	for _, cells := range s.requiredSizes() {
-		if !s.cfg.Manifest.NativeSizeComplete(cells, total) {
-			return false
-		}
-	}
-	return true
-}
-
-// Snapshot returns current done/total counts for in-flight warm work.
-func (s *Service) Snapshot() (done, total int) {
-	if s == nil {
-		return 0, 0
-	}
-	return int(s.doneN.Load()), int(s.totalN.Load())
-}
-
-// Wait blocks until queued work completes or ctx is cancelled.
-func (s *Service) Wait(ctx context.Context) error {
-	if s == nil {
-		return nil
-	}
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		workDone := false
-		if s.cfg.Completer != nil {
-			workDone = !s.cfg.Completer.Progress().Active
-		} else {
-			done, total := s.Snapshot()
-			workDone = total == 0 || done >= total
-		}
-		if workDone {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-	select {
-	case <-s.sessionDone:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-type job struct {
-	speciesID int
-	priority  int
-	seq       int64
-	allSizes  bool
-}
-
-type priorityQueue []job
-
-func (pq priorityQueue) Len() int { return len(pq) }
-func (pq priorityQueue) Less(i, j int) bool {
-	if pq[i].priority != pq[j].priority {
-		return pq[i].priority < pq[j].priority
-	}
-	return pq[i].seq < pq[j].seq
-}
-func (pq priorityQueue) Swap(i, j int) { pq[i], pq[j] = pq[j], pq[i] }
-func (pq *priorityQueue) Push(x any)   { *pq = append(*pq, x.(job)) }
-func (pq *priorityQueue) Pop() any {
-	old := *pq
-	n := len(old)
-	item := old[n-1]
-	*pq = old[:n-1]
-	return item
 }

@@ -37,6 +37,14 @@ func (g *ActivityGate) SetForegroundBusy(busy bool) {
 	g.fg.Store(busy)
 }
 
+// ForegroundBusy reports whether a foreground cold encode is in flight.
+func (g *ActivityGate) ForegroundBusy() bool {
+	if g == nil {
+		return false
+	}
+	return g.fg.Load()
+}
+
 // ThrottleBackground reports whether P2 full-dex work should wait.
 func (g *ActivityGate) ThrottleBackground() bool {
 	if g == nil {

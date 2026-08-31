@@ -241,63 +241,21 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	wantArtworkBG := startBgArtwork ||
 		(svc.Config.EffectiveArtworkMode() == config.ArtworkModeBackground && svc.Config.SpriteHDEnabled())
 
-	var imageCoord *cache.ImageCacheCoordinator
-	var imageSpec cache.ImageCacheSpec
 	var nativeWarmer *nativewarm.Service
 
 	forwardWarm := func(p cache.Progress) {
-		if imageCoord != nil {
-			snap := imageCoord.Progress()
-			if snap.Active && p.Stage != "native" {
-				if p.SpeciesID != 0 {
-					sendWarmProgress(progressCh, imageCoord.AsCacheProgress(p.SpeciesID))
-				}
-				return
-			}
-		}
 		sendWarmProgress(progressCh, p)
 	}
 
 	nativeImageBrowse := caps.NativeImage && !opts.DisableSprite
 	if nativeImageBrowse {
-		useProgress = true
-		opts.WarmEvents = progressCh
-		protocol := img.ProtocolName()
-		_ = svc.Cache.EnsureNativeManifest(protocol)
-		imageSpec = cache.DefaultImageCacheSpec(protocol, string(sourceKind), style.BaseRGBA(), svc.Config.EffectiveSixelColors())
-		coord, err := svc.Cache.StartImageCacheSessionDeferred(index, imageSpec)
-		if err != nil {
-			debuglog.Cachef("image-cache session err=%v", err)
-		} else {
-			imageCoord = coord
-			imageCoord.SetProgressFunc(forwardWarm)
-			if imageCoord.Progress().Active {
-				imageCoord.PublishStart()
-			}
-			defer func() { _ = imageCoord.Flush() }()
-		}
 		nativeWarmer = nativewarm.New(nativewarm.Config{
-			Workers:       sprite.InteractiveWorkers,
-			Loader:        warmPokemonLoader{details},
-			Renderer:      engine,
-			Index:         index,
-			Manifest:      svc.Cache,
-			Protocol:      imageSpec.Protocol,
-			RequiredSizes: imageSpec.RequiredSizes,
-			Completer:     imageCoord,
-			Progress:      forwardWarm,
+			Loader:   warmPokemonLoader{details},
+			Renderer: engine,
+			Index:    index,
 		})
 		defer nativeWarmer.Stop()
 		opts.NativeWarmer = nativeWarmer
-		if imageCoord != nil {
-			imageCoord.SetOnReconcileActive(func() {
-				imageCoord.PublishStart()
-				nativeWarmer.EnsureStarted(runCtx, sprite.MaxFrameSize)
-			})
-			go imageCoord.ReconcileImageCacheSession(index)
-		} else {
-			nativeWarmer.EnsureStarted(runCtx, sprite.MaxFrameSize)
-		}
 	}
 
 	var artworkWarmer *assetwarm.Service

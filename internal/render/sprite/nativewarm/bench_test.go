@@ -43,27 +43,14 @@ func (s *slowNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.
 	return sprite.RenderResult{ANSI: "X", Native: true, Backend: "image"}
 }
 
-func (s *slowNativeRenderer) NativeWarmBatch(ctx context.Context, pokemon domain.Pokemon, sizes []int) sprite.NativeWarmBatchResult {
-	var encoded []int
-	var last sprite.RenderResult
-	for _, cells := range sizes {
-		last = s.NativeWarmRender(ctx, pokemon, cells)
-		if last.Native {
-			encoded = append(encoded, cells)
-		}
-	}
-	return sprite.NativeWarmBatchResult{EncodedSizes: encoded, Encoded: len(encoded), Last: last}
-}
-
 func (s *slowNativeRenderer) count() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.render
 }
 
-func benchmarkNativeWarmWorkers(b *testing.B, workers int) {
-	const species = 24
-	index := make([]domain.SpeciesSummary, species)
+func BenchmarkOpportunisticNativeWarm(b *testing.B) {
+	index := make([]domain.SpeciesSummary, 24)
 	for i := range index {
 		id := i + 1
 		index[i] = domain.SpeciesSummary{ID: id, Slug: "mon", DisplayName: "Mon"}
@@ -75,37 +62,20 @@ func benchmarkNativeWarmWorkers(b *testing.B, workers int) {
 		renderer.render = 0
 		renderer.cached = nil
 		svc := nativewarm.New(nativewarm.Config{
-			Workers:       workers,
-			Loader:        fakeLoader{},
-			Renderer:      renderer,
-			Index:         index,
-			RequiredSizes: []int{sprite.MaxFrameSize},
-			Protocol:      "sixel",
+			Loader:   fakeLoader{},
+			Renderer: renderer,
+			Index:    index,
 		})
 		runCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		b.StartTimer()
 		svc.EnsureStarted(runCtx, sprite.MaxFrameSize)
-		if err := svc.Wait(runCtx); err != nil {
-			b.Fatal(err)
+		svc.SetNeighborsFromList(index, 12, 11)
+		deadline := time.Now().Add(4 * time.Second)
+		for renderer.count() < 22 && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
 		}
 		b.StopTimer()
 		cancel()
 		svc.Stop()
-		b.StopTimer()
-		if got := renderer.count(); got != species {
-			b.Fatalf("workers=%d renders=%d want %d", workers, got, species)
-		}
 	}
-}
-
-func BenchmarkNativeWarmWorkers1(b *testing.B) {
-	benchmarkNativeWarmWorkers(b, 1)
-}
-
-func BenchmarkNativeWarmWorkers2(b *testing.B) {
-	benchmarkNativeWarmWorkers(b, 2)
-}
-
-func BenchmarkNativeWarmWorkers4(b *testing.B) {
-	benchmarkNativeWarmWorkers(b, 4)
 }
