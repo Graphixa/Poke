@@ -217,3 +217,145 @@ func BenchmarkColdNativeRender(b *testing.B) {
 		}
 	}
 }
+
+func seedNativeBench(b *testing.B, cells int) (*namedMemStore, domain.Pokemon, string) {
+	b.Helper()
+	store := newNamedMemStore()
+	png := mustPNG(b, color.RGBA{255, 200, 0, 255})
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		b.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	engine := &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			native,
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeAuto,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+		HDOff:      true,
+	}
+	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
+	res := engine.RenderCold(context.Background(), poke, cells)
+	if !res.Native {
+		b.Fatal(res)
+	}
+	flushNativePersistBench(b, engine, res)
+	return store, poke, res.CacheKey
+}
+
+func flushNativePersistBench(b *testing.B, e *sprite.Engine, res sprite.RenderResult) {
+	b.Helper()
+	if err := e.PersistFrame(context.Background(), res.CacheKey, res.ANSI); err != nil {
+		b.Fatal(err)
+	}
+	e.ClosePersist()
+}
+
+func benchNativeEngine(store *namedMemStore) *sprite.Engine {
+	return &sprite.Engine{
+		Source: &sprite.SourceResolver{Store: store},
+		Modes: sprite.NewModeResolver(
+			&stubNativeRenderer{},
+			spritechafa.Renderer{},
+			placeholder.Renderer{},
+		),
+		Artefacts:  store,
+		Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+		Preference: sprite.ModeAuto,
+		Color:      sprite.ColorTrueColor,
+		SourceKind: sprite.SourcePixel,
+		Background: color.RGBA{A: 255},
+		HDOff:      true,
+	}
+}
+
+func BenchmarkLookupCachedNativeMem24(b *testing.B) {
+	store, poke, _ := seedNativeBench(b, 24)
+	engine := benchNativeEngine(store)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		res, hit := engine.LookupCached(context.Background(), poke, 24)
+		if !hit || !res.Native {
+			b.Fatal(res)
+		}
+	}
+}
+
+func BenchmarkLookupCachedNativeMem32(b *testing.B) {
+	store, poke, _ := seedNativeBench(b, 32)
+	engine := benchNativeEngine(store)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		res, hit := engine.LookupCached(context.Background(), poke, 32)
+		if !hit || !res.Native {
+			b.Fatal(res)
+		}
+	}
+}
+
+func BenchmarkLookupCachedNativeMem40(b *testing.B) {
+	store, poke, _ := seedNativeBench(b, 40)
+	engine := benchNativeEngine(store)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		res, hit := engine.LookupCached(context.Background(), poke, 40)
+		if !hit || !res.Native {
+			b.Fatal(res)
+		}
+	}
+}
+
+func BenchmarkLookupCachedNativeDisk24(b *testing.B) {
+	store, poke, _ := seedNativeBench(b, 24)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		engine := benchNativeEngine(store)
+		b.StartTimer()
+		res, hit := engine.LookupCached(context.Background(), poke, 24)
+		if !hit || !res.Native {
+			b.Fatal(res)
+		}
+	}
+}
+
+func BenchmarkLookupCachedNativeDisk32(b *testing.B) {
+	store, poke, _ := seedNativeBench(b, 32)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		engine := benchNativeEngine(store)
+		b.StartTimer()
+		res, hit := engine.LookupCached(context.Background(), poke, 32)
+		if !hit || !res.Native {
+			b.Fatal(res)
+		}
+	}
+}
+
+func BenchmarkLookupCachedNativeDisk40(b *testing.B) {
+	store, poke, _ := seedNativeBench(b, 40)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		engine := benchNativeEngine(store)
+		b.StartTimer()
+		res, hit := engine.LookupCached(context.Background(), poke, 40)
+		if !hit || !res.Native {
+			b.Fatal(res)
+		}
+	}
+}
