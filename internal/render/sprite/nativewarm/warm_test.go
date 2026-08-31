@@ -198,3 +198,34 @@ func TestSnapshotReturnsZero(t *testing.T) {
 		t.Fatalf("snapshot=%d/%d want 0/0", done, total)
 	}
 }
+
+func TestIntegrationWarmerQueueBounded(t *testing.T) {
+	index := indexN(100)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 50, 50)
+	time.Sleep(300 * time.Millisecond)
+	if n := rend.renders(); n > 20 {
+		t.Fatalf("renders=%d want bounded opportunistic work", n)
+	}
+	svc.Stop()
+}
+
+func TestIntegrationForegroundPreemptsWarmer(t *testing.T) {
+	index := indexN(10)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetForegroundBusy(true)
+	svc.SetNeighborsFromList(index, 5, 5)
+	time.Sleep(200 * time.Millisecond)
+	if rend.renders() != 0 {
+		t.Fatalf("renders=%d want 0 while foreground busy", rend.renders())
+	}
+	svc.SetForegroundBusy(false)
+	waitRenders(t, rend, 1)
+	svc.Stop()
+}
