@@ -16,7 +16,8 @@ func formatWarmFooterRight(stage string, done, total, cells int) string {
 	}
 	switch stage {
 	case "native":
-		return formatNativeImageCacheFooter(cells, done, total)
+		// Opportunistic native warming has no full-dex progress UI.
+		return ""
 	case "artwork":
 		return formatArtworkCacheBar(done, total)
 	default:
@@ -36,8 +37,8 @@ func warmBarStyles() (label, fill, track, count lipgloss.Style) {
 	return label, fill, track, count
 }
 
-func formatNativeImageCacheFooter(_ int, done, total int) string {
-	return formatWarmBar("Building Image Cache:", done, total)
+func formatNativeImageCacheFooter(_ int, _, _ int) string {
+	return ""
 }
 
 func formatArtworkCacheBar(done, total int) string {
