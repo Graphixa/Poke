@@ -9,10 +9,8 @@ import (
 // selection activity. It must not delay foreground/current-selection renders.
 const InteractiveIdle = 400 * time.Millisecond
 
-// InteractiveWorkers is the preferred background encoder count while the TUI
-// is running. Non-interactive commands (poke update) may use more.
-// Windows Terminal/sixel benchmark: 2+ workers improve throughput but CPU
-// contention is too high for typical hardware; keep 1 for interactive browse.
+// InteractiveWorkers is the chafa background encoder count during TUI browse.
+// Native sixel warming uses a single opportunistic lane (see nativewarm).
 const InteractiveWorkers = 1
 
 // ActivityGate pauses full-dex background warming during navigation.

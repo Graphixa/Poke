@@ -41,7 +41,6 @@ type Store struct {
 	speciesIndexWrites atomic.Uint32
 
 	imgManifest *imageManifestState
-	nativeMan   *nativeManifestState
 }
 
 func NewStore(root string, clock Clock) *Store {

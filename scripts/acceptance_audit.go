@@ -9,7 +9,6 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -125,16 +124,9 @@ func main() {
 		fmt.Printf("native.manifest err=%v\n", err)
 	} else {
 		fmt.Printf("native.manifest version=%s protocol=%s\n", nman.Version, nman.Protocol)
-		keys := make([]int, 0, len(nman.Sizes))
-		for k := range nman.Sizes {
-			keys = append(keys, k)
-		}
-		sort.Ints(keys)
-		for _, cells := range keys {
-			st := nman.Sizes[cells]
+		for _, cells := range sprite.FrameSteps() {
 			counted, _ := store.CountNativeSpeciesForCells(cells, nman.Protocol)
-			fmt.Printf("  cells=%d manifest.done=%d total=%d complete=%v filesystem_unique=%d NativeSizeComplete=%v\n",
-				cells, st.Done, st.Total, st.Complete, counted, store.NativeSizeComplete(cells, len(entries)))
+			fmt.Printf("  cells=%d filesystem_unique=%d\n", cells, counted)
 		}
 	}
 

@@ -64,9 +64,6 @@ func TestSixelCacheExistsForEverySupportedSize(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := store.MarkNativeSizeComplete(cells, len(index)); err != nil {
-			t.Fatal(err)
-		}
 		got, err := store.CountNativeSpeciesForCells(cells, "sixel")
 		if err != nil {
 			t.Fatal(err)
@@ -74,13 +71,10 @@ func TestSixelCacheExistsForEverySupportedSize(t *testing.T) {
 		if got != len(index) {
 			t.Fatalf("size %d count=%d want %d", cells, got, len(index))
 		}
-		if !store.NativeSizeComplete(cells, len(index)) {
-			t.Fatalf("size %d not complete", cells)
-		}
 	}
 }
 
-func TestCompleteManifestMatchesFilesystem(t *testing.T) {
+func TestNativeKeyExistenceMatchesFilesystem(t *testing.T) {
 	root := t.TempDir()
 	store := cache.NewStore(root, nil)
 	svc := cache.NewService(store, nil, config.Config{}, nil)
@@ -100,21 +94,10 @@ func TestCompleteManifestMatchesFilesystem(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := store.MarkNativeSizeComplete(cells, len(index)); err != nil {
-		t.Fatal(err)
-	}
-	man, err := store.ReadNativeManifest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	st := man.Sizes[cells]
-	if !st.Complete || st.Done != len(index) {
-		t.Fatalf("manifest size %d = %+v", cells, st)
-	}
 	for _, e := range index {
 		key := sprite.NativeCacheKey(sprite.NamedAssetKey(e.ID, e.Slug, "artwork"), "sixel", w, h, bg, 64)
 		if _, err := store.Native(context.Background(), key); err != nil {
-			t.Fatalf("size %d marked complete but pokemon %d missing", cells, e.ID)
+			t.Fatalf("pokemon %d missing on disk", e.ID)
 		}
 	}
 
@@ -130,11 +113,8 @@ func TestCompleteManifestMatchesFilesystem(t *testing.T) {
 	if got != 1 {
 		t.Fatalf("after delete count=%d want 1", got)
 	}
-	if err := store.MarkNativeSizeComplete(cells, len(index)); err != nil {
-		t.Fatal(err)
-	}
-	if store.NativeSizeComplete(cells, len(index)) {
-		t.Fatal("manifest must not stay complete after a missing artefact")
+	if store.HasNativeFile(key) {
+		t.Fatal("deleted frame must not exist")
 	}
 }
 
@@ -159,11 +139,8 @@ func TestCountNativeSpeciesIncludesSHA256Keys(t *testing.T) {
 	if got != 1 {
 		t.Fatalf("sha256-keyed frame count=%d want 1 (key=%s)", got, key)
 	}
-	if err := store.MarkNativeSizeComplete(sprite.MaxFrameSize, 1); err != nil {
-		t.Fatal(err)
-	}
-	if !store.NativeSizeComplete(sprite.MaxFrameSize, 1) {
-		t.Fatal("sha256-keyed size must count as complete")
+	if !store.HasNativeFile(key) {
+		t.Fatal("sha256-keyed frame must exist on disk")
 	}
 }
 

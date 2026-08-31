@@ -71,7 +71,7 @@ func (s *Service) InvalidateNativeSpecies(speciesID int) error {
 		return err
 	}
 	_ = s.store.invalidateImageCachePokemon(speciesID)
-	return s.store.InvalidateNativeManifestSizes()
+	return nil
 }
 
 // SpeciesAssetHashes returns PNG content hashes for a species.
@@ -147,30 +147,10 @@ func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
 	if _, _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(key); err != nil {
 		return err
 	}
-	isNew := !s.store.HasNativeFile(key)
 	if err := s.store.StoreNative(ctx, key, []byte(frame)); err != nil {
 		return err
 	}
-	s.recordNativeFrameManifest(key, isNew)
 	return nil
-}
-
-func (s *Service) recordNativeFrameManifest(key string, isNew bool) {
-	if !isNew {
-		return
-	}
-	_, _, pxW, pxH, _, ver, _, err := sprite.ParseNativeCacheKey(key)
-	if err != nil || ver != sprite.AlgorithmVersion {
-		return
-	}
-	cells := pxW / sprite.SixelCellPxW
-	if cells < sprite.MinFrameSize && pxH > 0 {
-		cells = pxH / sprite.SixelCellPxH
-	}
-	if cells < sprite.MinFrameSize {
-		return
-	}
-	s.store.recordNativeFrameManifest(cells)
 }
 
 func sha256Hex(s string) string {
