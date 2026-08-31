@@ -137,13 +137,13 @@ type Scheduler struct {
 	events []Event
 	seq    int
 
-	maxActive, maxPending, maxQueue int
-	cacheHits, coldMisses           int
+	maxActive, maxPending, maxQueue  int
+	cacheHits, coldMisses            int
 	rendersStarted, rendersCompleted int
 	rendersDisplayed, staleCompleted int
-	pendingReplaced, skipped        int
-	staleEncodeCPU, totalEncodeCPU  time.Duration
-	displayedLatencyMS              []float64
+	pendingReplaced, skipped         int
+	staleEncodeCPU, totalEncodeCPU   time.Duration
+	displayedLatencyMS               []float64
 
 	lastSelectedAt time.Time
 	finalSettleMS  float64
