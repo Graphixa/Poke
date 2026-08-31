@@ -799,6 +799,57 @@ func TestLookupCachedHitsDiskOnFreshEngine(t *testing.T) {
 	}
 }
 
+func TestLookupCachedNativeHitDoesNotHTTP(t *testing.T) {
+	store := newNamedMemStore()
+	png := mustPNG(t, color.RGBA{255, 200, 0, 255})
+	api := &fakeAPI{data: map[string][]byte{"https://example/s.png": png}}
+	if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
+		t.Fatal(err)
+	}
+	native := &stubNativeRenderer{}
+	mk := func() *sprite.Engine {
+		return &sprite.Engine{
+			Source: &sprite.SourceResolver{Store: store, API: api},
+			Modes: sprite.NewModeResolver(
+				native,
+				spritechafa.Renderer{},
+				placeholder.Renderer{},
+			),
+			Artefacts:  store,
+			Caps:       sprite.Capabilities{NativeImage: true, TrueColor: true, ANSI256: true},
+			Preference: sprite.ModeAuto,
+			Color:      sprite.ColorTrueColor,
+			SourceKind: sprite.SourcePixel,
+			Background: color.RGBA{A: 255},
+			HDOff:      true,
+		}
+	}
+	poke := domain.Pokemon{
+		ID: 25, Slug: "pikachu", DisplayName: "Pikachu",
+		Sprites: domain.Sprites{FrontDefault: "https://example/s.png"},
+	}
+	e1 := mk()
+	cold := e1.RenderCold(context.Background(), poke, 24)
+	if !cold.Native {
+		t.Fatalf("cold: %+v", cold)
+	}
+	flushNativePersist(t, e1, cold)
+	api.gets = 0
+	if res, hit := e1.LookupCached(context.Background(), poke, 24); !hit || !res.Native {
+		t.Fatalf("mem hit: hit=%v %+v", hit, res)
+	}
+	if api.gets != 0 {
+		t.Fatalf("mem hit must not HTTP, gets=%d", api.gets)
+	}
+	api.gets = 0
+	if res, hit := mk().LookupCached(context.Background(), poke, 24); !hit || !res.Native {
+		t.Fatalf("disk hit: hit=%v %+v", hit, res)
+	}
+	if api.gets != 0 {
+		t.Fatalf("disk hit must not HTTP, gets=%d", api.gets)
+	}
+}
+
 func nativeEngine(store *namedMemStore, native *stubNativeRenderer, bg color.RGBA) *sprite.Engine {
 	return nativeEngineAt(store, native, bg, true)
 }
