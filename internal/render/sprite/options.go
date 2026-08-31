@@ -34,7 +34,20 @@ const (
 
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
-const AlgorithmVersion = "v12"
+const AlgorithmVersion = "v13"
+
+// DefaultSixelColors is the production sixel palette when unset or unsupported.
+const DefaultSixelColors = 64
+
+// EffectiveSixelColors returns 64, 128, or 256. Unsupported values fall back to 64.
+func EffectiveSixelColors(n int) int {
+	switch n {
+	case 64, 128, 256:
+		return n
+	default:
+		return DefaultSixelColors
+	}
+}
 
 // ChafaRenderVersion bumps when external/in-process chafa invocation args change.
 const ChafaRenderVersion = "exec-v1"

@@ -144,14 +144,14 @@ func (e *Engine) readNativePNG(ctx context.Context, pokemon domain.Pokemon, ref 
 }
 
 func (e *Engine) encodeNativeFrame(ctx context.Context, rend Renderer, img image.Image, opts RenderOptions, hash, assetKind string, pokemonID int) (RenderResult, bool) {
-	if hit, result := e.lookupNativeFrame(ctx, rend, opts, hash, "", assetKind, true); hit {
+	if hit, result := e.lookupNativeFrame(ctx, rend, opts, hash, assetKind); hit {
 		return result, true
 	}
 	return e.encodeNativeFrameDirect(ctx, rend, img, opts, hash, assetKind, pokemonID)
 }
 
 func (e *Engine) encodeNativeFrameDirect(ctx context.Context, rend Renderer, img image.Image, opts RenderOptions, hash, assetKind string, pokemonID int) (RenderResult, bool) {
-	key := nativeCacheKey(hash, rend, opts.Width, opts.Height, opts.BackgroundColor)
+	key := nativeCacheKey(hash, rend, opts.Width, opts.Height, opts.BackgroundColor, opts.SixelColors)
 	endEncode := debuglog.Trace(debuglog.Render, "native.encode")
 	frame, err := rend.Render(ctx, img, opts)
 	endEncode()

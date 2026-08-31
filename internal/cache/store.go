@@ -375,6 +375,36 @@ func (s *Store) nativePath(key string) string {
 	return filepath.Join(s.root, "native", key+".frame")
 }
 
+// purgeIncompatibleNativeArtefacts deletes derived native frames that do not
+// match the current algorithm version or canonical key format.
+func (s *Store) purgeIncompatibleNativeArtefacts(currentVersion string) error {
+	dir := filepath.Join(s.root, "native")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".frame") {
+			continue
+		}
+		key := strings.TrimSuffix(name, ".frame")
+		_, _, _, _, _, ver, _, parseErr := sprite.ParseNativeCacheKey(key)
+		if parseErr != nil || ver != currentVersion {
+			if rmErr := os.Remove(filepath.Join(dir, name)); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
+				return rmErr
+			}
+		}
+	}
+	return nil
+}
+
 // DeleteNativeForSpecies removes encoded native frames for a species id prefix.
 func (s *Store) DeleteNativeForSpecies(speciesID int) error {
 	if speciesID < 1 {
@@ -401,7 +431,7 @@ func (s *Store) DeleteNativeForSpecies(speciesID int) error {
 		remove := strings.HasPrefix(name, prefix)
 		if !remove {
 			key := strings.TrimSuffix(name, ".frame")
-			if hash, _, _, _, _, _, parseErr := sprite.ParseNativeCacheKey(key); parseErr == nil {
+			if hash, _, _, _, _, _, _, parseErr := sprite.ParseNativeCacheKey(key); parseErr == nil {
 				_, remove = hashes[hash]
 			}
 		}

@@ -28,34 +28,63 @@ func TestResizeArtworkInteractiveProducesTargetSize(t *testing.T) {
 	}
 }
 
-func TestAlgorithmVersionBumpedForPrep(t *testing.T) {
-	if sprite.AlgorithmVersion != "v12" {
-		t.Fatalf("AlgorithmVersion=%s want v12 (sixel band-aligned encode height)", sprite.AlgorithmVersion)
+func TestAlgorithmVersionBumpedForNativeKey(t *testing.T) {
+	if sprite.AlgorithmVersion != "v13" {
+		t.Fatalf("AlgorithmVersion=%s want v13 (palette-aware native keys + gzip layout)", sprite.AlgorithmVersion)
 	}
 }
 
 func TestNativeCacheKeyRoundTrip(t *testing.T) {
 	bg := color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
-	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg)
+	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg, 64)
 	pxW, pxH := sprite.PixelSize(40, 20)
-	wantPrefix := fmt.Sprintf("named-25-pikachu-artwork-image-sixel-%dx%d-313244-", pxW, pxH)
+	wantPrefix := fmt.Sprintf("named-25-pikachu-artwork-image-sixel-%dx%d-313244-c64-", pxW, pxH)
 	if !strings.HasPrefix(key, wantPrefix) || !strings.HasSuffix(key, sprite.AlgorithmVersion) {
 		t.Fatalf("key=%q want prefix %q", key, wantPrefix)
 	}
-	hash, proto, w, h, bgHash, ver, err := sprite.ParseNativeCacheKey(key)
+	hash, proto, w, h, bgHash, ver, palette, err := sprite.ParseNativeCacheKey(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash != "named-25-pikachu-artwork" || proto != "sixel" || w != pxW || h != pxH || bgHash != "313244" || ver != sprite.AlgorithmVersion {
-		t.Fatalf("parsed hash=%s proto=%s %dx%d bg=%s ver=%s", hash, proto, w, h, bgHash, ver)
+	if hash != "named-25-pikachu-artwork" || proto != "sixel" || w != pxW || h != pxH || bgHash != "313244" || ver != sprite.AlgorithmVersion || palette != 64 {
+		t.Fatalf("parsed hash=%s proto=%s %dx%d bg=%s palette=%d ver=%s", hash, proto, w, h, bgHash, palette, ver)
+	}
+}
+
+func TestNativeCacheKeyPaletteIdentity(t *testing.T) {
+	bg := sprite.DefaultBackground
+	hash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	k64 := sprite.NativeCacheKey(hash, "sixel", 32, 16, bg, 64)
+	k128 := sprite.NativeCacheKey(hash, "sixel", 32, 16, bg, 128)
+	k256 := sprite.NativeCacheKey(hash, "sixel", 32, 16, bg, 256)
+	if k64 == k128 || k128 == k256 || k64 == k256 {
+		t.Fatal("palette must change native cache key")
+	}
+	k32 := sprite.NativeCacheKey(hash, "sixel", 32, 16, bg, 64)
+	k40 := sprite.NativeCacheKey(hash, "sixel", 40, 20, bg, 64)
+	if k32 == k40 {
+		t.Fatal("bucket must change native cache key")
+	}
+	bg2 := color.RGBA{R: 1, G: 2, B: 3, A: 255}
+	kBg := sprite.NativeCacheKey(hash, "sixel", 32, 16, bg2, 64)
+	if k64 == kBg {
+		t.Fatal("background must change native cache key")
 	}
 }
 
 func TestParseNativeCacheKeyRejectsEscape(t *testing.T) {
-	if _, _, _, _, _, _, err := sprite.ParseNativeCacheKey("../escape-image-8x8-000000-v10"); err == nil {
+	if _, _, _, _, _, _, _, err := sprite.ParseNativeCacheKey("../escape-image-8x8-000000-v10"); err == nil {
 		t.Fatal("expected reject")
 	}
-	if _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(`bad\path-image-8x8-000000-v10`); err == nil {
+	if _, _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(`bad\path-image-8x8-000000-v10`); err == nil {
 		t.Fatal("expected reject")
+	}
+}
+
+func TestParseNativeCacheKeyRejectsLegacyFormat(t *testing.T) {
+	// Pre-v13 keys without palette tag must be rejected.
+	legacy := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-image-sixel-256x128-313244-v12"
+	if _, _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(legacy); err == nil {
+		t.Fatal("expected reject of legacy key without palette tag")
 	}
 }

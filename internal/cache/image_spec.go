@@ -28,7 +28,7 @@ type ImageCacheSpec struct {
 }
 
 // DefaultImageCacheSpec builds the current native/sixel image-cache identity.
-func DefaultImageCacheSpec(protocol, sourceMode string, bg color.RGBA) ImageCacheSpec {
+func DefaultImageCacheSpec(protocol, sourceMode string, bg color.RGBA, paletteLimit int) ImageCacheSpec {
 	if sourceMode == "" {
 		sourceMode = string(sprite.SourceArtwork)
 	}
@@ -43,6 +43,7 @@ func DefaultImageCacheSpec(protocol, sourceMode string, bg color.RGBA) ImageCach
 		RequiredSizes:   append([]int(nil), sizes...),
 		SourceMode:      sourceMode,
 		Background:      sprite.BackgroundHash(bg),
+		PaletteLimit:    sprite.EffectiveSixelColors(paletteLimit),
 	}
 }
 
@@ -77,5 +78,5 @@ func (s ImageCacheSpec) BackgroundRGBA() color.RGBA {
 // nativeKey returns the canonical SHA-256 native cache key for a variant.
 func (s ImageCacheSpec) nativeKey(sourceHash string, cells int) string {
 	w, h := sprite.FrameSizeFor(cells)
-	return sprite.NativeCacheKey(sourceHash, s.Protocol, w, h, s.BackgroundRGBA())
+	return sprite.NativeCacheKey(sourceHash, s.Protocol, w, h, s.BackgroundRGBA(), s.PaletteLimit)
 }

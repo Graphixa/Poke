@@ -113,7 +113,7 @@ func main() {
 			shaN++
 		}
 		key := strings.TrimSuffix(f.Name(), ".frame")
-		_, _, w, h, _, _, perr := sprite.ParseNativeCacheKey(key)
+		_, _, w, h, _, _, _, perr := sprite.ParseNativeCacheKey(key)
 		if perr == nil {
 			dimCount[fmt.Sprintf("%dx%d", w, h)]++
 		}
@@ -161,7 +161,7 @@ func main() {
 				continue
 			}
 			hash, _, ready, _ := store.NamedAssetMeta(ctx, e.ID, e.Slug, cache.SpriteKindArtwork)
-			key := sprite.NativeCacheKey(hash, "sixel", w, h, bg)
+			key := sprite.NativeCacheKey(hash, "sixel", w, h, bg, 64)
 			nativePath := filepath.Join(nativeDir, key+".frame")
 			_, statErr := os.Stat(nativePath)
 			exists := statErr == nil
@@ -203,7 +203,7 @@ func main() {
 	if e401, ok401 := byID[401]; ok401 {
 		w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
 		hash, _, _, _ := store.NamedAssetMeta(ctx, e401.ID, e401.Slug, cache.SpriteKindArtwork)
-		key := sprite.NativeCacheKey(hash, "sixel", w, h, bg)
+		key := sprite.NativeCacheKey(hash, "sixel", w, h, bg, 64)
 		p := filepath.Join(nativeDir, key+".frame")
 		if data, err := os.ReadFile(p); err == nil {
 			if err := os.Remove(p); err != nil {

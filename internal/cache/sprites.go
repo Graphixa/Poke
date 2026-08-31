@@ -144,7 +144,7 @@ func (s *Service) StoreNative(ctx context.Context, key, frame string) error {
 	if key == "" {
 		return errors.New("cache: refuse to store empty native key")
 	}
-	if _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(key); err != nil {
+	if _, _, _, _, _, _, _, err := sprite.ParseNativeCacheKey(key); err != nil {
 		return err
 	}
 	isNew := !s.store.HasNativeFile(key)
@@ -159,7 +159,7 @@ func (s *Service) recordNativeFrameManifest(key string, isNew bool) {
 	if !isNew {
 		return
 	}
-	_, _, pxW, pxH, _, ver, err := sprite.ParseNativeCacheKey(key)
+	_, _, pxW, pxH, _, ver, _, err := sprite.ParseNativeCacheKey(key)
 	if err != nil || ver != sprite.AlgorithmVersion {
 		return
 	}

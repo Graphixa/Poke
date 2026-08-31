@@ -162,7 +162,7 @@ func BenchmarkNativeSizeComplete(b *testing.B) {
 	bg := sprite.DefaultBackground
 	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
 	for i := 0; i < 500; i++ {
-		key := sprite.NativeCacheKey("bench-"+string(rune(i)), "sixel", w, h, bg)
+		key := sprite.NativeCacheKey("bench-"+string(rune(i)), "sixel", w, h, bg, 64)
 		if err := store.StoreNative(ctx, key, []byte("SIXEL")); err != nil {
 			b.Fatal(err)
 		}
@@ -209,7 +209,7 @@ func BenchmarkStoreNativeMany(b *testing.B) {
 	ResetNativeDirectoryScanCount()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		key := sprite.NativeCacheKey("bench-store-"+string(rune(i)), "sixel", w, h, bg)
+		key := sprite.NativeCacheKey("bench-store-"+string(rune(i)), "sixel", w, h, bg, 64)
 		if err := svc.StoreNative(ctx, key, "SIXEL"); err != nil {
 			b.Fatal(err)
 		}
@@ -224,7 +224,7 @@ func BenchmarkRenderArtifactRoundTrip(b *testing.B) {
 	root := b.TempDir()
 	store := NewStore(root, nil)
 	ctx := context.Background()
-	nkey := sprite.NativeCacheKey("hash", "sixel", 40, 20, sprite.DefaultBackground)
+	nkey := sprite.NativeCacheKey("hash", "sixel", 40, 20, sprite.DefaultBackground, 64)
 	if err := store.StoreNative(ctx, nkey, []byte("SIXEL")); err != nil {
 		b.Fatal(err)
 	}

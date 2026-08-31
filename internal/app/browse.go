@@ -257,7 +257,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.WarmEvents = progressCh
 		protocol := img.ProtocolName()
 		_ = svc.Cache.EnsureNativeManifest(protocol)
-		imageSpec = cache.DefaultImageCacheSpec(protocol, string(sourceKind), style.BaseRGBA())
+		imageSpec = cache.DefaultImageCacheSpec(protocol, string(sourceKind), style.BaseRGBA(), svc.Config.EffectiveSixelColors())
 		coord, err := svc.Cache.StartImageCacheSessionDeferred(index, imageSpec)
 		if err != nil {
 			debuglog.Cachef("image-cache session err=%v", err)

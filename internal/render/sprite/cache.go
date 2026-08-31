@@ -3,6 +3,7 @@ package sprite
 import (
 	"fmt"
 	"image/color"
+	"strconv"
 	"strings"
 )
 
@@ -73,36 +74,53 @@ func ParseCacheKey(key string) (hash string, source SpriteSource, mode string, w
 
 // NativeCacheKey builds a filesystem-safe identity for Kitty/iTerm/Sixel frames:
 //
-//	<hash>-image[-<proto>]-<w>x<h>-<bg>-<version>
+//	<hash>-image[-<proto>]-<w>x<h>-<bg>[-c<palette>]-<version>
 //
-// Example: named-25-pikachu-artwork-image-sixel-40x20-313244-v10
-func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA) string {
+// Sixel keys include c64|c128|c256 before the version. Non-sixel protocols omit palette.
+//
+// Example: abc...-image-sixel-320x160-313244-c64-v13
+func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA, sixelColors int) string {
 	tag := "image"
 	if proto != "" {
 		tag = "image-" + proto
 	}
 	pxW, pxH := PixelSize(w, h)
+	bgTag := BackgroundHash(bg)
+	if proto == "sixel" {
+		colors := EffectiveSixelColors(sixelColors)
+		return fmt.Sprintf("%s-%s-%dx%d-%s-c%d-%s",
+			contentHash, tag, pxW, pxH, bgTag, colors, AlgorithmVersion)
+	}
 	return fmt.Sprintf("%s-%s-%dx%d-%s-%s",
-		contentHash, tag, pxW, pxH, BackgroundHash(bg), AlgorithmVersion)
+		contentHash, tag, pxW, pxH, bgTag, AlgorithmVersion)
 }
 
 // ParseNativeCacheKey splits a key produced by NativeCacheKey.
-func ParseNativeCacheKey(key string) (hash, proto string, w, h int, bgHash, version string, err error) {
+// Returns sixelColors as 0 when the protocol is not sixel.
+func ParseNativeCacheKey(key string) (hash, proto string, w, h int, bgHash, version string, sixelColors int, err error) {
 	if key == "" || strings.Contains(key, "..") || strings.ContainsAny(key, `/\`) {
-		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+		return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: invalid native cache key %q", key)
 	}
 	parts := strings.Split(key, "-")
-	// hash + image + dim + bg + version = at least 5; proto optional.
-	if len(parts) < 5 {
-		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+	if len(parts) < 6 {
+		return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: invalid native cache key %q", key)
 	}
 	version = parts[len(parts)-1]
-	bgHash = parts[len(parts)-2]
-	dim := parts[len(parts)-3]
-	if _, err = fmt.Sscanf(dim, "%dx%d", &w, &h); err != nil || w < 1 || h < 1 {
-		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid dimensions in native key %q", key)
+	paletteIdx := len(parts) - 2
+	if strings.HasPrefix(parts[paletteIdx], "c") {
+		if n, perr := strconv.Atoi(parts[paletteIdx][1:]); perr == nil && (n == 64 || n == 128 || n == 256) {
+			sixelColors = n
+			paletteIdx--
+		} else {
+			return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: invalid palette tag in native key %q", key)
+		}
 	}
-	dimIdx := len(parts) - 3
+	bgHash = parts[paletteIdx]
+	dim := parts[paletteIdx-1]
+	if _, err = fmt.Sscanf(dim, "%dx%d", &w, &h); err != nil || w < 1 || h < 1 {
+		return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: invalid dimensions in native key %q", key)
+	}
+	dimIdx := paletteIdx - 1
 	imageIdx := -1
 	for i := dimIdx - 1; i >= 0; i-- {
 		if parts[i] == "image" {
@@ -111,14 +129,20 @@ func ParseNativeCacheKey(key string) (hash, proto string, w, h int, bgHash, vers
 		}
 	}
 	if imageIdx < 0 || bgHash == "" || version == "" {
-		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+		return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: invalid native cache key %q", key)
 	}
 	if imageIdx+1 < dimIdx {
 		proto = strings.Join(parts[imageIdx+1:dimIdx], "-")
 	}
 	hash = strings.Join(parts[:imageIdx], "-")
 	if hash == "" {
-		return "", "", 0, 0, "", "", fmt.Errorf("sprite: invalid native cache key %q", key)
+		return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: invalid native cache key %q", key)
 	}
-	return hash, proto, w, h, bgHash, version, nil
+	if proto == "sixel" && sixelColors == 0 {
+		return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: sixel native key missing palette tag %q", key)
+	}
+	if proto != "sixel" && sixelColors != 0 {
+		return "", "", 0, 0, "", "", 0, fmt.Errorf("sprite: unexpected palette tag in non-sixel key %q", key)
+	}
+	return hash, proto, w, h, bgHash, version, sixelColors, nil
 }

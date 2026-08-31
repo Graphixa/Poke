@@ -830,7 +830,7 @@ func TestSixelCacheKeyStable(t *testing.T) {
 		for _, cells := range sprite.FrameSteps() {
 			w, h := sprite.FrameSizeFor(cells)
 			sha := fmt.Sprintf("%064x", tc.id)
-			gen := sprite.NativeCacheKey(sha, "sixel", w, h, bg)
+			gen := sprite.NativeCacheKey(sha, "sixel", w, h, bg, 64)
 			store := newNamedMemStore()
 			png := mustPNG(t, color.RGBA{255, 200, 0, 255})
 			if err := store.StoreNamedSprite(context.Background(), tc.id, tc.slug, "artwork", sha, png); err != nil {
@@ -945,7 +945,7 @@ func TestMissingSingleArtifactColdRendersOnce(t *testing.T) {
 	}
 	sha := store.hashes[namedKey(401, "kricketot", "pixel")]
 	w, h := sprite.FrameSizeFor(24)
-	key := sprite.NativeCacheKey(sha, "sixel", w, h, bg)
+	key := sprite.NativeCacheKey(sha, "sixel", w, h, bg, 64)
 	store.mu.Lock()
 	delete(store.native, key)
 	store.mu.Unlock()
@@ -978,36 +978,5 @@ func TestMissingSingleArtifactColdRendersOnce(t *testing.T) {
 	}
 	if native.renders != 5 {
 		t.Fatalf("revisit encoded, renders=%d", native.renders)
-	}
-}
-
-func TestLookupLegacyNamedHitMigratesToSHA256(t *testing.T) {
-	store := newNamedMemStore()
-	png := mustPNG(t, color.RGBA{1, 2, 3, 255})
-	if err := store.StoreNamedSprite(context.Background(), 400, "staravia", "artwork", "", png); err != nil {
-		t.Fatal(err)
-	}
-	bg := color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
-	w, h := sprite.FrameSizeFor(40)
-	sha := store.hashes[namedKey(400, "staravia", "artwork")]
-	namedFile := sprite.NativeCacheKey(sprite.NamedAssetKey(400, "staravia", "artwork"), "sixel", w, h, bg)
-	if err := store.StoreNative(context.Background(), namedFile, "NAMED"); err != nil {
-		t.Fatal(err)
-	}
-	native := &stubNativeRenderer{}
-	engine := artworkNativeEngine(store, native, bg)
-	res, hit := engine.LookupCached(context.Background(), domain.Pokemon{ID: 400, Slug: "staravia"}, 40)
-	if !hit || res.ANSI != "NAMED" {
-		t.Fatalf("legacy fallback miss hit=%v %+v", hit, res)
-	}
-	canonicalKey := sprite.NativeCacheKey(sha, "sixel", w, h, bg)
-	if res.CacheKey != canonicalKey {
-		t.Fatalf("cache key=%q want canonical %q", res.CacheKey, canonicalKey)
-	}
-	if _, err := store.Native(context.Background(), canonicalKey); err != nil {
-		t.Fatal("expected migrated canonical frame on disk")
-	}
-	if native.renders != 0 {
-		t.Fatalf("lookup must not encode, renders=%d", native.renders)
 	}
 }

@@ -14,11 +14,11 @@ func TestDeleteNativeForSpecies(t *testing.T) {
 	clock := fixedClock{t: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
 	ctx := context.Background()
-	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, sprite.DefaultBackground)
+	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, sprite.DefaultBackground, 64)
 	if err := store.StoreNative(ctx, key, []byte("FRAME")); err != nil {
 		t.Fatal(err)
 	}
-	other := sprite.NativeCacheKey("named-26-raichu-artwork", "sixel", 40, 20, sprite.DefaultBackground)
+	other := sprite.NativeCacheKey("named-26-raichu-artwork", "sixel", 40, 20, sprite.DefaultBackground, 64)
 	if err := store.StoreNative(ctx, other, []byte("OTHER")); err != nil {
 		t.Fatal(err)
 	}
@@ -40,8 +40,8 @@ func TestDeleteNativeForSpeciesSHA256Key(t *testing.T) {
 	ctx := context.Background()
 	sha25 := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	sha26 := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	key25 := sprite.NativeCacheKey(sha25, "sixel", 320, 320, sprite.DefaultBackground)
-	key26 := sprite.NativeCacheKey(sha26, "sixel", 320, 320, sprite.DefaultBackground)
+	key25 := sprite.NativeCacheKey(sha25, "sixel", 320, 320, sprite.DefaultBackground, 64)
+	key26 := sprite.NativeCacheKey(sha26, "sixel", 320, 320, sprite.DefaultBackground, 64)
 	if err := store.StoreNative(ctx, key25, []byte("PIKA")); err != nil {
 		t.Fatal(err)
 	}

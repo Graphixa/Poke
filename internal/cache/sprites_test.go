@@ -51,7 +51,7 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 		t.Fatal("expected reject of invalid key")
 	}
 
-	nkey := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255})
+	nkey := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}, 64)
 	if err := svc.StoreNative(context.Background(), nkey, "FRAME"); err != nil {
 		t.Fatal(err)
 	}

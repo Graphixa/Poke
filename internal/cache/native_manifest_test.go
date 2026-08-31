@@ -53,11 +53,11 @@ func TestNativeManifestSizeComplete(t *testing.T) {
 	}
 
 	bg := sprite.DefaultBackground
-	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg)
+	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg, 64)
 	if err := svc.StoreNative(context.Background(), key, "FRAME"); err != nil {
 		t.Fatal(err)
 	}
-	key2 := sprite.NativeCacheKey("named-26-raichu-artwork", "sixel", 40, 20, bg)
+	key2 := sprite.NativeCacheKey("named-26-raichu-artwork", "sixel", 40, 20, bg, 64)
 	if err := svc.StoreNative(context.Background(), key2, "FRAME2"); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestInvalidateNativeSpeciesUpdatesManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	bg := sprite.DefaultBackground
-	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg)
+	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg, 64)
 	if err := svc.StoreNative(context.Background(), key, "FRAME"); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestMarkAllNativeSizesCompleteSingleScan(t *testing.T) {
 	bg := sprite.DefaultBackground
 	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
 	for i := 0; i < 3; i++ {
-		key := sprite.NativeCacheKey(fmt.Sprintf("all-scan-%d", i), "sixel", w, h, bg)
+		key := sprite.NativeCacheKey(fmt.Sprintf("all-scan-%d", i), "sixel", w, h, bg, 64)
 		if err := svc.StoreNative(context.Background(), key, "F"); err != nil {
 			t.Fatal(err)
 		}
@@ -189,7 +189,7 @@ func TestEnsureNativeManifestSingleDirectoryPass(t *testing.T) {
 	bg := sprite.DefaultBackground
 	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
 	for i := 0; i < 20; i++ {
-		hash := sprite.NativeCacheKey(fmt.Sprintf("hash%02d", i), "sixel", w, h, bg)
+		hash := sprite.NativeCacheKey(fmt.Sprintf("hash%02d", i), "sixel", w, h, bg, 64)
 		if err := svc.StoreNative(context.Background(), hash, "F"); err != nil {
 			t.Fatal(err)
 		}
@@ -217,7 +217,7 @@ func TestStoreNativeNoPerFrameDirectoryScan(t *testing.T) {
 	bg := sprite.DefaultBackground
 	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
 	for i := 0; i < 100; i++ {
-		key := sprite.NativeCacheKey(fmt.Sprintf("store-test-%03d", i), "sixel", w, h, bg)
+		key := sprite.NativeCacheKey(fmt.Sprintf("store-test-%03d", i), "sixel", w, h, bg, 64)
 		if err := svc.StoreNative(context.Background(), key, "FRAME"); err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +232,7 @@ func TestStoreNativeNoPerFrameDirectoryScan(t *testing.T) {
 	if got := m.Sizes[sprite.MaxFrameSize].Done; got != 100 {
 		t.Fatalf("manifest done=%d want 100", got)
 	}
-	key := sprite.NativeCacheKey("store-test-dup", "sixel", w, h, bg)
+	key := sprite.NativeCacheKey("store-test-dup", "sixel", w, h, bg, 64)
 	if err := svc.StoreNative(context.Background(), key, "A"); err != nil {
 		t.Fatal(err)
 	}

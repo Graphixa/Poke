@@ -136,7 +136,7 @@ func TestChangedArtworkRebuildsRequiredNativeSizes(t *testing.T) {
 	bg := spec.BackgroundRGBA()
 	for _, cells := range spec.RequiredSizes {
 		w, h := sprite.FrameSizeFor(cells)
-		key := sprite.NativeCacheKey(oldHash, spec.Protocol, w, h, bg)
+		key := sprite.NativeCacheKey(oldHash, spec.Protocol, w, h, bg, 64)
 		if !store.HasNativeFile(key) {
 			t.Fatalf("missing native for old hash size=%d", cells)
 		}
@@ -145,7 +145,7 @@ func TestChangedArtworkRebuildsRequiredNativeSizes(t *testing.T) {
 	seedArtwork(t, store, index[0].ID, index[0].Slug, newHash)
 	for _, cells := range spec.RequiredSizes {
 		w, h := sprite.FrameSizeFor(cells)
-		oldKey := sprite.NativeCacheKey(oldHash, spec.Protocol, w, h, bg)
+		oldKey := sprite.NativeCacheKey(oldHash, spec.Protocol, w, h, bg, 64)
 		if store.HasNativeFile(oldKey) {
 			t.Fatalf("old native size=%d should be removed after hash change", cells)
 		}
@@ -156,7 +156,7 @@ func TestChangedArtworkRebuildsRequiredNativeSizes(t *testing.T) {
 	}
 	for _, cells := range spec.RequiredSizes {
 		w, h := sprite.FrameSizeFor(cells)
-		newKey := sprite.NativeCacheKey(newHash, spec.Protocol, w, h, bg)
+		newKey := sprite.NativeCacheKey(newHash, spec.Protocol, w, h, bg, 64)
 		if store.HasNativeFile(newKey) {
 			t.Fatalf("new native size=%d should not exist yet", cells)
 		}

@@ -12,7 +12,7 @@ import (
 )
 
 func testImageSpec() cache.ImageCacheSpec {
-	return cache.DefaultImageCacheSpec("sixel", string(sprite.SourceArtwork), sprite.DefaultBackground)
+	return cache.DefaultImageCacheSpec("sixel", string(sprite.SourceArtwork), sprite.DefaultBackground, 64)
 }
 
 func testHash(id int) string {
@@ -42,7 +42,7 @@ func seedNativeSizes(t *testing.T, svc *cache.Service, spec cache.ImageCacheSpec
 	ctx := context.Background()
 	for _, cells := range sizes {
 		w, h := sprite.FrameSizeFor(cells)
-		key := sprite.NativeCacheKey(hash, spec.Protocol, w, h, bg)
+		key := sprite.NativeCacheKey(hash, spec.Protocol, w, h, bg, 64)
 		if err := svc.StoreNative(ctx, key, "FRAME"); err != nil {
 			t.Fatal(err)
 		}
@@ -303,7 +303,7 @@ func TestImageCacheCompletePokemonHasAllRequiredSizes(t *testing.T) {
 		}
 		for _, cells := range spec.RequiredSizes {
 			w, h := sprite.FrameSizeFor(cells)
-			key := sprite.NativeCacheKey(hash, spec.Protocol, w, h, bg)
+			key := sprite.NativeCacheKey(hash, spec.Protocol, w, h, bg, 64)
 			if !storeHasNative(svc, key) {
 				t.Fatalf("complete id=%d missing size %d key=%s", id, cells, key)
 			}

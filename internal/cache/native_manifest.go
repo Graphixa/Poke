@@ -171,6 +171,9 @@ func (s *Store) EnsureNativeManifest(version, protocol string) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.m.Version != version || st.m.Protocol != protocol {
+		if err := s.purgeIncompatibleNativeArtefacts(version); err != nil {
+			return err
+		}
 		st.m = NativeManifest{
 			Version:  version,
 			Protocol: protocol,
@@ -320,7 +323,7 @@ func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, err
 			continue
 		}
 		key := strings.TrimSuffix(name, ".frame")
-		hash, proto, fw, fh, _, _, parseErr := sprite.ParseNativeCacheKey(key)
+		hash, proto, fw, fh, _, _, _, parseErr := sprite.ParseNativeCacheKey(key)
 		if parseErr != nil || hash == "" || fw != pxW || fh != pxH {
 			continue
 		}
@@ -405,7 +408,7 @@ func (s *Store) auditNativeFrameCounts(protocol string) (map[int]int, error) {
 			continue
 		}
 		key := strings.TrimSuffix(name, ".frame")
-		hash, proto, fw, fh, _, ver, parseErr := sprite.ParseNativeCacheKey(key)
+		hash, proto, fw, fh, _, ver, _, parseErr := sprite.ParseNativeCacheKey(key)
 		if parseErr != nil || hash == "" {
 			continue
 		}

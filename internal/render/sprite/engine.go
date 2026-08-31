@@ -188,13 +188,9 @@ func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells
 		if rend.Name() == "image" && !IsHexSHA256(canonical) {
 			canonical = ""
 		}
-		legacy := ""
-		if rend.Name() == "image" && pokemon.ID != 0 {
-			legacy = e.legacyHashForRef(pokemon, ref)
-		}
 		opts.ContentHash = canonical
 		if rend.Name() == "image" {
-			if hit, result := e.lookupNativeFrame(ctx, rend, opts, canonical, legacy, kind, true); hit {
+			if hit, result := e.lookupNativeFrame(ctx, rend, opts, canonical, kind); hit {
 				return result, true
 			}
 			continue
@@ -273,7 +269,7 @@ func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cel
 	if !IsHexSHA256(canonical) {
 		canonical = ""
 	}
-	return e.hasNativeFrame(ctx, canonical, e.legacyHashForRef(pokemon, ref), fw, fh, bg)
+	return e.hasNativeFrame(ctx, canonical, fw, fh, bg, e.SixelColors)
 }
 
 func (e *Engine) protocolName() string {
@@ -407,12 +403,11 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 
 			if hash != "" || (rend.Name() == "image" && ref.Ready) {
 				if rend.Name() == "image" {
-					legacy := e.legacyHashForRef(pokemon, ref)
 					canonical := hash
 					if !IsHexSHA256(canonical) {
 						canonical = ""
 					}
-					if hit, result := e.lookupNativeFrame(ctx, rend, opts, canonical, legacy, assetKind, true); hit {
+					if hit, result := e.lookupNativeFrame(ctx, rend, opts, canonical, assetKind); hit {
 						return result
 					}
 				} else if hash != "" {
@@ -459,7 +454,7 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		key := ""
 		switch {
 		case rend.Name() == "image" && IsHexSHA256(opts.ContentHash):
-			key = nativeCacheKey(opts.ContentHash, rend, opts.Width, opts.Height, opts.BackgroundColor)
+			key = nativeCacheKey(opts.ContentHash, rend, opts.Width, opts.Height, opts.BackgroundColor, opts.SixelColors)
 		case rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "":
 			color := effectiveColor(opts.ColorMode, e.Caps)
 			key = CacheKey(opts.ContentHash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
@@ -519,7 +514,7 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 		return false, RenderResult{}
 	}
 	if rend.Name() == "image" {
-		return e.lookupNativeFrame(ctx, rend, opts, hash, "", assetKind, false)
+		return e.lookupNativeFrame(ctx, rend, opts, hash, assetKind)
 	}
 	if rend.Name() == "placeholder" {
 		return false, RenderResult{}
@@ -668,11 +663,11 @@ func (e *Engine) resolveNativeAsset(ctx context.Context, pokemon domain.Pokemon,
 	return last, AssetTierHD
 }
 
-// nativeCacheKey builds a mem+disk key for Kitty/iTerm/Sixel frames (bg + version).
-func nativeCacheKey(contentHash string, rend Renderer, w, h int, bg color.RGBA) string {
+// nativeCacheKey builds a mem+disk key for Kitty/iTerm/Sixel frames (bg + version + palette).
+func nativeCacheKey(contentHash string, rend Renderer, w, h int, bg color.RGBA, sixelColors int) string {
 	proto := ""
 	if namer, ok := rend.(protocolNamer); ok {
 		proto = namer.ProtocolName()
 	}
-	return NativeCacheKey(contentHash, proto, w, h, bg)
+	return NativeCacheKey(contentHash, proto, w, h, bg, sixelColors)
 }

@@ -59,7 +59,7 @@ func TestSixelCacheExistsForEverySupportedSize(t *testing.T) {
 	for _, cells := range sprite.FrameSteps() {
 		w, h := sprite.FrameSizeFor(cells)
 		for _, e := range index {
-			key := sprite.NativeCacheKey(sprite.NamedAssetKey(e.ID, e.Slug, "artwork"), "sixel", w, h, bg)
+			key := sprite.NativeCacheKey(sprite.NamedAssetKey(e.ID, e.Slug, "artwork"), "sixel", w, h, bg, 64)
 			if err := svc.StoreNative(context.Background(), key, "FRAME"); err != nil {
 				t.Fatal(err)
 			}
@@ -95,7 +95,7 @@ func TestCompleteManifestMatchesFilesystem(t *testing.T) {
 	cells := sprite.MaxFrameSize
 	w, h := sprite.FrameSizeFor(cells)
 	for _, e := range index {
-		key := sprite.NativeCacheKey(sprite.NamedAssetKey(e.ID, e.Slug, "artwork"), "sixel", w, h, bg)
+		key := sprite.NativeCacheKey(sprite.NamedAssetKey(e.ID, e.Slug, "artwork"), "sixel", w, h, bg, 64)
 		if err := svc.StoreNative(context.Background(), key, "FRAME"); err != nil {
 			t.Fatal(err)
 		}
@@ -112,13 +112,13 @@ func TestCompleteManifestMatchesFilesystem(t *testing.T) {
 		t.Fatalf("manifest size %d = %+v", cells, st)
 	}
 	for _, e := range index {
-		key := sprite.NativeCacheKey(sprite.NamedAssetKey(e.ID, e.Slug, "artwork"), "sixel", w, h, bg)
+		key := sprite.NativeCacheKey(sprite.NamedAssetKey(e.ID, e.Slug, "artwork"), "sixel", w, h, bg, 64)
 		if _, err := store.Native(context.Background(), key); err != nil {
 			t.Fatalf("size %d marked complete but pokemon %d missing", cells, e.ID)
 		}
 	}
 
-	key := sprite.NativeCacheKey(sprite.NamedAssetKey(401, "kricketot", "artwork"), "sixel", w, h, bg)
+	key := sprite.NativeCacheKey(sprite.NamedAssetKey(401, "kricketot", "artwork"), "sixel", w, h, bg, 64)
 	path := filepath.Join(root, "native", key+".frame")
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestCountNativeSpeciesIncludesSHA256Keys(t *testing.T) {
 	}
 	sha := "0013d5f503037eb0fe545ea553c781f751df8f385382d4042e0a60a2060fde14"
 	w, h := sprite.FrameSizeFor(sprite.MaxFrameSize)
-	key := sprite.NativeCacheKey(sha, "sixel", w, h, bg)
+	key := sprite.NativeCacheKey(sha, "sixel", w, h, bg, 64)
 	if err := svc.StoreNative(context.Background(), key, "FRAME"); err != nil {
 		t.Fatal(err)
 	}
@@ -180,12 +180,12 @@ func TestSixelCacheKeyStableAcrossSizes(t *testing.T) {
 	hash := sprite.NamedAssetKey(401, "kricketot", "artwork")
 	for _, cells := range sprite.FrameSteps() {
 		w, h := sprite.FrameSizeFor(cells)
-		a := sprite.NativeCacheKey(hash, "sixel", w, h, bg)
-		b := sprite.NativeCacheKey(hash, "sixel", w, h, bg)
+		a := sprite.NativeCacheKey(hash, "sixel", w, h, bg, 64)
+		b := sprite.NativeCacheKey(hash, "sixel", w, h, bg, 64)
 		if a != b {
 			t.Fatalf("cells=%d key unstable %q vs %q", cells, a, b)
 		}
-		parsed, proto, pxW, pxH, bgHash, ver, err := sprite.ParseNativeCacheKey(a)
+		parsed, proto, pxW, pxH, bgHash, ver, _, err := sprite.ParseNativeCacheKey(a)
 		if err != nil {
 			t.Fatal(err)
 		}
