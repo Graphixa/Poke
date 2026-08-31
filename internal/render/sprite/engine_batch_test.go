@@ -58,7 +58,11 @@ func TestNativeWarmBatchPartialSizes(t *testing.T) {
 		if !res.Native {
 			t.Fatalf("seed size=%d failed", cells)
 		}
+		if err := engine.PersistFrame(context.Background(), res.CacheKey, res.ANSI); err != nil {
+			t.Fatal(err)
+		}
 	}
+	engine.ClosePersist()
 	sprite.ResetStats()
 	store.pngReads = 0
 	beforeRenders := native.renders

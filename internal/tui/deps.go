@@ -45,4 +45,6 @@ type SpriteRenderer interface {
 	ClearNativeRegion(cellsW, cellsH int) string
 	// InvalidateSpecies drops in-memory encode caches for a species (artwork pop-in).
 	InvalidateSpecies(speciesID int)
+	// PersistFrame enqueues an async native gzip write (off the display path).
+	PersistFrame(ctx context.Context, cacheKey, frame string) error
 }

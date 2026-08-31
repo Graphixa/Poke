@@ -77,6 +77,13 @@ func (t tuiSprites) ClearNativeRegion(cellsW, cellsH int) string {
 	return t.Engine.ClearNativeRegion(cellsW, cellsH)
 }
 
+func (t tuiSprites) PersistFrame(ctx context.Context, cacheKey, frame string) error {
+	if t.Engine == nil {
+		return nil
+	}
+	return t.Engine.PersistFrame(ctx, cacheKey, frame)
+}
+
 // sendWarmProgress is non-blocking for in-progress ticks so warmers cannot
 // stall the TUI. A Done>=Total tick must not be dropped: one stale buffered
 // message is discarded so completion can replace it.

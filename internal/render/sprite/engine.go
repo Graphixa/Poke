@@ -57,6 +57,9 @@ type Engine struct {
 	nativeMemOnce sync.Once
 	ansiMem       *frameMemCache
 	nativeMem     *frameMemCache
+
+	persistOnce sync.Once
+	persistQ    *persistQueue
 }
 
 func (e *Engine) ansiMemory() *frameMemCache {
@@ -502,15 +505,9 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		}
 		if key != "" {
 			e.nativeMemory().Put(key, frame.Text)
-			if e.Artefacts != nil {
-				if frame.Native {
-					if err := e.Artefacts.StoreNative(ctx, key, frame.Text); err != nil {
-						debuglog.Renderf("render.store.native err=%v key=%s", err, key)
-					}
-				} else {
-					if err := e.Artefacts.StoreArtefact(ctx, key, frame.Text); err != nil {
-						debuglog.Renderf("render.store.artefact err=%v key=%s", err, key)
-					}
+			if e.Artefacts != nil && !frame.Native {
+				if err := e.Artefacts.StoreArtefact(ctx, key, frame.Text); err != nil {
+					debuglog.Renderf("render.store.artefact err=%v key=%s", err, key)
 				}
 			}
 		}

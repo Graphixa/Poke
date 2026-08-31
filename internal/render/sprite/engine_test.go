@@ -93,6 +93,17 @@ func (m *memStore) StoreNative(_ context.Context, key, frame string) error {
 	return nil
 }
 
+func flushNativePersist(t *testing.T, e *sprite.Engine, res sprite.RenderResult) {
+	t.Helper()
+	if e == nil || res.CacheKey == "" || res.ANSI == "" {
+		return
+	}
+	if err := e.PersistFrame(context.Background(), res.CacheKey, res.ANSI); err != nil {
+		t.Fatal(err)
+	}
+	e.ClosePersist()
+}
+
 type fakeAPI struct {
 	data map[string][]byte
 	err  error
@@ -526,13 +537,15 @@ func TestEngineNativeDiskCacheSkipsEncodeOnFreshEngine(t *testing.T) {
 		}
 	}
 	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
-	res1 := mk().Render(context.Background(), poke, 24)
+	e1 := mk()
+	res1 := e1.Render(context.Background(), poke, 24)
 	if !res1.Native || res1.ANSI != "NATIVE" {
 		t.Fatalf("first render: %+v", res1)
 	}
 	if native.renders != 1 {
 		t.Fatalf("renders=%d after first", native.renders)
 	}
+	flushNativePersist(t, e1, res1)
 	if _, err := store.Native(context.Background(), res1.CacheKey); err != nil {
 		t.Fatalf("expected native disk store: %v", err)
 	}
@@ -764,12 +777,15 @@ func TestLookupCachedHitsDiskOnFreshEngine(t *testing.T) {
 		}
 	}
 	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
-	if res := mk().RenderCold(context.Background(), poke, 24); !res.Native {
-		t.Fatalf("cold: %+v", res)
+	e1 := mk()
+	cold := e1.RenderCold(context.Background(), poke, 24)
+	if !cold.Native {
+		t.Fatalf("cold: %+v", cold)
 	}
 	if native.renders != 1 {
 		t.Fatalf("renders=%d after cold", native.renders)
 	}
+	flushNativePersist(t, e1, cold)
 	pngReads := store.pngReads
 	res, hit := mk().LookupCached(context.Background(), poke, 24)
 	if !hit || res.ANSI != "NATIVE" || !res.Native {
@@ -905,12 +921,14 @@ func TestWarmSelectionSkipsSixelEncode(t *testing.T) {
 	bg := color.RGBA{A: 255}
 	poke := domain.Pokemon{ID: 401, Slug: "kricketot", DisplayName: "Kricketot"}
 	first := nativeEngine(store, native, bg)
-	if res := first.RenderCold(context.Background(), poke, 32); !res.Native {
-		t.Fatalf("cold: %+v", res)
+	cold := first.RenderCold(context.Background(), poke, 32)
+	if !cold.Native {
+		t.Fatalf("cold: %+v", cold)
 	}
 	if native.renders != 1 {
 		t.Fatalf("renders=%d after cold", native.renders)
 	}
+	flushNativePersist(t, first, cold)
 	fresh := nativeEngine(store, native, bg)
 	res, hit := fresh.LookupCached(context.Background(), poke, 32)
 	if !hit || !res.Native {
@@ -936,10 +954,15 @@ func TestMissingSingleArtifactColdRendersOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 		poke := domain.Pokemon{ID: p.id, Slug: p.slug, DisplayName: p.slug}
-		if res := eng.RenderCold(context.Background(), poke, 24); !res.Native {
+		res := eng.RenderCold(context.Background(), poke, 24)
+		if !res.Native {
 			t.Fatalf("seed %d: %+v", i, res)
 		}
+		if err := eng.PersistFrame(context.Background(), res.CacheKey, res.ANSI); err != nil {
+			t.Fatal(err)
+		}
 	}
+	eng.ClosePersist()
 	if native.renders != 4 {
 		t.Fatalf("seed renders=%d", native.renders)
 	}
@@ -972,6 +995,7 @@ func TestMissingSingleArtifactColdRendersOnce(t *testing.T) {
 	if native.renders != 5 {
 		t.Fatalf("401 should encode once, renders=%d", native.renders)
 	}
+	flushNativePersist(t, eng2, cold)
 	res, hit := nativeEngine(store, native, bg).LookupCached(context.Background(), domain.Pokemon{ID: 401, Slug: "kricketot"}, 24)
 	if !hit || res.ANSI != cold.ANSI {
 		t.Fatalf("revisit 401 hit=%v %+v", hit, res)

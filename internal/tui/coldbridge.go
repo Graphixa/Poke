@@ -79,9 +79,11 @@ func (b *coldSchedBridge) RenderCold(ctx context.Context, pokemon domain.Pokemon
 	}
 }
 
-func (b *coldSchedBridge) Persist(_ context.Context, _, _ string) error {
-	// Phase 7 moves gzip persistence off the display path; RenderCold stores today.
-	return nil
+func (b *coldSchedBridge) Persist(ctx context.Context, cacheKey, frame string) error {
+	if b.sprites == nil || cacheKey == "" || frame == "" {
+		return nil
+	}
+	return b.sprites.PersistFrame(ctx, cacheKey, frame)
 }
 
 func (m *Model) initColdScheduler() {

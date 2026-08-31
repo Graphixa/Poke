@@ -88,6 +88,8 @@ func (f *fakeSprites) ClearNativeRegion(cellsW, cellsH int) string { return "" }
 
 func (f *fakeSprites) InvalidateSpecies(int) {}
 
+func (f *fakeSprites) PersistFrame(_ context.Context, _, _ string) error { return nil }
+
 func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}
