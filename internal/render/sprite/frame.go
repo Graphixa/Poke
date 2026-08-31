@@ -28,7 +28,15 @@ const (
 	FrameWidth  = MaxFrameSize
 	FrameHeight = MaxFrameSize / CellAspectY
 
-	// SixelCellPxW/H convert terminal cells to sixel pixels (monospace ≈ 8×16).
+	// SixelCellPxW/H convert terminal cells to sixel pixel targets.
+	//
+	// These defaults (8×16) approximate common monospace cell geometry. They are
+	// not universal: actual cell pixels vary by terminal/font/DPI. Cache identity
+	// uses the resulting pixel dimensions, so a future improvement (e.g. CSI 16 t
+	// cell-size query) naturally creates distinct artefacts without migration.
+	//
+	// TODO(terminal): query CSI 16 t / DECSRPP when production capability probing
+	// exposes reliable cell pixel dimensions; until then retain this fallback.
 	SixelCellPxW = 8
 	SixelCellPxH = 16
 )
