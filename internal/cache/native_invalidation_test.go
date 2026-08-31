@@ -38,7 +38,7 @@ func TestEnsureNativeManifestPurgesIncompatibleFrames(t *testing.T) {
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
 		t.Fatal("expected legacy v12 frame deleted")
 	}
-	if _, err := os.Stat(filepath.Join(root, "native", newKey+".frame")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "native", newKey+".sixel.gz")); err != nil {
 		t.Fatalf("current frame missing: %v", err)
 	}
 }

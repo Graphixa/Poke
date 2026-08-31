@@ -316,13 +316,13 @@ func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, err
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".frame") {
+		if !isNativeArtefactName(name) {
 			continue
 		}
 		if !strings.Contains(name, dimTag) || !strings.Contains(name, protoNeedle) {
 			continue
 		}
-		key := strings.TrimSuffix(name, ".frame")
+		key, _ := nativeKeyFromFilename(name)
 		hash, proto, fw, fh, _, _, _, parseErr := sprite.ParseNativeCacheKey(key)
 		if parseErr != nil || hash == "" || fw != pxW || fh != pxH {
 			continue
@@ -336,7 +336,10 @@ func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, err
 }
 
 func speciesIDFromNativeFilename(name string) int {
-	key := strings.TrimSuffix(name, ".frame")
+	key, ok := nativeKeyFromFilename(name)
+	if !ok {
+		return 0
+	}
 	if !strings.HasPrefix(key, "named-") {
 		return 0
 	}
@@ -404,10 +407,10 @@ func (s *Store) auditNativeFrameCounts(protocol string) (map[int]int, error) {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".frame") {
+		if !isNativeArtefactName(name) {
 			continue
 		}
-		key := strings.TrimSuffix(name, ".frame")
+		key, _ := nativeKeyFromFilename(name)
 		hash, proto, fw, fh, _, ver, _, parseErr := sprite.ParseNativeCacheKey(key)
 		if parseErr != nil || hash == "" {
 			continue

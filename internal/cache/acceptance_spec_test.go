@@ -119,7 +119,7 @@ func TestCompleteManifestMatchesFilesystem(t *testing.T) {
 	}
 
 	key := sprite.NativeCacheKey(sprite.NamedAssetKey(401, "kricketot", "artwork"), "sixel", w, h, bg, 64)
-	path := filepath.Join(root, "native", key+".frame")
+	path := filepath.Join(root, "native", key+".sixel.gz")
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}

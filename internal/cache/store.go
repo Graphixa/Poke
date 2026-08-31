@@ -249,18 +249,28 @@ func (s *Store) HasNativeFile(key string) bool {
 }
 
 func (s *Store) Native(_ context.Context, key string) ([]byte, error) {
-	data, err := os.ReadFile(s.nativePath(key))
+	path := s.nativePath(key)
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	return data, nil
+	out, err := gzipDecompressFrame(data)
+	if err != nil {
+		_ = s.quarantine(path, data)
+		return nil, ErrNotFound
+	}
+	return out, nil
 }
 
 func (s *Store) StoreNative(_ context.Context, key string, data []byte) error {
-	return writeAtomicRename(s.nativePath(key), data, 0o600)
+	compressed, err := gzipCompressFrame(data)
+	if err != nil {
+		return err
+	}
+	return writeAtomicRename(s.nativePath(key), compressed, 0o600)
 }
 
 func bytesTrimSpace(b []byte) []byte {
@@ -372,7 +382,7 @@ func (s *Store) halfblockPath(key string) string {
 	return filepath.Join(s.root, "halfblock", key+".ansi")
 }
 func (s *Store) nativePath(key string) string {
-	return filepath.Join(s.root, "native", key+".frame")
+	return filepath.Join(s.root, "native", nativeFrameFilename(key))
 }
 
 // purgeIncompatibleNativeArtefacts deletes derived native frames that do not
@@ -391,10 +401,10 @@ func (s *Store) purgeIncompatibleNativeArtefacts(currentVersion string) error {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".frame") {
+		if !isNativeArtefactName(name) {
 			continue
 		}
-		key := strings.TrimSuffix(name, ".frame")
+		key, _ := nativeKeyFromFilename(name)
 		_, _, _, _, _, ver, _, parseErr := sprite.ParseNativeCacheKey(key)
 		if parseErr != nil || ver != currentVersion {
 			if rmErr := os.Remove(filepath.Join(dir, name)); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
@@ -425,12 +435,12 @@ func (s *Store) DeleteNativeForSpecies(speciesID int) error {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasSuffix(name, ".frame") {
+		if !isNativeArtefactName(name) {
 			continue
 		}
-		remove := strings.HasPrefix(name, prefix)
+		key, _ := nativeKeyFromFilename(name)
+		remove := strings.HasPrefix(key, prefix)
 		if !remove {
-			key := strings.TrimSuffix(name, ".frame")
 			if hash, _, _, _, _, _, _, parseErr := sprite.ParseNativeCacheKey(key); parseErr == nil {
 				_, remove = hashes[hash]
 			}

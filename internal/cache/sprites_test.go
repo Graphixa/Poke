@@ -59,7 +59,7 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 	if err != nil || frame != "FRAME" {
 		t.Fatalf("Native = %q err=%v", frame, err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "native", nkey+".frame")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "native", nkey+".sixel.gz")); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.StoreNative(context.Background(), "../escape", "x"); err == nil {
