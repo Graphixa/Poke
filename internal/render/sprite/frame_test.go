@@ -6,6 +6,62 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
+func TestFrameStepsThreeBuckets(t *testing.T) {
+	want := []int{24, 32, 40}
+	got := sprite.FrameSteps()
+	if len(got) != len(want) {
+		t.Fatalf("steps=%v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("steps[%d]=%d want %d (full=%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestFrameStepsMaxFirstThreeBuckets(t *testing.T) {
+	want := []int{40, 32, 24}
+	got := sprite.FrameStepsMaxFirst()
+	if len(got) != len(want) {
+		t.Fatalf("steps=%v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("steps[%d]=%d want %d", i, got[i], want[i])
+		}
+	}
+}
+
+func TestClampFrameSideThreeBuckets(t *testing.T) {
+	cases := map[int]int{
+		20: 24, 23: 24, 24: 24, 25: 24, 31: 24,
+		32: 32, 33: 32, 39: 32, 40: 40, 56: 40,
+	}
+	for in, want := range cases {
+		if got := sprite.ClampFrameSide(in); got != want {
+			t.Fatalf("ClampFrameSide(%d)=%d want %d", in, got, want)
+		}
+	}
+}
+
+func TestLargestFrameFittingThreeBuckets(t *testing.T) {
+	steps := sprite.FrameSteps()
+	if len(steps) != 3 {
+		t.Fatalf("steps=%v", steps)
+	}
+	minOW, minOH := sprite.OuterFor(sprite.MinFrameSize)
+	if sprite.LargestFrameFitting(minOW-1, minOH) != 0 {
+		t.Fatal("expected no fit when too small")
+	}
+	if got := sprite.LargestFrameFitting(minOW, minOH); got != 24 {
+		t.Fatalf("min fit=%d want 24", got)
+	}
+	maxOW, maxOH := sprite.OuterFor(40)
+	if got := sprite.LargestFrameFitting(maxOW, maxOH); got != 40 {
+		t.Fatalf("max fit=%d want 40", got)
+	}
+}
+
 func TestFrameStepsAndFit(t *testing.T) {
 	steps := sprite.FrameSteps()
 	if len(steps) < 2 {
@@ -28,8 +84,8 @@ func TestFrameStepsAndFit(t *testing.T) {
 }
 
 func TestFrameSizeForAspect(t *testing.T) {
-	w, h := sprite.FrameSizeFor(28)
-	if w != 28 || h != 14 {
+	w, h := sprite.FrameSizeFor(32)
+	if w != 32 || h != 16 {
 		t.Fatalf("got %dx%d", w, h)
 	}
 	w, h = sprite.FrameSizeFor(99)
@@ -39,7 +95,6 @@ func TestFrameSizeForAspect(t *testing.T) {
 }
 
 func TestOuterForVisualSquare(t *testing.T) {
-	// Pad is aspect-corrected: outer box should stay visually square like the art.
 	for _, side := range sprite.FrameSteps() {
 		ow, oh := sprite.OuterFor(side)
 		if ow != oh*sprite.CellAspectY {

@@ -319,8 +319,8 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 	if sprite.ClampFrameSide(45) != sprite.MaxFrameSize {
 		t.Fatalf("clamp 45 = %d want %d", sprite.ClampFrameSide(45), sprite.MaxFrameSize)
 	}
-	if sprite.ClampFrameSide(30) != 28 && sprite.ClampFrameSide(30) != 32 {
-		t.Fatalf("clamp 30 = %d", sprite.ClampFrameSide(30))
+	if sprite.ClampFrameSide(30) != 24 {
+		t.Fatalf("clamp 30 = %d want 24", sprite.ClampFrameSide(30))
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/mattn/go-sixel"
 
+	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -15,21 +16,28 @@ import (
 // MaxColors is the sixel palette cap (DECSIXEL ≤256).
 const MaxColors = 256
 
-// Encode converts a prepared image to a single valid DECSIXEL DCS.
-// Height is snapped down to a multiple of 6 so the encoder does not emit a
-// leftover band below the raster (6px sixel bands).
+// Encode converts a prepared image to a single valid DECSIXEL DCS using the
+// production default palette (64 colours).
 func Encode(src stdimage.Image) (string, error) {
+	return EncodeWithColors(src, config.DefaultSixelColors)
+}
+
+// EncodeWithColors encodes src with a configurable palette limit (1–256).
+func EncodeWithColors(src stdimage.Image, colors int) (string, error) {
 	if src == nil {
 		return "", fmt.Errorf("sixel: nil source")
 	}
-	src = cropHeightToSixelBands(src)
+	if colors < 1 || colors > MaxColors {
+		return "", fmt.Errorf("sixel: invalid color count %d (want 1–256)", colors)
+	}
+	prepared := cropHeightToSixelBands(src)
 	sprite.NoteSixelEncode()
 	end := debuglog.Trace(debuglog.Render, "sixel.encode")
 	defer end()
 	var buf bytes.Buffer
 	enc := sixel.NewEncoder(&buf)
-	enc.Colors = MaxColors
-	if err := enc.Encode(src); err != nil {
+	enc.Colors = colors
+	if err := enc.Encode(prepared); err != nil {
 		return "", fmt.Errorf("sixel: encode: %w", err)
 	}
 	out := buf.String()
@@ -52,6 +60,10 @@ func EncodeFromCells(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderO
 	if threshold == 0 {
 		threshold = 16
 	}
+	colors := opts.SixelColors
+	if colors == 0 {
+		colors = config.DefaultSixelColors
+	}
 	pxW, pxH := sprite.PixelSize(cellsW, cellsH)
 	pxH = snapHeightToSixelBand(pxH)
 	source := opts.Source
@@ -59,7 +71,7 @@ func EncodeFromCells(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderO
 		source = sprite.SourceArtwork
 	}
 	prepared := sprite.PrepareEncodeSrc(src, pxW, pxH, source, bg, threshold, 1)
-	return Encode(prepared)
+	return EncodeWithColors(prepared, colors)
 }
 
 // snapHeightToSixelBand rounds pxH down to a multiple of 6 (one sixel band).

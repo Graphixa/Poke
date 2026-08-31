@@ -29,8 +29,43 @@ func TestDefault(t *testing.T) {
 	if cfg.Render.SpriteSource != "artwork" {
 		t.Fatalf("sprite_source = %q want artwork", cfg.Render.SpriteSource)
 	}
+	if cfg.Render.SixelColors != DefaultSixelColors {
+		t.Fatalf("sixel_colors = %d want %d", cfg.Render.SixelColors, DefaultSixelColors)
+	}
+	if cfg.EffectiveSixelColors() != DefaultSixelColors {
+		t.Fatalf("effective sixel_colors = %d want %d", cfg.EffectiveSixelColors(), DefaultSixelColors)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config is invalid: %v", err)
+	}
+}
+
+func TestEffectiveSixelColors(t *testing.T) {
+	cases := map[int]int{
+		0: 64, 64: 64, 128: 128, 256: 256,
+		254: 64, 65: 64, 512: 64, -1: 64,
+	}
+	for in, want := range cases {
+		cfg := Default()
+		cfg.Render.SixelColors = in
+		if got := cfg.EffectiveSixelColors(); got != want {
+			t.Fatalf("SixelColors=%d => %d want %d", in, got, want)
+		}
+	}
+}
+
+func TestLoadInvalidSixelColorsStillSucceeds(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte("render:\n  sixel_colors: 999\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() err=%v want success with fallback", err)
+	}
+	if cfg.EffectiveSixelColors() != DefaultSixelColors {
+		t.Fatalf("effective=%d want %d", cfg.EffectiveSixelColors(), DefaultSixelColors)
 	}
 }
 

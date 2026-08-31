@@ -66,6 +66,8 @@ type RenderOptions struct {
 	ContentHash string
 	// Quality selects interactive vs prewarm chafa knobs (chafa renderer only).
 	Quality QualityProfile
+	// SixelColors is the sixel palette limit (64 | 128 | 256); zero uses 64.
+	SixelColors int
 }
 
 // DefaultRenderOptions returns options suitable for the fixed sprite frame.

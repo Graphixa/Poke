@@ -44,6 +44,8 @@ type Engine struct {
 	// FrameW/FrameH override the fixed frame; zero uses FrameWidth/FrameHeight.
 	FrameW int
 	FrameH int
+	// SixelColors is the sixel palette limit (64 | 128 | 256); zero uses 64.
+	SixelColors int
 	// ClearNativeFn clears native placements; optional.
 	ClearNativeFn ClearNativeFunc
 	// ClearNativeRegionFn emits scoped Sixel/Kitty clear for WxH cells; optional.
@@ -601,6 +603,7 @@ func (e *Engine) renderOptions(label string, fw, fh int, hash string, quality Qu
 		Label:           label,
 		ContentHash:     hash,
 		Quality:         quality,
+		SixelColors:     e.SixelColors,
 	}
 }
 

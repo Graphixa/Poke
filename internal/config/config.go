@@ -16,6 +16,9 @@ import (
 const (
 	appDirectory = "pokedex"
 	configFile   = "config.yaml"
+
+	// DefaultSixelColors is the production sixel palette size.
+	DefaultSixelColors = 64
 )
 
 // Duration is a YAML duration encoded with Go duration syntax, such as 24h.
@@ -86,6 +89,8 @@ type Render struct {
 	SpritePrewarm string `yaml:"sprite_prewarm"`
 	// SpriteHD controls HD assets for native image: auto | off.
 	SpriteHD string `yaml:"sprite_hd"`
+	// SixelColors selects sixel palette size: 64 (default) | 128 | 256.
+	SixelColors int `yaml:"sixel_colors"`
 }
 
 type TUI struct {
@@ -119,6 +124,7 @@ func Default() Config {
 			Color:         "auto",
 			SpritePrewarm: "window",
 			SpriteHD:      "auto",
+			SixelColors:   DefaultSixelColors,
 		},
 		TUI:   TUI{ShowSprite: true},
 		Theme: Theme{Name: "catppuccin"},
@@ -235,6 +241,16 @@ func (c *Config) MigrateDeprecatedRenderModes() []string {
 		c.Render.SpriteMode = "halfblock"
 	}
 	return warns
+}
+
+// EffectiveSixelColors returns 64, 128, or 256. Unsupported values fall back to 64.
+func (c Config) EffectiveSixelColors() int {
+	switch c.Render.SixelColors {
+	case 64, 128, 256:
+		return c.Render.SixelColors
+	default:
+		return DefaultSixelColors
+	}
 }
 
 // EffectiveSpritePrewarm returns all_pixel | window | off.

@@ -8,15 +8,12 @@ package sprite
 //	width  = side
 //	height = side / CellAspectY
 //
-// The longest side scales in discrete steps between MinFrameSize and
-// MaxFrameSize. The image is shrunk uniformly to fit — never stretched.
+// Native sixel buckets are explicit sizes between MinFrameSize and MaxFrameSize.
 const (
 	// MinFrameSize is the smallest longest-side (cells) browse will show.
-	MinFrameSize = 20
+	MinFrameSize = 24
 	// MaxFrameSize is the largest longest-side (cells) browse will show.
 	MaxFrameSize = 40
-	// FrameStep is the discrete increment between min and max.
-	FrameStep = 4
 	// CellAspectY is how many cell-heights equal one cell-width in visual space
 	// (common monospace ≈ 2). Height = side / CellAspectY.
 	CellAspectY = 2
@@ -36,40 +33,38 @@ const (
 	SixelCellPxH = 16
 )
 
+// FrameBuckets lists the only native sixel frame buckets (24 / 32 / 40).
+var FrameBuckets = [...]int{24, 32, 40}
+
 // FrameSizeFor returns cell width×height for a longest-side step.
-// side is clamped into [MinFrameSize, MaxFrameSize] and snapped down to FrameStep.
 func FrameSizeFor(side int) (w, h int) {
 	side = ClampFrameSide(side)
 	return side, side / CellAspectY
 }
 
-// ClampFrameSide snaps side into the allowed step range.
+// ClampFrameSide snaps side down to the largest supported bucket that does not
+// exceed the requested side, clamped to [MinFrameSize, MaxFrameSize].
 func ClampFrameSide(side int) int {
-	if side < MinFrameSize {
-		return MinFrameSize
-	}
-	if side > MaxFrameSize {
+	if side >= MaxFrameSize {
 		return MaxFrameSize
 	}
-	off := side - MinFrameSize
-	side = MinFrameSize + (off/FrameStep)*FrameStep
-	if side < MinFrameSize {
+	if side <= MinFrameSize {
 		return MinFrameSize
 	}
-	return side
+	best := MinFrameSize
+	for _, s := range FrameBuckets {
+		if s <= side {
+			best = s
+		}
+	}
+	return best
 }
 
-// FrameSteps returns longest-side steps from min to max inclusive.
+// FrameSteps returns supported longest-side steps from smallest to largest.
 func FrameSteps() []int {
-	n := ((MaxFrameSize - MinFrameSize) / FrameStep) + 1
-	if n < 1 {
-		return []int{MinFrameSize}
-	}
-	steps := make([]int, 0, n)
-	for s := MinFrameSize; s <= MaxFrameSize; s += FrameStep {
-		steps = append(steps, s)
-	}
-	return steps
+	out := make([]int, len(FrameBuckets))
+	copy(out, FrameBuckets[:])
+	return out
 }
 
 // FrameStepsMaxFirst returns FrameSteps from largest to smallest bucket.

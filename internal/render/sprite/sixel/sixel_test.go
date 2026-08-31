@@ -64,6 +64,24 @@ func TestEncodeCropsHeightToSixelBands(t *testing.T) {
 	}
 }
 
+func TestEncodeWithColors(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 8, 12))
+	for y := 0; y < 12; y++ {
+		for x := 0; x < 8; x++ {
+			src.Set(x, y, color.RGBA{R: 0x80, G: 0x40, B: 0x20, A: 255})
+		}
+	}
+	for _, n := range []int{64, 128, 256} {
+		out, err := spritesixel.EncodeWithColors(src, n)
+		if err != nil {
+			t.Fatalf("colors=%d: %v", n, err)
+		}
+		if out == "" {
+			t.Fatalf("colors=%d: empty output", n)
+		}
+	}
+}
+
 func TestMaxColorsIs256(t *testing.T) {
 	if spritesixel.MaxColors != 256 {
 		t.Fatalf("MaxColors=%d want 256", spritesixel.MaxColors)

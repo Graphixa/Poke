@@ -52,7 +52,7 @@ func TestNativeWarmBatchPartialSizes(t *testing.T) {
 	bg := color.RGBA{A: 255}
 	engine := artworkNativeEngine(store, native, bg)
 	poke := domain.Pokemon{ID: 401, Slug: "kricketot", DisplayName: "Kricketot"}
-	existing := []int{20, 24, 28, 32}
+	existing := []int{24, 32}
 	for _, cells := range existing {
 		res := engine.NativeWarmRender(context.Background(), poke, cells)
 		if !res.Native {
@@ -63,10 +63,10 @@ func TestNativeWarmBatchPartialSizes(t *testing.T) {
 	store.pngReads = 0
 	beforeRenders := native.renders
 
-	all := append(append([]int(nil), existing...), 36, 40)
+	all := append(append([]int(nil), existing...), 40)
 	res := engine.NativeWarmBatch(context.Background(), poke, all)
-	if res.Encoded != 2 {
-		t.Fatalf("encoded=%d want 2 missing sizes", res.Encoded)
+	if res.Encoded != 1 {
+		t.Fatalf("encoded=%d want 1 missing size", res.Encoded)
 	}
 	if store.pngReads != 1 {
 		t.Fatalf("pngReads=%d want 1", store.pngReads)
@@ -74,8 +74,8 @@ func TestNativeWarmBatchPartialSizes(t *testing.T) {
 	if got := sprite.Stats().PNGDecodes.Load(); got != 1 {
 		t.Fatalf("pngDecodes=%d want 1", got)
 	}
-	if native.renders != beforeRenders+2 {
-		t.Fatalf("renders=%d want %d", native.renders, beforeRenders+2)
+	if native.renders != beforeRenders+1 {
+		t.Fatalf("renders=%d want %d", native.renders, beforeRenders+1)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestNativeWarmBatchFallsBackToSingleSizeRenderer(t *testing.T) {
 		Background: color.RGBA{A: 255},
 	}
 	poke := domain.Pokemon{ID: 4, Slug: "charmander", DisplayName: "Charmander"}
-	res := engine.NativeWarmBatch(context.Background(), poke, []int{24, 28})
+	res := engine.NativeWarmBatch(context.Background(), poke, []int{24, 32})
 	if res.Encoded != 0 {
 		t.Fatalf("non-native renderer should not batch encode: %+v", res)
 	}

@@ -25,7 +25,7 @@ func TestLayoutBreakpoints(t *testing.T) {
 	}{
 		{120, 52, true, true, false, false, 40},
 		{120, 34, true, true, false, false, 40},
-		{120, 22, true, true, false, false, 20}, // min body; below summary height gate
+		{120, 22, false, true, false, false, 0}, // min bucket 24 does not fit body at h=22
 		{120, 21, false, false, false, false, 0},
 		{71, 26, true, false, false, false, 24},
 		{70, 40, true, false, false, false, 24},
@@ -86,12 +86,12 @@ func TestListFirstColumns(t *testing.T) {
 
 func TestSpriteShowsWhenBodyFits(t *testing.T) {
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 22})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: sprite.MinTerminalHeight()})
 	f := m.LayoutFlags()
 	if !f.ShowSprite || f.SpriteSize < sprite.MinFrameSize {
-		t.Fatalf("expected sprite at 120x22, got show=%v size=%d", f.ShowSprite, f.SpriteSize)
+		t.Fatalf("expected sprite at 120x%d, got show=%v size=%d", sprite.MinTerminalHeight(), f.ShowSprite, f.SpriteSize)
 	}
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 21})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: sprite.MinTerminalHeight() - 1})
 	f = m.LayoutFlags()
 	if f.ShowSprite {
 		t.Fatal("expected sprite hidden when body shorter than min outer")
