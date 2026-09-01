@@ -34,6 +34,7 @@ func Run(ctx context.Context, opts Options) error {
 	m := runModel{Model: NewModel(opts)}
 	p := tea.NewProgram(m, tea.WithContext(ctx))
 	_, err := p.Run()
+	m.Model.shutdown()
 	if err != nil && !errors.Is(err, tea.ErrInterrupted) {
 		return err
 	}

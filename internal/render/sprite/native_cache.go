@@ -76,11 +76,6 @@ func (e *Engine) hasNativeFile(canonicalHash string, fw, fh int, bg color.RGBA, 
 	if e == nil || !IsHexSHA256(canonicalHash) {
 		return false
 	}
-	proto := e.protocolName()
-	key := NativeCacheKey(canonicalHash, proto, fw, fh, bg, sixelColors)
-	if _, ok := e.nativeMemory().Get(key); ok {
-		return true
-	}
 	if e.Artefacts == nil {
 		return false
 	}
@@ -88,6 +83,8 @@ func (e *Engine) hasNativeFile(canonicalHash string, fw, fh int, bg color.RGBA, 
 	if !ok {
 		return false
 	}
+	proto := e.protocolName()
+	key := NativeCacheKey(canonicalHash, proto, fw, fh, bg, sixelColors)
 	return checker.HasNativeFile(key)
 }
 

@@ -152,14 +152,48 @@ type Scheduler struct {
 	finalSettleMS  float64
 
 	onDisplay DisplayFunc
+
+	ownerCtx context.Context
+	stop     context.CancelFunc
 }
 
 // NewScheduler creates a scheduler with optional display callback.
-func NewScheduler(renderer Renderer, onDisplay DisplayFunc) *Scheduler {
+func NewScheduler(ownerCtx context.Context, renderer Renderer, onDisplay DisplayFunc) *Scheduler {
+	if ownerCtx == nil {
+		ownerCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(ownerCtx)
 	return &Scheduler{
 		renderer:  renderer,
 		onDisplay: onDisplay,
+		ownerCtx:  ctx,
+		stop:      cancel,
 	}
+}
+
+func (s *Scheduler) runCtx() context.Context {
+	if s == nil || s.ownerCtx == nil {
+		return context.Background()
+	}
+	return s.ownerCtx
+}
+
+// Stop cancels in-flight work and waits until the scheduler is idle.
+func (s *Scheduler) Stop(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	if s.active != nil {
+		s.active.cancel()
+		s.active = nil
+	}
+	s.pending = nil
+	if s.stop != nil {
+		s.stop()
+	}
+	s.mu.Unlock()
+	return s.WaitIdle(ctx)
 }
 
 // Select handles a selection change. When force is true, an in-flight encode for
@@ -337,7 +371,7 @@ func (s *Scheduler) runRender(job activeJob) {
 			s.display(job.req, displayRes)
 			s.mu.Lock()
 			if res.CacheKey != "" {
-				go func(key, f string) { _ = s.renderer.Persist(context.Background(), key, f) }(res.CacheKey, res.Frame)
+				_ = s.renderer.Persist(job.ctx, res.CacheKey, res.Frame)
 			}
 		} else {
 			s.staleCompleted++
@@ -352,12 +386,12 @@ func (s *Scheduler) runRender(job activeJob) {
 				Timings:     res.Timings,
 			})
 			if res.CacheKey != "" {
-				go func(key, f string) { _ = s.renderer.Persist(context.Background(), key, f) }(res.CacheKey, res.Frame)
+				_ = s.renderer.Persist(job.ctx, res.CacheKey, res.Frame)
 			}
 		}
 	}
 
-	outcome := s.takeStartLocked(context.Background(), s.lastSelectedAt)
+	outcome := s.takeStartLocked(s.runCtx(), s.lastSelectedAt)
 	s.mu.Unlock()
 	if outcome.cacheFrame != "" {
 		s.display(outcome.cacheReq, outcome.cacheRes)

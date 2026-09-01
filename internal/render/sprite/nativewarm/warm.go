@@ -139,12 +139,31 @@ func (s *Service) SetCells(cells int) {
 		s.priority = nil
 		s.countedDone = make(map[int]bool)
 		s.resetProgressLocked(cells)
+		warmable := append([]domain.SpeciesSummary(nil), s.warmable...)
 		ctx := s.workerCtx
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		complete := s.auditDiskLocked(ctx, cells)
 		s.mu.Unlock()
+
+		countedDone := make(map[int]bool)
+		done := 0
+		if s.cfg.Renderer != nil {
+			for _, sum := range warmable {
+				poke := domain.Pokemon{ID: sum.ID, Slug: sum.Slug}
+				if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
+					countedDone[sum.ID] = true
+					done++
+				}
+			}
+		}
+		complete := done >= len(warmable)
+
+		s.mu.Lock()
+		s.countedDone = countedDone
+		s.progress.done = done
+		s.mu.Unlock()
+
 		if !complete {
 			s.emitProgress()
 		}
@@ -268,25 +287,6 @@ func (s *Service) resetProgressLocked(cells int) {
 	}
 }
 
-// auditDiskLocked counts persisted native frames for the active bucket using
-// cheap file existence checks. Returns true when every warmable species is
-// already on disk for this spec (worker traversal can stay idle).
-func (s *Service) auditDiskLocked(ctx context.Context, cells int) bool {
-	if s.cfg.Renderer == nil || cells < sprite.MinFrameSize || len(s.warmable) == 0 {
-		return false
-	}
-	done := 0
-	for _, sum := range s.warmable {
-		poke := domain.Pokemon{ID: sum.ID, Slug: sum.Slug}
-		if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
-			s.countedDone[sum.ID] = true
-			done++
-		}
-	}
-	s.progress.done = done
-	return done >= s.progress.total
-}
-
 func specKey(cells int) string {
 	return sprite.NativeCacheSpecKey(cells)
 }
@@ -318,14 +318,12 @@ func (s *Service) markDoneLocked(speciesID int) {
 	}
 	s.countedDone[speciesID] = true
 	s.progress.done++
-	if s.progress.done > s.progress.total {
-		s.progress.total = s.progress.done
-	}
 }
 
-// completeSpecies records that speciesID was visited for the active bucket,
-// including skips (load/render/persist failures) so progress can finish.
-func (s *Service) completeSpecies(speciesID int) {
+// markPersistedSpecies records that speciesID has a persisted/readable frame
+// for the active bucket. Done increments only after disk verification or a
+// successful PersistNativeFrame in this session.
+func (s *Service) markPersistedSpecies(speciesID int) {
 	s.mu.Lock()
 	s.markDoneLocked(speciesID)
 	s.mu.Unlock()
@@ -363,7 +361,7 @@ func (s *Service) worker(ctx context.Context) {
 		id, ok := s.popNext()
 		if !ok {
 			if anchorID, onlyAnchor := s.uncountedAnchorOnly(); onlyAnchor {
-				s.completeSpecies(anchorID)
+				s.warmOne(ctx, anchorID)
 				continue
 			}
 			if id, retry := s.popUncountedRetry(); retry {
@@ -427,6 +425,10 @@ func (s *Service) popNext() (int, bool) {
 			}
 			continue
 		}
+		anchorID := s.warmable[anchor].ID
+		if !s.countedDone[anchorID] {
+			return anchorID, true
+		}
 		return 0, false
 	}
 }
@@ -471,7 +473,6 @@ func (s *Service) popUncountedRetry() (int, bool) {
 func (s *Service) warmOne(ctx context.Context, speciesID int) {
 	cells := s.ActiveCells()
 	if cells < sprite.MinFrameSize {
-		s.completeSpecies(speciesID)
 		return
 	}
 	if s.cfg.Renderer != nil {
@@ -482,7 +483,6 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 	poke, err := s.cfg.Loader.Pokemon(ctx, speciesID)
 	if err != nil {
 		debuglog.Renderf("nativewarm skip species=%d err=%v", speciesID, err)
-		s.completeSpecies(speciesID)
 		return
 	}
 	if sum, ok := s.indexByID[speciesID]; ok && sum.Slug != "" {
@@ -494,20 +494,22 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
-		s.completeSpecies(speciesID)
+	if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
+		s.markPersistedSpecies(speciesID)
 		return
 	}
 	res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
 	if res.UsePlaceholder || !res.Native || res.ANSI == "" || res.CacheKey == "" {
 		debuglog.Renderf("nativewarm miss species=%d backend=%s", speciesID, res.Backend)
-		s.completeSpecies(speciesID)
 		return
 	}
 	if err := s.cfg.Renderer.PersistNativeFrame(ctx, res.CacheKey, res.ANSI); err != nil {
 		debuglog.Renderf("nativewarm persist species=%d err=%v", speciesID, err)
-		s.completeSpecies(speciesID)
 		return
 	}
-	s.completeSpecies(speciesID)
+	if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
+		s.markPersistedSpecies(speciesID)
+		return
+	}
+	debuglog.Renderf("nativewarm persist species=%d unverified on disk", speciesID)
 }

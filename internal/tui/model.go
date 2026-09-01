@@ -137,18 +137,22 @@ type Model struct {
 	nativePaintCells    int
 	nativePaintANSI     string
 
-	warmer        SpriteWarmer
-	dossierWarmer DossierWarmer
-	artworkWarmer ArtworkWarmer
-	nativeWarmer  NativeWarmer
-	warmEvents    <-chan WarmProgress
-	warmDone      int
-	warmTotal     int
-	warmActive    bool
-	warmStage     string
-	warmCells     int
-	warmRight     string
-	warmHintAt    time.Time
+	warmer           SpriteWarmer
+	dossierWarmer    DossierWarmer
+	artworkWarmer    ArtworkWarmer
+	nativeWarmer     NativeWarmer
+	warmEvents       <-chan WarmProgress
+	warmDone         int
+	warmTotal        int
+	warmActive       bool
+	warmStage        string
+	warmCells        int
+	nativeWarmDone   int
+	nativeWarmTotal  int
+	nativeWarmActive bool
+	nativeWarmCells  int
+	warmRight        string
+	warmHintAt       time.Time
 
 	pokemonSrc PokemonSource
 

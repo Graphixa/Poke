@@ -135,7 +135,7 @@ func poke(id int) domain.Pokemon {
 }
 
 func newTestScheduler(f *fakeRenderer) *coldsched.Scheduler {
-	return coldsched.NewScheduler(f, func(_ coldsched.Request, res coldsched.ColdResult) {})
+	return coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) {})
 }
 
 func TestColdSchedulerAtMostOneActive(t *testing.T) {
@@ -224,7 +224,7 @@ func TestColdSchedulerStaleResultNotDisplayed(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
 	var displayed []string
-	s := coldsched.NewScheduler(f, func(_ coldsched.Request, res coldsched.ColdResult) { displayed = append(displayed, res.Frame) })
+	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) { displayed = append(displayed, res.Frame) })
 	ctx := context.Background()
 
 	s.Select(ctx, 1, poke(1), 32, false, false)
@@ -248,7 +248,7 @@ func TestColdSchedulerFinalSelectionDisplayed(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
 	var lastFrame string
-	s := coldsched.NewScheduler(f, func(_ coldsched.Request, res coldsched.ColdResult) { lastFrame = res.Frame })
+	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) { lastFrame = res.Frame })
 	ctx := context.Background()
 
 	for id := 1; id <= 5; id++ {

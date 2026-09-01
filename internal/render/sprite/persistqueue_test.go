@@ -2,6 +2,8 @@ package sprite_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,4 +109,30 @@ func TestShutdownDrainsAcceptedPersistenceJobs(t *testing.T) {
 	if len(store.native) != 2 {
 		t.Fatalf("native keys=%d want 2 drained", len(store.native))
 	}
+}
+
+func TestSubmitAfterCloseReturnsCanceled(t *testing.T) {
+	store := newMemStore()
+	engine := &sprite.Engine{Artefacts: store}
+	_ = engine.PersistFrame(context.Background(), "a", "A")
+	engine.ClosePersist()
+	if err := engine.PersistFrame(context.Background(), "b", "B"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("PersistFrame after close err=%v want canceled", err)
+	}
+}
+
+func TestConcurrentSubmitAndClose(t *testing.T) {
+	store := newMemStore()
+	engine := &sprite.Engine{Artefacts: store}
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 20; i++ {
+			key := fmt.Sprintf("k%d", i)
+			_ = engine.PersistFrame(context.Background(), key, "F")
+		}
+		close(done)
+	}()
+	time.Sleep(5 * time.Millisecond)
+	engine.ClosePersist()
+	<-done
 }

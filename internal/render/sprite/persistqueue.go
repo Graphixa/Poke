@@ -97,7 +97,6 @@ func (q *persistQueue) submit(ctx context.Context, key, frame string, wait bool)
 		q.mu.Unlock()
 		return context.Canceled
 	}
-	ch := q.ch
 	q.mu.Unlock()
 
 	if err := q.waitCapacity(ctx); err != nil {
@@ -108,6 +107,14 @@ func (q *persistQueue) submit(ctx context.Context, key, frame string, wait bool)
 	if wait {
 		job.done = make(chan error, 1)
 	}
+
+	q.mu.Lock()
+	if q.closed || q.ch == nil {
+		q.mu.Unlock()
+		return context.Canceled
+	}
+	ch := q.ch
+	q.mu.Unlock()
 
 	select {
 	case ch <- job:

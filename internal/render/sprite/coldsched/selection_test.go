@@ -12,7 +12,7 @@ func TestColdSchedulerSelectionDoesNotCancelActive(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
 	var displayed []string
-	s := coldsched.NewScheduler(f, func(_ coldsched.Request, res coldsched.ColdResult) {
+	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) {
 		displayed = append(displayed, res.Frame)
 	})
 	ctx := context.Background()

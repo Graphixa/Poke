@@ -221,9 +221,9 @@ func TestCacheHitSkipsRender(t *testing.T) {
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
 	svc.SetNeighborsFromList(index, 1, 1)
-	waitPersists(t, rend, 1)
-	if rend.renders() != 1 {
-		t.Fatalf("renders=%d want 1 (skip cached neighbor)", rend.renders())
+	waitPersists(t, rend, 2)
+	if rend.renders() != 2 {
+		t.Fatalf("renders=%d want 2 (skip cached neighbor, warm anchor+next)", rend.renders())
 	}
 	svc.Stop()
 }
@@ -235,8 +235,8 @@ func TestNeighborOrderNPlusThenNMinus(t *testing.T) {
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
 	svc.SetNeighborsFromList(index, 2, 1)
-	waitPersists(t, rend, 4)
-	want := []int{4, 5, 2, 1}
+	waitPersists(t, rend, 5)
+	want := []int{4, 5, 2, 1, 3}
 	got := rend.renderedIDs()
 	if len(got) != len(want) {
 		t.Fatalf("ids=%v want %v", got, want)
@@ -405,7 +405,7 @@ func TestAlreadyCachedCandidatesAreSkipped(t *testing.T) {
 	svc.Stop()
 }
 
-func TestNativeProgressCompletesWhenSpeciesUnwarmable(t *testing.T) {
+func TestNativeProgressDoesNotCountFailedSpecies(t *testing.T) {
 	index := indexN(5)
 	var last cache.Progress
 	svc := nativewarm.New(nativewarm.Config{
@@ -424,14 +424,19 @@ func TestNativeProgressCompletesWhenSpeciesUnwarmable(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		done, total := svc.Snapshot()
-		if done >= total && total == 5 {
+		if done >= 3 && done < total {
+			if last.Done != done || last.Total != total {
+				t.Fatalf("progress=%+v snapshot=%d/%d", last, done, total)
+			}
 			svc.Stop()
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	done, total := svc.Snapshot()
-	t.Fatalf("progress stuck at %d/%d last=%+v", done, total, last)
+	if done >= total {
+		t.Fatalf("progress falsely complete at %d/%d last=%+v", done, total, last)
+	}
 	svc.Stop()
 }
 

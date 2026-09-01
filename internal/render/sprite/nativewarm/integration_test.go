@@ -270,8 +270,8 @@ func TestIntegrationRestartUsesPersistedCache(t *testing.T) {
 	svc.SetNeighborsFromList(env.index, 0, 1)
 
 	waitUntil(t, 5*time.Second, func() bool {
-		return env.engine.HasNativeCache(ctx, domain.Pokemon{ID: 2, Slug: slugForID(2)}, 32)
-	}, "warm first background species")
+		return countNativeGzipFiles(t, env.root) >= warmN
+	}, "persist first background species to disk")
 	if n := countNativeGzipFiles(t, env.root); n < warmN {
 		t.Fatalf("persisted files=%d want >= %d", n, warmN)
 	}

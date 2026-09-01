@@ -50,8 +50,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.SetWidth(msg.Width)
 		m.ensureListVisible()
+		layoutCmd := m.handleSpriteLayoutChange(prevShow, prevSide)
 		m.notifyWarmer()
-		return m, m.handleSpriteLayoutChange(prevShow, prevSide)
+		return m, layoutCmd
 
 	case dossierCoreMsg:
 		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
@@ -144,9 +145,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case warmProgressMsg:
 		if msg.closed {
 			m.warmActive = false
+			m.nativeWarmActive = false
 			m.warmRight = ""
 			m.warmStage = ""
 			m.warmCells = 0
+			m.nativeWarmCells = 0
 			var clear tea.Cmd
 			if m.nativeSpriteActive() {
 				clear = clearWarmFooterRawCmd(m)
@@ -156,23 +159,31 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(clear, listenWarmProgress(m.warmEvents))
 		}
-		m.warmDone = msg.Done
-		m.warmTotal = msg.Total
-		m.warmActive = msg.Total > 0 && msg.Done < msg.Total
-		if msg.Stage != "" {
-			m.warmStage = msg.Stage
+		if msg.Stage == "native" {
+			m.nativeWarmDone = msg.Done
+			m.nativeWarmTotal = msg.Total
+			m.nativeWarmActive = msg.Total > 0 && msg.Done < msg.Total
+			if msg.Cells > 0 {
+				m.nativeWarmCells = msg.Cells
+			}
+		} else {
+			m.warmDone = msg.Done
+			m.warmTotal = msg.Total
+			m.warmActive = msg.Total > 0 && msg.Done < msg.Total
+			if msg.Stage != "" {
+				m.warmStage = msg.Stage
+			}
+			if msg.Cells > 0 {
+				m.warmCells = msg.Cells
+			}
 		}
-		if msg.Cells > 0 {
-			m.warmCells = msg.Cells
-		}
-		right := ""
-		if m.warmActive {
-			right = formatWarmFooterRight(m.warmStage, m.warmDone, m.warmTotal, m.warmCells)
-		}
+		right := m.effectiveWarmFooterRight()
 		rightChanged := right != m.warmRight
 		now := time.Now()
+		footerComplete := (m.nativeWarmActive && m.nativeWarmDone == m.nativeWarmTotal) ||
+			(!m.nativeWarmActive && m.warmActive && m.warmDone == m.warmTotal)
 		shouldShow := rightChanged && (m.warmRight == "" || right == "" ||
-			now.Sub(m.warmHintAt) >= warmHintMinInterval || m.warmDone == m.warmTotal)
+			now.Sub(m.warmHintAt) >= warmHintMinInterval || footerComplete)
 		if shouldShow {
 			m.warmRight = right
 			m.warmHintAt = now
@@ -182,9 +193,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reload = m.refreshSpriteAfterWarm(msg.SpeciesID, msg.Stage)
 		}
 		var patch tea.Cmd
-		if msg.Total > 0 && msg.Done >= msg.Total && m.nativeSpriteActive() {
+		nativeComplete := msg.Stage == "native" && msg.Total > 0 && msg.Done >= msg.Total
+		if nativeComplete && m.nativeSpriteActive() {
 			patch = clearWarmFooterRawCmd(m)
-		} else if m.warmActive && m.nativeSpriteActive() {
+		} else if (m.nativeWarmActive || m.warmActive) && m.nativeSpriteActive() && right != "" {
 			patch = patchWarmFooterCmd(m)
 		}
 		return m, tea.Batch(reload, patch, listenWarmProgress(m.warmEvents))
@@ -348,6 +360,16 @@ func (m Model) hasSelectedCore() bool {
 func (m *Model) isSelectedID(id int) bool {
 	sel, ok := m.selected()
 	return ok && sel.ID == id
+}
+
+func (m *Model) effectiveWarmFooterRight() string {
+	if m.nativeWarmActive {
+		return formatWarmFooterRight("native", m.nativeWarmDone, m.nativeWarmTotal, m.nativeWarmCells)
+	}
+	if m.warmActive {
+		return formatWarmFooterRight(m.warmStage, m.warmDone, m.warmTotal, m.warmCells)
+	}
+	return ""
 }
 
 func (m *Model) syncSelectionLoads() tea.Cmd {

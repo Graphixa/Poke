@@ -93,7 +93,7 @@ func (m *Model) initColdScheduler() {
 	}
 	m.coldFrameCh = make(chan coldFrameMsg, 2)
 	bridge := newColdSchedBridge(m.sprites, m.pokemonSrc, m.coldFrameCh)
-	m.coldSched = coldsched.NewScheduler(bridge, func(req coldsched.Request, res coldsched.ColdResult) {
+	m.coldSched = coldsched.NewScheduler(m.ctx, bridge, func(req coldsched.Request, res coldsched.ColdResult) {
 		msg := coldFrameMsg{
 			gen:         req.Gen,
 			speciesID:   req.SpeciesID,
@@ -108,6 +108,16 @@ func (m *Model) initColdScheduler() {
 		default:
 		}
 	})
+}
+
+func (m *Model) shutdown() {
+	if m.coldSched != nil {
+		ctx := m.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		_ = m.coldSched.Stop(ctx)
+	}
 }
 
 func listenColdFrame(ch <-chan coldFrameMsg) tea.Cmd {
