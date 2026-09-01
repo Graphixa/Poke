@@ -2,6 +2,13 @@
 # Run in Windows Terminal with sixel active. Requires built poke.exe and an
 # existing active dataset/cache (not first-run bootstrap).
 #
+# IMPORTANT: StartupReport lines print on browse *quit* (q / Ctrl+C). The
+# automated loop below uses Start-Process redirection and may not capture marks
+# without a real TTY. For authoritative timings, run manually in WT:
+#
+#   $env:POKEDEX_DEBUG_STARTUP = '1'
+#   1..10 | ForEach-Object { .\bin\poke.exe browse }  # quit each run with q
+#
 # Usage:
 #   .\scripts\measure-browse-startup.ps1
 #   .\scripts\measure-browse-startup.ps1 -Binary bin\poke.exe -Runs 10
