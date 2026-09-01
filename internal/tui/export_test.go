@@ -230,3 +230,11 @@ func (m Model) FgPendingSpeciesForTest() int {
 }
 
 func PrefetchRadiusForTest() int { return spritePrefetchRadius }
+
+// ColdFrameMsgForTest builds a cold-scheduler frame message for spinner tests.
+func ColdFrameMsgForTest(gen, speciesID, cells int, ansi string, placeholder, native bool, assetKind string) coldFrameMsg {
+	return coldFrameMsg{
+		gen: gen, speciesID: speciesID, cells: cells, ansi: ansi,
+		placeholder: placeholder, native: native, assetKind: assetKind,
+	}
+}

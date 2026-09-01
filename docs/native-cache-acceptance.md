@@ -1,6 +1,6 @@
 # Native cache acceptance checklist
 
-Automated coverage lives in `internal/render/sprite/nativewarm/warm_test.go`, `internal/render/sprite/persistqueue_test.go`, `internal/render/sprite/coldsched/selection_test.go`, `internal/tui/e2e_acceptance_test.go`, and `internal/cache/cache_lifecycle_test.go`.
+Automated coverage lives in `internal/render/sprite/nativewarm/warm_test.go`, `internal/render/sprite/nativewarm/integration_test.go`, `internal/render/sprite/persistqueue_test.go`, `internal/render/sprite/coldsched/selection_test.go`, `internal/tui/spinner_ux_test.go`, `internal/tui/e2e_acceptance_test.go`, and `internal/cache/cache_lifecycle_test.go`.
 
 ## Expected behaviour
 
