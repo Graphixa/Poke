@@ -292,6 +292,15 @@ func (s *Service) markDoneLocked(speciesID int) {
 	}
 }
 
+// completeSpecies records that speciesID was visited for the active bucket,
+// including skips (load/render/persist failures) so progress can finish.
+func (s *Service) completeSpecies(speciesID int) {
+	s.mu.Lock()
+	s.markDoneLocked(speciesID)
+	s.mu.Unlock()
+	s.emitProgress()
+}
+
 func (s *Service) emitProgress() {
 	if s.cfg.Progress == nil {
 		return
@@ -322,6 +331,14 @@ func (s *Service) worker(ctx context.Context) {
 		}
 		id, ok := s.popNext()
 		if !ok {
+			if anchorID, onlyAnchor := s.uncountedAnchorOnly(); onlyAnchor {
+				s.completeSpecies(anchorID)
+				continue
+			}
+			if id, retry := s.popUncountedRetry(); retry {
+				s.warmOne(ctx, id)
+				continue
+			}
 			if !s.wait(ctx) {
 				return
 			}
@@ -373,9 +390,47 @@ func (s *Service) popNext() (int, bool) {
 	return 0, false
 }
 
+func (s *Service) uncountedAnchorOnly() (int, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.anchor < 0 || s.anchor >= len(s.warmable) {
+		return 0, false
+	}
+	anchorID := s.warmable[s.anchor].ID
+	if s.countedDone[anchorID] {
+		return 0, false
+	}
+	uncounted := 0
+	for _, sum := range s.warmable {
+		if !s.countedDone[sum.ID] {
+			uncounted++
+			if uncounted > 1 {
+				return 0, false
+			}
+		}
+	}
+	return anchorID, true
+}
+
+func (s *Service) popUncountedRetry() (int, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	anchorID := 0
+	if s.anchor >= 0 && s.anchor < len(s.warmable) {
+		anchorID = s.warmable[s.anchor].ID
+	}
+	for _, sum := range s.warmable {
+		if !s.countedDone[sum.ID] && sum.ID != anchorID {
+			return sum.ID, true
+		}
+	}
+	return 0, false
+}
+
 func (s *Service) warmOne(ctx context.Context, speciesID int) {
 	cells := s.ActiveCells()
 	if cells < sprite.MinFrameSize {
+		s.completeSpecies(speciesID)
 		return
 	}
 	if s.cfg.Renderer != nil {
@@ -386,6 +441,7 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 	poke, err := s.cfg.Loader.Pokemon(ctx, speciesID)
 	if err != nil {
 		debuglog.Renderf("nativewarm skip species=%d err=%v", speciesID, err)
+		s.completeSpecies(speciesID)
 		return
 	}
 	if sum, ok := s.indexByID[speciesID]; ok && sum.Slug != "" {
@@ -398,26 +454,19 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 		return
 	}
 	if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
-		s.mu.Lock()
-		s.markDoneLocked(speciesID)
-		s.mu.Unlock()
-		s.emitProgress()
+		s.completeSpecies(speciesID)
 		return
 	}
 	res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
 	if res.UsePlaceholder || !res.Native || res.ANSI == "" || res.CacheKey == "" {
 		debuglog.Renderf("nativewarm miss species=%d backend=%s", speciesID, res.Backend)
+		s.completeSpecies(speciesID)
 		return
 	}
 	if err := s.cfg.Renderer.PersistNativeFrame(ctx, res.CacheKey, res.ANSI); err != nil {
 		debuglog.Renderf("nativewarm persist species=%d err=%v", speciesID, err)
+		s.completeSpecies(speciesID)
 		return
 	}
-	if err := ctx.Err(); err != nil {
-		return
-	}
-	s.mu.Lock()
-	s.markDoneLocked(speciesID)
-	s.mu.Unlock()
-	s.emitProgress()
+	s.completeSpecies(speciesID)
 }

@@ -385,6 +385,59 @@ func TestAlreadyCachedCandidatesAreSkipped(t *testing.T) {
 	svc.Stop()
 }
 
+func TestNativeProgressCompletesWhenSpeciesUnwarmable(t *testing.T) {
+	index := indexN(5)
+	var last cache.Progress
+	svc := nativewarm.New(nativewarm.Config{
+		Loader: failingLoader{failID: 2},
+		Renderer: &placeholderRenderer{
+			placeholderID: 3,
+		},
+		Index: index,
+		Progress: func(p cache.Progress) {
+			last = p
+		},
+	})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 0, 1)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		done, total := svc.Snapshot()
+		if done >= total && total == 5 {
+			svc.Stop()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	done, total := svc.Snapshot()
+	t.Fatalf("progress stuck at %d/%d last=%+v", done, total, last)
+	svc.Stop()
+}
+
+type failingLoader struct {
+	failID int
+}
+
+func (f failingLoader) Pokemon(_ context.Context, id int) (domain.Pokemon, error) {
+	if id == f.failID {
+		return domain.Pokemon{}, fmt.Errorf("missing")
+	}
+	return domain.Pokemon{ID: id}, nil
+}
+
+type placeholderRenderer struct {
+	fakeNativeRenderer
+	placeholderID int
+}
+
+func (p *placeholderRenderer) NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
+	if pokemon.ID == p.placeholderID {
+		return sprite.RenderResult{UsePlaceholder: true}
+	}
+	return p.fakeNativeRenderer.NativeWarmRender(ctx, pokemon, cells)
+}
+
 func TestNativeProgressDoneIncrementsOnlyAfterPersistence(t *testing.T) {
 	index := indexN(5)
 	block := make(chan struct{})

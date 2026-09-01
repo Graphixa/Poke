@@ -16,7 +16,7 @@ func formatWarmFooterRight(stage string, done, total, cells int) string {
 	}
 	switch stage {
 	case "native":
-		return formatNativeImageCacheFooter(cells, done, total)
+		return formatNativeImageCacheFooter(done, total)
 	case "artwork":
 		return formatArtworkCacheBar(done, total)
 	default:
@@ -36,7 +36,7 @@ func warmBarStyles() (label, fill, track, count lipgloss.Style) {
 	return label, fill, track, count
 }
 
-func formatNativeImageCacheFooter(cells int, done, total int) string {
+func formatNativeImageCacheFooter(done, total int) string {
 	if total <= 0 || done >= total {
 		return ""
 	}
@@ -48,7 +48,7 @@ func formatNativeImageCacheFooter(cells int, done, total int) string {
 	}
 	bar := fillSty.Render(strings.Repeat("█", filled)) +
 		trackSty.Render(strings.Repeat("░", barW-filled))
-	count := countSty.Render(fmt.Sprintf("%d/%d · %d", done, total, cells))
+	count := countSty.Render(fmt.Sprintf("%d/%d", done, total))
 	line := labelSty.Render("Image Cache") + " " + bar + " " + count
 	return fitWarmFooterRight(line)
 }
@@ -82,6 +82,6 @@ func fitWarmFooterRight(s string) string {
 }
 
 // FormatNativeCacheBarForTest exports the native progress label for tests.
-func FormatNativeCacheBarForTest(cells int, done, total int) string {
-	return formatNativeImageCacheFooter(cells, done, total)
+func FormatNativeCacheBarForTest(_ int, done, total int) string {
+	return formatNativeImageCacheFooter(done, total)
 }

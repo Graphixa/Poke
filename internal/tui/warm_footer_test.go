@@ -36,8 +36,11 @@ func TestImageCacheFooterVisibleForNativeWarm(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected visible bar for incomplete native warm")
 	}
-	if !strings.Contains(got, "0/1025") || !strings.Contains(got, "40") {
+	if !strings.Contains(got, "0/1025") {
 		t.Fatalf("unexpected bar: %q", got)
+	}
+	if strings.Contains(got, "·") {
+		t.Fatalf("bucket size must not appear in footer: %q", got)
 	}
 }
 
