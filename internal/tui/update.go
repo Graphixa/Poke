@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -52,7 +53,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureListVisible()
 		layoutCmd := m.handleSpriteLayoutChange(prevShow, prevSide)
 		m.notifyWarmer()
-		return m, layoutCmd
+		return m, m.noteFirstLayout(layoutCmd)
 
 	case dossierCoreMsg:
 		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
@@ -540,18 +541,43 @@ func (m *Model) currentSpriteCells() int {
 func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 	lay := m.layout()
 	if !lay.ShowSprite {
-		m.cancelSprite()
-		m.setImageBlank()
-		m.clearNativeDisplay()
+		m.resetSpriteLayoutState()
 		return nil
 	}
 	side := m.currentSpriteSide()
 	if !prevShow || prevSide != side {
-		m.clearImagePane()
-		m.clearNativeDisplay()
+		m.resetSpriteLayoutState()
 		return m.ensureSpriteLoad()
 	}
 	return nil
+}
+
+func (m *Model) resetSpriteLayoutState() {
+	m.selectionGen++
+	m.cancelSprite()
+	m.initColdScheduler()
+	if m.coldSched != nil {
+		m.coldSched.AbortForeground()
+	}
+	m.clearImagePane()
+	m.clearNativeDisplay()
+	m.setImageBlank()
+}
+
+func (m *Model) noteFirstLayout(cmd tea.Cmd) tea.Cmd {
+	if m.uiReady || m.width < 1 || m.height < 1 {
+		return cmd
+	}
+	m.uiReady = true
+	debuglog.StartupMark("startup.first_window_begin")
+	if cmd != nil {
+		debuglog.StartupMark("startup.foreground_scheduled")
+	}
+	if m.onUIReady != nil {
+		debuglog.StartupMark("startup.background_ready_queued")
+		m.onUIReady()
+	}
+	return cmd
 }
 
 func (m *Model) ensureSpriteLoad() tea.Cmd {

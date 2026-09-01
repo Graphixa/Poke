@@ -46,13 +46,7 @@ func (m *Model) runColdSelection(pokemon domain.Pokemon, cells int, force bool) 
 	m.setImageLoading()
 	m.coldSched.Select(m.ctx, m.selectionGen, pokemon, cells, force, true)
 	m.syncWarmerBusy()
-
-	select {
-	case msg := <-m.coldFrameCh:
-		return m.finishColdSelection(msg)
-	default:
-		return m.coldListenCmd()
-	}
+	return m.coldListenCmd()
 }
 
 func (m *Model) coldListenCmd() tea.Cmd {

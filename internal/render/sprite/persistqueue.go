@@ -19,12 +19,13 @@ type persistJob struct {
 }
 
 type persistQueue struct {
-	mu     sync.Mutex
-	ch     chan persistJob
-	once   sync.Once
-	closed bool
-	wg     sync.WaitGroup
-	store  func(ctx context.Context, key, frame string) error
+	mu       sync.Mutex
+	ch       chan persistJob
+	once     sync.Once
+	closed   bool
+	submitWG sync.WaitGroup
+	wg       sync.WaitGroup
+	store    func(ctx context.Context, key, frame string) error
 }
 
 func (q *persistQueue) start(store func(ctx context.Context, key, frame string) error) {
@@ -92,12 +93,15 @@ func (q *persistQueue) submit(ctx context.Context, key, frame string, wait bool)
 	if q == nil || key == "" || frame == "" {
 		return nil
 	}
+
 	q.mu.Lock()
 	if q.closed || q.ch == nil {
 		q.mu.Unlock()
 		return context.Canceled
 	}
+	q.submitWG.Add(1)
 	q.mu.Unlock()
+	defer q.submitWG.Done()
 
 	if err := q.waitCapacity(ctx); err != nil {
 		return err
@@ -143,6 +147,11 @@ func (q *persistQueue) close() {
 		return
 	}
 	q.closed = true
+	q.mu.Unlock()
+
+	q.submitWG.Wait()
+
+	q.mu.Lock()
 	ch := q.ch
 	q.mu.Unlock()
 	if ch != nil {
@@ -155,15 +164,24 @@ func (e *Engine) nativePersist() *persistQueue {
 	if e == nil {
 		return nil
 	}
-	e.persistOnce.Do(func() {
-		e.persistQ = &persistQueue{}
+	if err := e.persistCanceled(); err != nil {
+		return nil
+	}
+	e.persistMu.Lock()
+	defer e.persistMu.Unlock()
+	if e.persistClosed {
+		return e.persistQ
+	}
+	if e.persistQ == nil {
+		q := &persistQueue{}
 		if e.Artefacts != nil {
 			art := e.Artefacts
-			e.persistQ.start(func(ctx context.Context, key, frame string) error {
+			q.start(func(ctx context.Context, key, frame string) error {
 				return art.StoreNative(ctx, key, frame)
 			})
 		}
-	})
+		e.persistQ = q
+	}
 	return e.persistQ
 }
 
@@ -173,7 +191,14 @@ func (e *Engine) PersistFrame(_ context.Context, key, frame string) error {
 	if e == nil || key == "" || frame == "" {
 		return nil
 	}
-	return e.nativePersist().submit(context.Background(), key, frame, false)
+	if err := e.persistCanceled(); err != nil {
+		return err
+	}
+	q := e.nativePersist()
+	if q == nil {
+		return context.Canceled
+	}
+	return q.submit(context.Background(), key, frame, false)
 }
 
 // PersistFrameWait enqueues a native frame and blocks until it is stored or ctx
@@ -182,7 +207,14 @@ func (e *Engine) PersistFrameWait(ctx context.Context, key, frame string) error 
 	if e == nil || key == "" || frame == "" {
 		return nil
 	}
-	return e.nativePersist().submit(ctx, key, frame, true)
+	if err := e.persistCanceled(); err != nil {
+		return err
+	}
+	q := e.nativePersist()
+	if q == nil {
+		return context.Canceled
+	}
+	return q.submit(ctx, key, frame, true)
 }
 
 // WaitPersistCapacity blocks until the persistence queue has space. Background
@@ -207,7 +239,25 @@ func (e *Engine) ClosePersist() {
 	if e == nil {
 		return
 	}
-	if q := e.persistQ; q != nil {
+	e.persistMu.Lock()
+	if e.persistClosed {
+		e.persistMu.Unlock()
+		return
+	}
+	e.persistClosed = true
+	q := e.persistQ
+	e.persistMu.Unlock()
+	if q != nil {
 		q.close()
 	}
+}
+
+func (e *Engine) persistCanceled() error {
+	e.persistMu.Lock()
+	closed := e.persistClosed
+	e.persistMu.Unlock()
+	if closed {
+		return context.Canceled
+	}
+	return nil
 }

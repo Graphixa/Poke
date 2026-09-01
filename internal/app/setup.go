@@ -6,6 +6,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/config"
+	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
@@ -89,6 +90,7 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 	if result.Aborted {
 		return result.Config, false, fmt.Errorf("setup cancelled")
 	}
+	debuglog.StartupMark("startup.setup_complete")
 	svc.Config = result.Config
 	return result.Config, result.StartBackgroundArtwork, nil
 }

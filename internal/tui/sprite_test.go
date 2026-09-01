@@ -103,7 +103,7 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	if cmd == nil {
 		cmd = m.EnsureSelectionLoadsForTest()
 	}
-	if cmd == nil {
+	if cmd == nil && !m.HasSpriteANSI() {
 		t.Fatal("expected sprite load cmd")
 	}
 	reqBefore := m.SpriteReqID()

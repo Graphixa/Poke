@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -12,9 +13,11 @@ import (
 )
 
 type e2eSprites struct {
-	lookupHit bool
-	coldCalls int
-	ansi      string
+	lookupHit   bool
+	lookupCalls atomic.Int32
+	coldCalls   atomic.Int32
+	block       chan struct{}
+	ansi        string
 }
 
 func (e *e2eSprites) Render(_ context.Context, _ domain.Pokemon, _ int) (string, bool, bool, string) {
@@ -22,6 +25,7 @@ func (e *e2eSprites) Render(_ context.Context, _ domain.Pokemon, _ int) (string,
 }
 
 func (e *e2eSprites) LookupCached(_ context.Context, _ domain.Pokemon, _ int) (sprite.RenderResult, bool) {
+	e.lookupCalls.Add(1)
 	if e.lookupHit {
 		return sprite.RenderResult{ANSI: e.ansi, Native: true}, true
 	}
@@ -29,7 +33,10 @@ func (e *e2eSprites) LookupCached(_ context.Context, _ domain.Pokemon, _ int) (s
 }
 
 func (e *e2eSprites) RenderCold(_ context.Context, _ domain.Pokemon, _ int) sprite.RenderResult {
-	e.coldCalls++
+	if e.block != nil {
+		<-e.block
+	}
+	e.coldCalls.Add(1)
 	return sprite.RenderResult{ANSI: e.ansi, Native: true}
 }
 
@@ -50,13 +57,14 @@ func TestE2ECachedSelectionNoColdRender(t *testing.T) {
 	m = updated.(tui.Model)
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = updated.(tui.Model)
-	if sprites.coldCalls != 0 {
-		t.Fatalf("cached selection must not cold-render, calls=%d", sprites.coldCalls)
+	if sprites.coldCalls.Load() != 0 {
+		t.Fatalf("cached selection must not cold-render, calls=%d", sprites.coldCalls.Load())
 	}
 }
 
 func TestE2ESelectionColdUsesLookupFirst(t *testing.T) {
-	sprites := &e2eSprites{lookupHit: false, ansi: "COLD"}
+	block := make(chan struct{})
+	sprites := &e2eSprites{lookupHit: false, ansi: "COLD", block: block}
 	m := tui.NewModel(tui.Options{
 		Index:   fixtureIndex(),
 		Details: &fakeDetails{},
@@ -65,7 +73,11 @@ func TestE2ESelectionColdUsesLookupFirst(t *testing.T) {
 	})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-	if sprites.coldCalls != 0 {
-		t.Fatalf("initial layout must lookup before cold, calls=%d", sprites.coldCalls)
+	if sprites.lookupCalls.Load() == 0 {
+		t.Fatal("initial layout must lookup cache before cold render")
 	}
+	if sprites.coldCalls.Load() != 0 {
+		t.Fatalf("initial layout must not cold-render before blocked release, calls=%d", sprites.coldCalls.Load())
+	}
+	close(block)
 }

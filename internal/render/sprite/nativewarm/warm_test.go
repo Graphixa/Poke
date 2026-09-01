@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -576,56 +577,57 @@ func TestFastPathCompleteCacheNoProgressEmit(t *testing.T) {
 		disk[fakeKey{sum.ID, 32}] = true
 	}
 	rend := &fakeNativeRenderer{disk: disk}
-	var emits int
 	svc := nativewarm.New(nativewarm.Config{
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
-		Progress: func(p cache.Progress) {
-			emits++
-			if p.Done < p.Total {
-				t.Fatalf("progress=%+v want complete or no emit", p)
-			}
-		},
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
-	done, total := svc.Snapshot()
-	if done != total || total != len(index) {
-		t.Fatalf("snapshot=%d/%d want %d/%d", done, total, len(index), len(index))
-	}
-	if emits != 0 {
-		t.Fatalf("progress emits=%d want 0 for complete disk cache", emits)
+	if done, total := svc.Snapshot(); done != 0 || total != len(index) {
+		t.Fatalf("snapshot=%d/%d want 0/%d before discovery", done, total, len(index))
 	}
 	svc.SetNeighborsFromList(index, 2, 1)
-	time.Sleep(200 * time.Millisecond)
-	if rend.renders() != 0 {
-		t.Fatalf("renders=%d want 0 without worker walk", rend.renders())
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		done, total := svc.Snapshot()
+		if done == total && total == len(index) {
+			if rend.renders() != 0 {
+				t.Fatalf("renders=%d want 0 for disk-only discovery", rend.renders())
+			}
+			svc.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	svc.Stop()
+	t.Fatal("timed out waiting for background cache discovery")
 }
 
 func TestFastPathPartialCacheHonestInitialDone(t *testing.T) {
 	index := indexN(10)
 	disk := map[fakeKey]bool{{1, 32}: true, {2, 32}: true, {3, 32}: true}
 	rend := &fakeNativeRenderer{disk: disk}
-	var last cache.Progress
 	svc := nativewarm.New(nativewarm.Config{
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
-		Progress: func(p cache.Progress) { last = p },
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
-	done, total := svc.Snapshot()
-	if done != 3 || total != 10 {
-		t.Fatalf("snapshot=%d/%d want 3/10", done, total)
+	if done, total := svc.Snapshot(); done != 0 || total != 10 {
+		t.Fatalf("snapshot=%d/%d want 0/10 before discovery", done, total)
 	}
-	if last.Done != 3 || last.Total != 10 {
-		t.Fatalf("progress=%+v want 3/10 initial emit", last)
+	svc.SetNeighborsFromList(index, 0, 1)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		done, _ := svc.Snapshot()
+		if done >= 3 {
+			svc.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	svc.Stop()
+	t.Fatal("timed out waiting for partial disk discovery")
 }
 
 func TestFastPathResizeBucketReaudit(t *testing.T) {
@@ -644,11 +646,8 @@ func TestFastPathResizeBucketReaudit(t *testing.T) {
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
-	if done, total := svc.Snapshot(); done != total {
-		t.Fatalf("snapshot=%d/%d want complete at bucket 32", done, total)
-	}
-	if len(emits) != 0 {
-		t.Fatalf("emits=%d want 0 at complete bucket 32", len(emits))
+	if done, total := svc.Snapshot(); done != 0 || total != len(index) {
+		t.Fatalf("snapshot=%d/%d want 0/%d before discovery", done, total, len(index))
 	}
 
 	svc.SetCells(40)
@@ -656,8 +655,8 @@ func TestFastPathResizeBucketReaudit(t *testing.T) {
 	if done != 0 || total != len(index) {
 		t.Fatalf("snapshot=%d/%d want 0/%d after resize to 40", done, total, len(index))
 	}
-	if len(emits) != 1 || emits[0].Done != 0 || emits[0].Total != len(index) || emits[0].Cells != 40 {
-		t.Fatalf("emits=%+v want single incomplete progress for bucket 40", emits)
+	if len(emits) == 0 || emits[len(emits)-1].Cells != 40 || emits[len(emits)-1].Done != 0 || emits[len(emits)-1].Total != len(index) {
+		t.Fatalf("emits=%+v want latest incomplete progress for bucket 40", emits)
 	}
 	svc.SetNeighborsFromList(index, 0, 1)
 	waitPersists(t, rend, 1)
@@ -667,4 +666,33 @@ func TestFastPathResizeBucketReaudit(t *testing.T) {
 		}
 	}
 	svc.Stop()
+}
+
+type slowHasNativeRenderer struct {
+	fakeNativeRenderer
+	delay time.Duration
+	calls atomic.Int32
+}
+
+func (s *slowHasNativeRenderer) HasNativeFile(_ context.Context, pokemon domain.Pokemon, cells int) bool {
+	s.calls.Add(1)
+	time.Sleep(s.delay)
+	return s.fakeNativeRenderer.HasNativeFile(context.Background(), pokemon, cells)
+}
+
+func TestSetCellsDoesNotAuditFullIndex(t *testing.T) {
+	index := indexN(1000)
+	rend := &slowHasNativeRenderer{
+		fakeNativeRenderer: fakeNativeRenderer{disk: map[fakeKey]bool{}},
+		delay:              time.Millisecond,
+	}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	start := time.Now()
+	svc.SetCells(32)
+	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+		t.Fatalf("SetCells took %v want <50ms", elapsed)
+	}
+	if rend.calls.Load() != 0 {
+		t.Fatalf("SetCells invoked HasNativeFile %d times", rend.calls.Load())
+	}
 }

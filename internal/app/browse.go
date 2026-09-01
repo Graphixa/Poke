@@ -122,7 +122,7 @@ func (w warmPokemonLoader) Pokemon(ctx context.Context, speciesID int) (domain.P
 }
 
 func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
-	debuglog.StartupMark("startup.browse")
+	debuglog.StartupMark("startup.browse_enter")
 	svc, err := h.Services()
 	if err != nil {
 		return err
@@ -144,6 +144,8 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	if err != nil {
 		return err
 	}
+	debuglog.StartupMark("startup.index_ready")
+	debuglog.StartupMark("startup.dataset_ready")
 
 	if req.Selected == nil && req.Prefill == "" && req.Target != "" {
 		idx := search.Build(index)
@@ -163,6 +165,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	img := spriteimage.New()
 	_, _ = spritechafa.Detect()
 	caps := sprite.DetectCapabilities(img.Available())
+	debuglog.StartupMark("startup.capabilities_ready")
 	debuglog.Renderf("render.backend.selected native=%v protocol=%q term_program=%q wt_session=%v",
 		caps.NativeImage, img.ProtocolName(), os.Getenv("TERM_PROGRAM"), os.Getenv("WT_SESSION") != "")
 	colorMode := sprite.ColorMode(svc.Config.Render.Color)
@@ -204,6 +207,13 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 	defer engine.ClosePersist()
 
+	var onUIReady []func()
+	queueUIReady := func(fn func()) {
+		if fn != nil {
+			onUIReady = append(onUIReady, fn)
+		}
+	}
+
 	details := NewDetailService(svc.Cache)
 	workers := svc.Cache.MaxConcurrency()
 	opts := tui.Options{
@@ -234,7 +244,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 				sendWarmProgress(progressCh, p)
 			},
 		})
-		spriteWarmer.Start(runCtx)
+		queueUIReady(func() { spriteWarmer.Start(runCtx) })
 		defer spriteWarmer.Stop()
 		opts.Warmer = spriteWarmer
 	}
@@ -273,7 +283,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 			Index:    index,
 			Progress: forwardWarm,
 		})
-		artworkWarmer.Start(runCtx)
+		queueUIReady(func() { artworkWarmer.Start(runCtx) })
 		defer artworkWarmer.Stop()
 		opts.ArtworkWarmer = artworkWarmer
 	}
@@ -292,7 +302,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 			dwCfg.CoreLoader = tuiDetails{details}
 		}
 		dossierWarmer = dossierwarm.New(dwCfg)
-		dossierWarmer.Start(runCtx)
+		queueUIReady(func() { dossierWarmer.Start(runCtx) })
 		defer dossierWarmer.Stop()
 		opts.DossierWarmer = dossierWarmer
 		if dossierMode == dossierwarm.ModeAll {
@@ -303,7 +313,12 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	if useProgress {
 		opts.WarmEvents = progressCh
 	}
+	opts.OnUIReady = func() {
+		for _, fn := range onUIReady {
+			fn()
+		}
+	}
 
-	debuglog.StartupMark("startup.tui")
+	debuglog.StartupMark("startup.tui_enter")
 	return tui.Run(runCtx, opts)
 }

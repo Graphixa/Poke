@@ -58,8 +58,9 @@ type Engine struct {
 	ansiMem       *frameMemCache
 	nativeMem     *frameMemCache
 
-	persistOnce sync.Once
-	persistQ    *persistQueue
+	persistMu     sync.Mutex
+	persistQ      *persistQueue
+	persistClosed bool
 }
 
 func (e *Engine) ansiMemory() *frameMemCache {

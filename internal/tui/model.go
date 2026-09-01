@@ -39,6 +39,8 @@ type Options struct {
 	NativeWarmer NativeWarmer
 	// WarmEvents receives progress updates from the warmer (optional).
 	WarmEvents <-chan WarmProgress
+	// OnUIReady fires once after the first valid browse layout is established.
+	OnUIReady func()
 }
 
 // SpriteWarmer prioritizes background chafa precomputation.
@@ -154,6 +156,9 @@ type Model struct {
 	warmRight        string
 	warmHintAt       time.Time
 
+	uiReady   bool
+	onUIReady func()
+
 	pokemonSrc PokemonSource
 
 	showHelp   bool
@@ -191,6 +196,7 @@ func NewModel(opts Options) Model {
 		artworkWarmer: opts.ArtworkWarmer,
 		nativeWarmer:  opts.NativeWarmer,
 		warmEvents:    opts.WarmEvents,
+		onUIReady:     opts.OnUIReady,
 		pokemonSrc:    opts.Pokemon,
 	}
 	if opts.Prefill != "" {

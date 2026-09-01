@@ -155,6 +155,9 @@ type Scheduler struct {
 
 	ownerCtx context.Context
 	stop     context.CancelFunc
+
+	renderWG sync.WaitGroup
+	stopped  bool
 }
 
 // NewScheduler creates a scheduler with optional display callback.
@@ -178,28 +181,70 @@ func (s *Scheduler) runCtx() context.Context {
 	return s.ownerCtx
 }
 
-// Stop cancels in-flight work and waits until the scheduler is idle.
+// Stop cancels in-flight work and waits until all render goroutines exit.
 func (s *Scheduler) Stop(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
 	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		return s.waitRenderWG(ctx)
+	}
+	s.stopped = true
 	if s.active != nil {
 		s.active.cancel()
-		s.active = nil
 	}
 	s.pending = nil
 	if s.stop != nil {
 		s.stop()
 	}
 	s.mu.Unlock()
-	return s.WaitIdle(ctx)
+	return s.waitRenderWG(ctx)
+}
+
+func (s *Scheduler) waitRenderWG(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.renderWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// AbortForeground cancels active and pending foreground work without stopping
+// the scheduler owner context.
+func (s *Scheduler) AbortForeground() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active != nil {
+		s.active.cancel()
+		s.active = nil
+	}
+	s.pending = nil
 }
 
 // Select handles a selection change. When force is true, an in-flight encode for
 // the same target is aborted so a fresh cold render can start (artwork upgrade).
 // When skipLookup is true the caller already performed an authoritative cache miss.
 func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon, cells int, force bool, skipLookup bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	stopped := s.stopped
+	s.mu.Unlock()
+	if stopped {
+		return
+	}
 	now := time.Now()
 	req := Request{SpeciesID: pokemon.ID, Gen: gen, Cells: cells, Pokemon: pokemon}
 
@@ -244,6 +289,7 @@ func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon,
 		s.display(outcome.cacheReq, outcome.cacheRes)
 	}
 	if outcome.job != nil {
+		s.renderWG.Add(1)
 		go s.runRender(*outcome.job)
 	}
 }
@@ -330,8 +376,19 @@ func (s *Scheduler) takeStartLocked(ctx context.Context, selectedAt time.Time, r
 }
 
 func (s *Scheduler) runRender(job activeJob) {
+	defer s.renderWG.Done()
+
 	res := s.renderer.RenderCold(job.ctx, job.req.Pokemon, job.req.Cells)
 	completed := time.Now()
+
+	var (
+		displayReq   Request
+		displayRes   ColdResult
+		doDisplay    bool
+		persistKey   string
+		persistFrame string
+		persistCtx   context.Context
+	)
 
 	s.mu.Lock()
 	if s.active != nil && s.active.reqID == job.reqID {
@@ -366,13 +423,9 @@ func (s *Scheduler) runRender(job activeJob) {
 				VisibleAt:   visible,
 				Timings:     res.Timings,
 			})
-			displayRes := res
-			s.mu.Unlock()
-			s.display(job.req, displayRes)
-			s.mu.Lock()
-			if res.CacheKey != "" {
-				_ = s.renderer.Persist(job.ctx, res.CacheKey, res.Frame)
-			}
+			displayReq = job.req
+			displayRes = res
+			doDisplay = true
 		} else {
 			s.staleCompleted++
 			s.staleEncodeCPU += res.Timings.SixelEncode
@@ -385,19 +438,29 @@ func (s *Scheduler) runRender(job activeJob) {
 				Stale:       true,
 				Timings:     res.Timings,
 			})
-			if res.CacheKey != "" {
-				_ = s.renderer.Persist(job.ctx, res.CacheKey, res.Frame)
-			}
+		}
+		if res.CacheKey != "" {
+			persistKey = res.CacheKey
+			persistFrame = res.Frame
+			persistCtx = job.ctx
 		}
 	}
 
 	outcome := s.takeStartLocked(s.runCtx(), s.lastSelectedAt)
 	s.mu.Unlock()
+
+	if doDisplay {
+		s.display(displayReq, displayRes)
+	}
 	if outcome.cacheFrame != "" {
 		s.display(outcome.cacheReq, outcome.cacheRes)
 	}
 	if outcome.job != nil {
+		s.renderWG.Add(1)
 		go s.runRender(*outcome.job)
+	}
+	if persistKey != "" && persistFrame != "" {
+		_ = s.renderer.Persist(persistCtx, persistKey, persistFrame)
 	}
 }
 

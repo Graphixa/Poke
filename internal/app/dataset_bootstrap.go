@@ -11,12 +11,14 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
+	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/tui/bootstrap"
 )
 
 // runDatasetBootstrap shows a progress TUI when stderr is a terminal, otherwise
 // prints throttled progress lines.
 func (h *Handler) runDatasetBootstrap(ctx context.Context, svc *Services) error {
+	debuglog.StartupMark("startup.bootstrap_begin")
 	run := func(ctx context.Context, progress cache.ProgressFunc) error {
 		return svc.Cache.BootstrapDataset(ctx, progress)
 	}

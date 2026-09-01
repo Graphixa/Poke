@@ -51,10 +51,12 @@ func OSRuntime() Runtime {
 }
 
 func Execute(ctx context.Context, runtime Runtime) error {
+	debuglog.StartupMark("startup.process")
 	paths, err := runtime.Directories.Resolve()
 	if err != nil {
 		return err
 	}
+	debuglog.StartupMark("startup.paths_resolved")
 	services := lazyServices(paths)
 	defaultCache := cacheCommands{
 		services: services,
@@ -183,6 +185,7 @@ func lazyServices(paths config.Paths) func() (*Services, error) {
 	)
 	return func() (*Services, error) {
 		once.Do(func() {
+			debuglog.StartupMark("startup.services_loaded")
 			svc, err = LoadServices(paths)
 		})
 		return svc, err
