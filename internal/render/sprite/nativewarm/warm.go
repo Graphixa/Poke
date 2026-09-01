@@ -290,7 +290,6 @@ func (s *Service) markDoneLocked(speciesID int) {
 	if s.progress.done > s.progress.total {
 		s.progress.total = s.progress.done
 	}
-	s.emitProgress()
 }
 
 func (s *Service) emitProgress() {
@@ -402,6 +401,7 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 		s.mu.Lock()
 		s.markDoneLocked(speciesID)
 		s.mu.Unlock()
+		s.emitProgress()
 		return
 	}
 	res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
@@ -419,4 +419,5 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 	s.mu.Lock()
 	s.markDoneLocked(speciesID)
 	s.mu.Unlock()
+	s.emitProgress()
 }

@@ -431,6 +431,41 @@ func TestNativeProgressStartsWhenBucketIncomplete(t *testing.T) {
 	svc.Stop()
 }
 
+func TestMarkDoneWithProgressDoesNotDeadlock(t *testing.T) {
+	index := indexN(5)
+	rend := &fakeNativeRenderer{disk: map[fakeKey]bool{{2, 32}: true}}
+	svc := nativewarm.New(nativewarm.Config{
+		Loader:   fakeLoader{},
+		Renderer: rend,
+		Index:    index,
+		Progress: func(p cache.Progress) {},
+	})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 0, 1)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		done, _ := svc.Snapshot()
+		if done >= 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		svc.SetNeighborsFromList(index, 1, 1)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("SetNeighborsFromList blocked after cached markDone progress")
+	}
+	svc.Stop()
+}
+
 func TestNativeWarmerResumesAfterForegroundCompletes(t *testing.T) {
 	index := indexN(10)
 	rend := &fakeNativeRenderer{}
