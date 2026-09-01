@@ -2,6 +2,7 @@ package nativewarm_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -40,8 +41,16 @@ func (s *slowNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.
 	s.cached[cacheKey{pokemon.ID, cells}] = true
 	s.render++
 	s.mu.Unlock()
-	return sprite.RenderResult{ANSI: "X", Native: true, Backend: "image"}
+	return sprite.RenderResult{
+		ANSI:     "X",
+		Native:   true,
+		CacheKey: fmt.Sprintf("k:%d:%d", pokemon.ID, cells),
+		Backend:  "image",
+	}
 }
+
+func (s *slowNativeRenderer) PersistNativeFrame(_ context.Context, _, _ string) error { return nil }
+func (s *slowNativeRenderer) WaitPersistCapacity(context.Context) error               { return nil }
 
 func (s *slowNativeRenderer) count() int {
 	s.mu.Lock()

@@ -2,6 +2,7 @@ package sprite
 
 import (
 	"context"
+	"fmt"
 	"image/color"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
@@ -52,15 +53,24 @@ func (e *Engine) lookupNativeFrame(ctx context.Context, rend Renderer, opts Rend
 }
 
 func (e *Engine) hasNativeFrame(ctx context.Context, canonicalHash string, fw, fh int, bg color.RGBA, sixelColors int) bool {
-	if e == nil || e.Artefacts == nil || !IsHexSHA256(canonicalHash) {
+	if e == nil || !IsHexSHA256(canonicalHash) {
 		return false
 	}
 	proto := e.protocolName()
 	key := NativeCacheKey(canonicalHash, proto, fw, fh, bg, sixelColors)
-	if frame, err := e.Artefacts.Native(ctx, key); err == nil && frame != "" {
+	if _, ok := e.nativeMemory().Get(key); ok {
 		return true
 	}
-	return false
+	if e.Artefacts == nil {
+		return false
+	}
+	frame, err := e.Artefacts.Native(ctx, key)
+	return err == nil && frame != ""
+}
+
+// NativeCacheSpecKey identifies the active native render specification for progress.
+func NativeCacheSpecKey(cells int) string {
+	return fmt.Sprintf("native:%d", cells)
 }
 
 func (e *Engine) ensureCanonicalHash(ctx context.Context, pokemon domain.Pokemon, ref AssetRef, png []byte) string {

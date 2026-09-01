@@ -265,6 +265,11 @@ func (e *Engine) NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, c
 	return e.renderAtQuality(ctx, pokemon, cells, QualityInteractive, ModeImage)
 }
 
+// PersistNativeFrame persists a native frame and blocks until stored (background warm path).
+func (e *Engine) PersistNativeFrame(ctx context.Context, cacheKey, frame string) error {
+	return e.PersistFrameWait(ctx, cacheKey, frame)
+}
+
 // HasNativeCache reports whether a native frame exists on disk for species at cells.
 func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cells int) bool {
 	if e == nil || e.Artefacts == nil || e.Source == nil || pokemon.ID == 0 {

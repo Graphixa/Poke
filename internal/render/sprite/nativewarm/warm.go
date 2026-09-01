@@ -8,12 +8,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-const maxWarmQueue = 16
+const maxPriorityHints = 4
 
 // PokemonLoader loads Pokémon detail by species ID.
 type PokemonLoader interface {
@@ -24,6 +25,8 @@ type PokemonLoader interface {
 type NativeRenderer interface {
 	HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cells int) bool
 	NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
+	PersistNativeFrame(ctx context.Context, cacheKey, frame string) error
+	WaitPersistCapacity(ctx context.Context) error
 }
 
 // Config configures the opportunistic native warm service.
@@ -32,7 +35,8 @@ type Config struct {
 	Renderer NativeRenderer
 	Index    []domain.SpeciesSummary
 	// OnlyIDs when non-empty restricts warm targets (poke update tooling).
-	OnlyIDs map[int]struct{}
+	OnlyIDs  map[int]struct{}
+	Progress cache.ProgressFunc
 }
 
 // Service owns a single-lane background native encoder for the active bucket.
@@ -41,12 +45,14 @@ type Service struct {
 
 	mu          sync.Mutex
 	cells       int
-	list        []domain.SpeciesSummary
-	cursor      int
-	neighborRad int
-	queue       []int
-	queued      map[int]bool
+	anchor      int // index into warmable index slice
+	fwdOff      int
+	bwdOff      int
+	warmable    []domain.SpeciesSummary
 	indexByID   map[int]domain.SpeciesSummary
+	priority    []int
+	countedDone map[int]bool
+	progress    warmProgress
 
 	wake      chan struct{}
 	started   atomic.Bool
@@ -54,6 +60,12 @@ type Service struct {
 	workerCtx context.Context
 	wg        sync.WaitGroup
 	activity  sprite.ActivityGate
+}
+
+type warmProgress struct {
+	specKey string
+	done    int
+	total   int
 }
 
 // New creates a native warm service. Call EnsureStarted when browse layout is known.
@@ -64,12 +76,14 @@ func New(cfg Config) *Service {
 			indexByID[sum.ID] = sum
 		}
 	}
-	return &Service{
-		cfg:       cfg,
-		queued:    make(map[int]bool),
-		indexByID: indexByID,
-		wake:      make(chan struct{}, 1),
+	s := &Service{
+		cfg:         cfg,
+		indexByID:   indexByID,
+		countedDone: make(map[int]bool),
+		wake:        make(chan struct{}, 1),
 	}
+	s.rebuildWarmableLocked()
+	return s
 }
 
 // Start launches the worker using cells as the initial bucket.
@@ -119,8 +133,15 @@ func (s *Service) SetCells(cells int) {
 	s.mu.Lock()
 	if s.cells != cells {
 		s.cells = cells
-		s.queue = nil
-		s.queued = make(map[int]bool)
+		s.fwdOff = 1
+		s.bwdOff = 1
+		s.priority = nil
+		s.countedDone = make(map[int]bool)
+		s.resetProgressLocked(cells)
+		s.mu.Unlock()
+		s.emitProgress()
+		s.signal()
+		return
 	}
 	s.mu.Unlock()
 	s.signal()
@@ -146,7 +167,7 @@ func (s *Service) Prioritize(speciesID int) {
 	if !s.shouldWarm(speciesID) {
 		return
 	}
-	s.enqueueFrontLocked(speciesID)
+	s.enqueuePriorityLocked(speciesID)
 	s.signal()
 }
 
@@ -163,10 +184,11 @@ func (s *Service) SetForegroundBusy(busy bool) {
 	s.signal()
 }
 
-// SetNeighborsFromList rebuilds the warm queue from list neighbors at the active bucket.
-// Order: N+1..max, then N-1..1.
-func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int) {
-	if s == nil || radius < 1 || len(list) == 0 {
+// SetNeighborsFromList repositions the traversal anchor to the selected species.
+// Radius is ignored; traversal continues progressively through the full warmable
+// index for the active bucket (N+1..max, N-1..1).
+func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, _ int) {
+	if s == nil || len(list) == 0 {
 		return
 	}
 	if cursor < 0 {
@@ -175,18 +197,33 @@ func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, rad
 	if cursor >= len(list) {
 		cursor = len(list) - 1
 	}
+	s.SetAnchorFromSpeciesID(list[cursor].ID)
+}
+
+// SetAnchorFromSpeciesID repositions traversal to speciesID in the warmable index.
+func (s *Service) SetAnchorFromSpeciesID(speciesID int) {
+	if s == nil || speciesID < 1 {
+		return
+	}
 	s.mu.Lock()
-	s.list = list
-	s.cursor = cursor
-	s.neighborRad = radius
-	s.rebuildQueueLocked()
+	for i, sum := range s.warmable {
+		if sum.ID == speciesID {
+			s.anchor = i
+			break
+		}
+	}
 	s.mu.Unlock()
 	s.signal()
 }
 
-// Snapshot returns 0,0 — full-dex completion progress was removed.
+// Snapshot returns persisted/readable coverage for the active render spec.
 func (s *Service) Snapshot() (done, total int) {
-	return 0, 0
+	if s == nil {
+		return 0, 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.progress.done, s.progress.total
 }
 
 func (s *Service) shouldWarm(speciesID int) bool {
@@ -200,73 +237,41 @@ func (s *Service) shouldWarm(speciesID int) bool {
 	return ok
 }
 
-func (s *Service) rebuildQueueLocked() {
-	if len(s.list) == 0 {
-		return
-	}
-	order := s.neighborOrderLocked()
-	s.queue = nil
-	s.queued = make(map[int]bool)
-	for _, id := range order {
-		s.enqueueBackLocked(id)
-		if len(s.queue) >= maxWarmQueue {
-			break
+func (s *Service) rebuildWarmableLocked() {
+	var warmable []domain.SpeciesSummary
+	for _, sum := range s.cfg.Index {
+		if s.shouldWarm(sum.ID) {
+			warmable = append(warmable, sum)
 		}
+	}
+	s.warmable = warmable
+	s.progress.total = len(warmable)
+}
+
+func (s *Service) resetProgressLocked(cells int) {
+	s.progress = warmProgress{
+		specKey: specKey(cells),
+		done:    0,
+		total:   len(s.warmable),
 	}
 }
 
-func (s *Service) neighborOrderLocked() []int {
-	list := s.list
-	cursor := s.cursor
-	radius := s.neighborRad
-	if radius < 1 {
-		radius = 1
-	}
-	var ids []int
-	for d := 1; d <= radius; d++ {
-		if i := cursor + d; i < len(list) {
-			ids = append(ids, list[i].ID)
-		}
-	}
-	for d := 1; d <= radius; d++ {
-		if i := cursor - d; i >= 0 {
-			ids = append(ids, list[i].ID)
-		}
-	}
-	return ids
+func specKey(cells int) string {
+	return sprite.NativeCacheSpecKey(cells)
 }
 
-func (s *Service) enqueueFrontLocked(speciesID int) {
-	if !s.shouldWarm(speciesID) {
-		return
-	}
-	if s.queued[speciesID] {
-		for i, id := range s.queue {
-			if id == speciesID {
-				copy(s.queue[1:i+1], s.queue[0:i])
-				s.queue[0] = speciesID
-				return
-			}
+func (s *Service) enqueuePriorityLocked(speciesID int) {
+	for i, id := range s.priority {
+		if id == speciesID {
+			copy(s.priority[1:i+1], s.priority[0:i])
+			s.priority[0] = speciesID
+			return
 		}
 	}
-	if len(s.queue) >= maxWarmQueue {
-		oldest := s.queue[len(s.queue)-1]
-		delete(s.queued, oldest)
-		s.queue = s.queue[:len(s.queue)-1]
+	if len(s.priority) >= maxPriorityHints {
+		s.priority = s.priority[:len(s.priority)-1]
 	}
-	s.queue = append([]int{speciesID}, s.queue...)
-	s.queued[speciesID] = true
-}
-
-func (s *Service) enqueueBackLocked(speciesID int) {
-	if !s.shouldWarm(speciesID) || s.queued[speciesID] {
-		return
-	}
-	if len(s.queue) >= maxWarmQueue {
-		return
-	}
-	s.queue = append(s.queue, speciesID)
-	s.queued[speciesID] = true
+	s.priority = append([]int{speciesID}, s.priority...)
 }
 
 func (s *Service) signal() {
@@ -274,6 +279,34 @@ func (s *Service) signal() {
 	case s.wake <- struct{}{}:
 	default:
 	}
+}
+
+func (s *Service) markDoneLocked(speciesID int) {
+	if s.countedDone[speciesID] {
+		return
+	}
+	s.countedDone[speciesID] = true
+	s.progress.done++
+	if s.progress.done > s.progress.total {
+		s.progress.total = s.progress.done
+	}
+	s.emitProgress()
+}
+
+func (s *Service) emitProgress() {
+	if s.cfg.Progress == nil {
+		return
+	}
+	s.mu.Lock()
+	p := cache.Progress{
+		Stage:   "native",
+		Done:    s.progress.done,
+		Total:   s.progress.total,
+		Message: "Building image cache",
+		Cells:   s.cells,
+	}
+	s.mu.Unlock()
+	s.cfg.Progress(p)
 }
 
 func (s *Service) worker(ctx context.Context) {
@@ -313,11 +346,30 @@ func (s *Service) wait(ctx context.Context) bool {
 func (s *Service) popNext() (int, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for len(s.queue) > 0 {
-		id := s.queue[0]
-		s.queue = s.queue[1:]
-		delete(s.queued, id)
-		return id, true
+	if len(s.warmable) == 0 {
+		return 0, false
+	}
+	for len(s.priority) > 0 {
+		id := s.priority[0]
+		s.priority = s.priority[1:]
+		if s.shouldWarm(id) {
+			return id, true
+		}
+	}
+	anchor := s.anchor
+	if anchor < 0 {
+		anchor = 0
+	}
+	if anchor >= len(s.warmable) {
+		anchor = len(s.warmable) - 1
+	}
+	if idx := anchor + s.fwdOff; idx < len(s.warmable) {
+		s.fwdOff++
+		return s.warmable[idx].ID, true
+	}
+	if idx := anchor - s.bwdOff; idx >= 0 {
+		s.bwdOff++
+		return s.warmable[idx].ID, true
 	}
 	return 0, false
 }
@@ -326,6 +378,11 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 	cells := s.ActiveCells()
 	if cells < sprite.MinFrameSize {
 		return
+	}
+	if s.cfg.Renderer != nil {
+		if err := s.cfg.Renderer.WaitPersistCapacity(ctx); err != nil {
+			return
+		}
 	}
 	poke, err := s.cfg.Loader.Pokemon(ctx, speciesID)
 	if err != nil {
@@ -342,10 +399,24 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 		return
 	}
 	if s.cfg.Renderer.HasNativeCache(ctx, poke, cells) {
+		s.mu.Lock()
+		s.markDoneLocked(speciesID)
+		s.mu.Unlock()
 		return
 	}
 	res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
-	if res.UsePlaceholder || !res.Native {
+	if res.UsePlaceholder || !res.Native || res.ANSI == "" || res.CacheKey == "" {
 		debuglog.Renderf("nativewarm miss species=%d backend=%s", speciesID, res.Backend)
+		return
 	}
+	if err := s.cfg.Renderer.PersistNativeFrame(ctx, res.CacheKey, res.ANSI); err != nil {
+		debuglog.Renderf("nativewarm persist species=%d err=%v", speciesID, err)
+		return
+	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.markDoneLocked(speciesID)
+	s.mu.Unlock()
 }

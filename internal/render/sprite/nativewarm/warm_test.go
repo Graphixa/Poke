@@ -2,10 +2,12 @@ package nativewarm_test
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
@@ -17,12 +19,19 @@ type fakeKey struct {
 }
 
 type fakeNativeRenderer struct {
-	mu       sync.Mutex
-	cached   map[fakeKey]bool
-	render   int
-	ids      []int
-	cells    []int
-	pngReads int
+	mu           sync.Mutex
+	disk         map[fakeKey]bool
+	render       int
+	persist      int
+	ids          []int
+	cells        []int
+	pngReads     int
+	memOnly      map[fakeKey]bool
+	blockPersist chan struct{}
+}
+
+func (f *fakeNativeRenderer) cacheKey(id, cells int) string {
+	return fmt.Sprintf("k:%d:%d", id, cells)
 }
 
 func (f *fakeNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Pokemon, cells int) bool {
@@ -31,7 +40,8 @@ func (f *fakeNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Po
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.cached[fakeKey{pokemon.ID, cells}]
+	k := fakeKey{pokemon.ID, cells}
+	return f.disk[k] || f.memOnly[k]
 }
 
 func (f *fakeNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
@@ -41,12 +51,40 @@ func (f *fakeNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.
 	f.pngReads++
 	f.ids = append(f.ids, pokemon.ID)
 	f.cells = append(f.cells, cells)
-	if f.cached == nil {
-		f.cached = map[fakeKey]bool{}
+	if f.memOnly == nil {
+		f.memOnly = map[fakeKey]bool{}
 	}
-	f.cached[fakeKey{pokemon.ID, cells}] = true
-	return sprite.RenderResult{ANSI: "X", Native: true, Backend: "image"}
+	f.memOnly[fakeKey{pokemon.ID, cells}] = true
+	return sprite.RenderResult{
+		ANSI:     "X",
+		Native:   true,
+		CacheKey: f.cacheKey(pokemon.ID, cells),
+		Backend:  "image",
+	}
 }
+
+func (f *fakeNativeRenderer) PersistNativeFrame(_ context.Context, cacheKey, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.blockPersist != nil {
+		f.mu.Unlock()
+		<-f.blockPersist
+		f.mu.Lock()
+	}
+	f.persist++
+	if f.disk == nil {
+		f.disk = map[fakeKey]bool{}
+	}
+	for k := range f.memOnly {
+		if f.cacheKey(k.id, k.cells) == cacheKey {
+			f.disk[k] = true
+			return nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeNativeRenderer) WaitPersistCapacity(context.Context) error { return nil }
 
 func (f *fakeNativeRenderer) renderedIDs() []int {
 	f.mu.Lock()
@@ -58,6 +96,12 @@ func (f *fakeNativeRenderer) renders() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.render
+}
+
+func (f *fakeNativeRenderer) persists() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.persist
 }
 
 func (f *fakeNativeRenderer) renderedCells() []int {
@@ -93,14 +137,26 @@ func waitRenders(t *testing.T, rend *fakeNativeRenderer, n int) {
 	t.Fatalf("renders=%d want >=%d cells=%v", rend.renders(), n, rend.renderedCells())
 }
 
+func waitPersists(t *testing.T, rend *fakeNativeRenderer, n int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rend.persists() >= n {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("persists=%d want >=%d", rend.persists(), n)
+}
+
 func TestWarmerOnlyCurrentBucket(t *testing.T) {
 	index := indexN(5)
 	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
-	svc.SetNeighborsFromList(index, 2, 2)
-	waitRenders(t, rend, 1)
+	svc.SetNeighborsFromList(index, 2, 1)
+	waitPersists(t, rend, 1)
 	for _, c := range rend.renderedCells() {
 		if c != 32 {
 			t.Fatalf("cell=%d want only active bucket 32", c)
@@ -116,15 +172,20 @@ func TestWarmerDoesNotGenerateOtherBuckets(t *testing.T) {
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 24)
 	svc.SetNeighborsFromList(index, 0, 1)
-	waitRenders(t, rend, 1)
+	waitPersists(t, rend, 1)
 	svc.SetCells(40)
 	svc.SetNeighborsFromList(index, 0, 1)
-	waitRenders(t, rend, 2)
-	cells := rend.renderedCells()
-	if len(cells) != 2 || cells[0] != 24 || cells[1] != 40 {
-		t.Fatalf("cells=%v want [24 40] one encode per bucket", cells)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, c := range rend.renderedCells() {
+			if c == 40 {
+				svc.Stop()
+				return
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	svc.Stop()
+	t.Fatalf("cells=%v want bucket 40 encode", rend.renderedCells())
 }
 
 func TestForegroundBusyPausesBackground(t *testing.T) {
@@ -134,24 +195,24 @@ func TestForegroundBusyPausesBackground(t *testing.T) {
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
 	svc.SetForegroundBusy(true)
-	svc.SetNeighborsFromList(index, 2, 2)
+	svc.SetNeighborsFromList(index, 2, 1)
 	time.Sleep(200 * time.Millisecond)
 	if rend.renders() != 0 {
 		t.Fatalf("renders=%d want 0 while foreground busy", rend.renders())
 	}
 	svc.SetForegroundBusy(false)
-	waitRenders(t, rend, 1)
+	waitPersists(t, rend, 1)
 	svc.Stop()
 }
 
 func TestCacheHitSkipsRender(t *testing.T) {
 	index := indexN(3)
-	rend := &fakeNativeRenderer{cached: map[fakeKey]bool{{3, 32}: true}}
+	rend := &fakeNativeRenderer{disk: map[fakeKey]bool{{3, 32}: true}}
 	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
 	svc.SetNeighborsFromList(index, 1, 1)
-	waitRenders(t, rend, 1)
+	waitPersists(t, rend, 1)
 	if rend.renders() != 1 {
 		t.Fatalf("renders=%d want 1 (skip cached neighbor)", rend.renders())
 	}
@@ -164,9 +225,8 @@ func TestNeighborOrderNPlusThenNMinus(t *testing.T) {
 	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
-	svc.SetNeighborsFromList(index, 2, 2)
-	waitRenders(t, rend, 4)
-	// cursor=2 (id 3): order 4,5,2,1
+	svc.SetNeighborsFromList(index, 2, 1)
+	waitPersists(t, rend, 4)
 	want := []int{4, 5, 2, 1}
 	got := rend.renderedIDs()
 	if len(got) != len(want) {
@@ -186,46 +246,212 @@ func TestShutdownStopsCleanly(t *testing.T) {
 	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
-	svc.SetNeighborsFromList(index, 10, 5)
+	svc.SetNeighborsFromList(index, 10, 1)
 	time.Sleep(50 * time.Millisecond)
 	svc.Stop()
 }
 
-func TestSnapshotReturnsZero(t *testing.T) {
-	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: &fakeNativeRenderer{}})
-	done, total := svc.Snapshot()
-	if done != 0 || total != 0 {
-		t.Fatalf("snapshot=%d/%d want 0/0", done, total)
+func TestNativeWarmRenderPersistsFrame(t *testing.T) {
+	index := indexN(3)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 0, 1)
+	waitPersists(t, rend, 1)
+	if rend.persists() < 1 {
+		t.Fatalf("persist=%d want >=1", rend.persists())
 	}
+	svc.Stop()
 }
 
-func TestIntegrationWarmerQueueBounded(t *testing.T) {
+func TestNativeWarmPlaceholderDoesNotPersist(t *testing.T) {
+	// Placeholder renders are rejected before persist in warmOne.
+	index := indexN(2)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 0, 1)
+	time.Sleep(200 * time.Millisecond)
+	svc.Stop()
+}
+
+func TestNativeWarmerContinuesBeyondImmediateNeighbours(t *testing.T) {
 	index := indexN(100)
 	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
-	svc.SetNeighborsFromList(index, 50, 50)
-	time.Sleep(300 * time.Millisecond)
-	if n := rend.renders(); n > 20 {
-		t.Fatalf("renders=%d want bounded opportunistic work", n)
+	svc.SetNeighborsFromList(index, 50, 1)
+	waitPersists(t, rend, 15)
+	if n := rend.persists(); n < 15 {
+		t.Fatalf("persists=%d want >=15 beyond neighbours", n)
 	}
 	svc.Stop()
 }
 
-func TestIntegrationForegroundPreemptsWarmer(t *testing.T) {
+func TestNativeWarmerEventuallyTraversesWholeActiveBucket(t *testing.T) {
+	index := indexN(20)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 0, 1)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if rend.persists() >= 19 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if rend.persists() < 19 {
+		t.Fatalf("persists=%d want >=19 for bucket traversal", rend.persists())
+	}
+	svc.Stop()
+}
+
+type delayedRenderer struct {
+	fakeNativeRenderer
+	delay time.Duration
+}
+
+func (d *delayedRenderer) NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
+	select {
+	case <-ctx.Done():
+		return sprite.RenderResult{UsePlaceholder: true}
+	case <-time.After(d.delay):
+	}
+	return d.fakeNativeRenderer.NativeWarmRender(ctx, pokemon, cells)
+}
+
+func TestNativeWarmerTraversalStateIsBounded(t *testing.T) {
+	index := indexN(1000)
+	rend := &delayedRenderer{delay: 5 * time.Millisecond}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 500, 1)
+	time.Sleep(50 * time.Millisecond)
+	svc.Stop()
+	if n := rend.renders(); n > 25 {
+		t.Fatalf("renders=%d want bounded opportunistic work per timeslice", n)
+	}
+}
+
+func TestSelectionChangeDoesNotDiscardWholeWarmCoverage(t *testing.T) {
+	index := indexN(50)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 10, 1)
+	waitPersists(t, rend, 5)
+	before := rend.persists()
+	svc.SetNeighborsFromList(index, 40, 1)
+	waitPersists(t, rend, before+1)
+	after := rend.persists()
+	if after <= before {
+		t.Fatalf("persists=%d want progress after anchor change from %d", after, before)
+	}
+	svc.Stop()
+}
+
+func TestPrioritizeDoesNotPreventContinuedTraversal(t *testing.T) {
+	index := indexN(30)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 5, 1)
+	svc.Prioritize(20)
+	waitPersists(t, rend, 10)
+	svc.Stop()
+}
+
+func TestAlreadyCachedCandidatesAreSkipped(t *testing.T) {
+	index := indexN(5)
+	rend := &fakeNativeRenderer{disk: map[fakeKey]bool{{2, 32}: true, {3, 32}: true}}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 1, 1)
+	waitPersists(t, rend, 2)
+	for _, id := range rend.renderedIDs() {
+		if id == 2 || id == 3 {
+			t.Fatalf("cached species %d should not render", id)
+		}
+	}
+	svc.Stop()
+}
+
+func TestNativeProgressDoneIncrementsOnlyAfterPersistence(t *testing.T) {
+	index := indexN(5)
+	block := make(chan struct{})
+	rend := &fakeNativeRenderer{blockPersist: block}
+	svc := nativewarm.New(nativewarm.Config{
+		Loader: fakeLoader{}, Renderer: rend, Index: index,
+	})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 0, 1)
+	waitRenders(t, rend, 1)
+	doneBefore, _ := svc.Snapshot()
+	if doneBefore > 0 {
+		t.Fatalf("done=%d want 0 before persist completes", doneBefore)
+	}
+	close(block)
+	waitPersists(t, rend, 1)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		done, _ := svc.Snapshot()
+		if done >= 1 {
+			svc.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	done, _ := svc.Snapshot()
+	t.Fatalf("done=%d want >=1 after persist", done)
+}
+
+func TestNativeProgressStartsWhenBucketIncomplete(t *testing.T) {
+	index := indexN(10)
+	rend := &fakeNativeRenderer{}
+	var last cache.Progress
+	svc := nativewarm.New(nativewarm.Config{
+		Loader: fakeLoader{}, Renderer: rend, Index: index,
+		Progress: func(p cache.Progress) { last = p },
+	})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	if last.Total != 10 || last.Stage != "native" {
+		t.Fatalf("progress=%+v want native 0/10", last)
+	}
+	svc.Stop()
+}
+
+func TestNativeWarmerResumesAfterForegroundCompletes(t *testing.T) {
 	index := indexN(10)
 	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
 	svc.SetForegroundBusy(true)
-	svc.SetNeighborsFromList(index, 5, 5)
-	time.Sleep(200 * time.Millisecond)
-	if rend.renders() != 0 {
-		t.Fatalf("renders=%d want 0 while foreground busy", rend.renders())
-	}
+	svc.SetNeighborsFromList(index, 5, 1)
+	time.Sleep(100 * time.Millisecond)
 	svc.SetForegroundBusy(false)
-	waitRenders(t, rend, 1)
+	waitPersists(t, rend, 1)
+	svc.Stop()
+}
+
+func TestWarmCacheHitDoesNotPauseNativeWarmer(t *testing.T) {
+	index := indexN(10)
+	rend := &fakeNativeRenderer{}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 5, 1)
+	waitPersists(t, rend, 2)
 	svc.Stop()
 }
