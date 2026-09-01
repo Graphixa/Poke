@@ -570,6 +570,7 @@ func (m *Model) noteFirstLayout(cmd tea.Cmd) tea.Cmd {
 	}
 	m.uiReady = true
 	debuglog.StartupMark("startup.first_window_begin")
+	debuglog.StartupMark("startup.first_view_or_first_render")
 	if cmd != nil {
 		debuglog.StartupMark("startup.foreground_scheduled")
 	}

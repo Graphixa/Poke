@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
@@ -320,5 +321,11 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 
 	debuglog.StartupMark("startup.tui_enter")
-	return tui.Run(runCtx, opts)
+	err = tui.Run(runCtx, opts)
+	if lines := debuglog.StartupReport(); len(lines) > 0 && h.Stderr != nil {
+		for _, line := range lines {
+			_, _ = fmt.Fprintln(h.Stderr, "startup:", line)
+		}
+	}
+	return err
 }
