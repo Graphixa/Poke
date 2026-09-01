@@ -11,9 +11,9 @@ import (
 func TestColdSchedulerSelectionDoesNotCancelActive(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
-	var displayed []string
+	var log displayLog
 	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) {
-		displayed = append(displayed, res.Frame)
+		log.record(res.Frame)
 	})
 	ctx := context.Background()
 
@@ -36,15 +36,17 @@ func TestColdSchedulerSelectionDoesNotCancelActive(t *testing.T) {
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, frame := range displayed {
+	for _, frame := range log.snapshot() {
 		if frame == "frame-1:32" {
 			t.Fatal("stale frame 1 must not display")
 		}
 	}
-	if len(f.persisted) == 0 || f.persisted[0] != "1:32" {
-		t.Fatalf("stale frame 1 should persist, persisted=%v", f.persisted)
+	persisted := f.persistedKeys()
+	if len(persisted) == 0 || persisted[0] != "1:32" {
+		t.Fatalf("stale frame 1 should persist, persisted=%v", persisted)
 	}
-	lastStarted := f.started[len(f.started)-1]
+	started := f.startedIDs()
+	lastStarted := started[len(started)-1]
 	if lastStarted != 5 {
 		t.Fatalf("next render=%d want 5", lastStarted)
 	}
@@ -61,7 +63,7 @@ func TestColdSchedulerStaleCompletedFramePersists(t *testing.T) {
 	f.release(1)
 	f.release(2)
 	_ = s.WaitIdle(ctx)
-	if len(f.persisted) == 0 {
+	if len(f.persistedKeys()) == 0 {
 		t.Fatal("expected stale valid frame persisted")
 	}
 }

@@ -14,7 +14,10 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-const maxPriorityHints = 4
+const (
+	maxPriorityHints = 4
+	auditYieldBatch  = 64
+)
 
 // PokemonLoader loads Pokémon detail by species ID.
 type PokemonLoader interface {
@@ -47,6 +50,7 @@ type Service struct {
 	mu          sync.Mutex
 	cells       int
 	bucketGen   uint64
+	auditedGen  uint64
 	anchor      int // index into warmable index slice
 	fwdOff      int
 	bwdOff      int
@@ -149,7 +153,6 @@ func (s *Service) SetCells(cells int) {
 		s.failCount = make(map[int]int)
 		s.resetProgressLocked(cells)
 		s.mu.Unlock()
-		s.emitProgress()
 		s.signal()
 		return
 	}
@@ -339,6 +342,63 @@ func (s *Service) emitProgress() {
 	s.cfg.Progress(p)
 }
 
+// maybeAuditDisk counts persisted native frames for the active bucket in the
+// background worker. Returns true when the current bucketGen has been audited.
+// Suppresses progress emission when every warmable species is already on disk.
+func (s *Service) maybeAuditDisk(ctx context.Context) bool {
+	s.mu.Lock()
+	if s.auditedGen == s.bucketGen {
+		s.mu.Unlock()
+		return true
+	}
+	gen := s.bucketGen
+	cells := s.cells
+	warmable := append([]domain.SpeciesSummary(nil), s.warmable...)
+	total := len(warmable)
+	s.mu.Unlock()
+
+	if s.cfg.Renderer == nil || cells < sprite.MinFrameSize || total == 0 {
+		s.mu.Lock()
+		if s.bucketGen == gen {
+			s.auditedGen = gen
+		}
+		s.mu.Unlock()
+		return true
+	}
+
+	countedDone := make(map[int]bool, total)
+	done := 0
+	for i, sum := range warmable {
+		if err := ctx.Err(); err != nil {
+			return false
+		}
+		if i > 0 && i%auditYieldBatch == 0 && s.activity.ForegroundBusy() {
+			return false
+		}
+		poke := domain.Pokemon{ID: sum.ID, Slug: sum.Slug}
+		if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
+			countedDone[sum.ID] = true
+			done++
+		}
+	}
+
+	s.mu.Lock()
+	if s.bucketGen != gen {
+		s.mu.Unlock()
+		return false
+	}
+	s.countedDone = countedDone
+	s.progress.done = done
+	s.auditedGen = gen
+	complete := done >= s.progress.total
+	s.mu.Unlock()
+
+	if !complete {
+		s.emitProgress()
+	}
+	return true
+}
+
 func (s *Service) worker(ctx context.Context) {
 	defer s.wg.Done()
 	for {
@@ -346,6 +406,15 @@ func (s *Service) worker(ctx context.Context) {
 			return
 		}
 		if s.activity.ForegroundBusy() {
+			if !s.wait(ctx) {
+				return
+			}
+			continue
+		}
+		if !s.maybeAuditDisk(ctx) {
+			if ctx.Err() != nil {
+				return
+			}
 			if !s.wait(ctx) {
 				return
 			}

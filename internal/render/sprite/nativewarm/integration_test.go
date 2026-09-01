@@ -241,6 +241,7 @@ func TestIntegrationForegroundReadsBackgroundCache(t *testing.T) {
 	waitUntil(t, 5*time.Second, func() bool {
 		return env.engine.HasNativeCache(ctx, poke2, 32)
 	}, "background warm species 2")
+	svc.Stop()
 
 	renders := env.native.count()
 	cache.ResetNamedAssetMetaCount()
@@ -254,7 +255,6 @@ func TestIntegrationForegroundReadsBackgroundCache(t *testing.T) {
 	if cache.NamedAssetMetaCount() > 2 {
 		t.Fatalf("lookup must not re-read PNG assets, meta reads=%d", cache.NamedAssetMetaCount())
 	}
-	svc.Stop()
 	env.engine.ClosePersist()
 }
 

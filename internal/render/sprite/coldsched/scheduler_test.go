@@ -130,6 +130,44 @@ func (f *fakeRenderer) Persist(_ context.Context, cacheKey, frame string) error 
 	return nil
 }
 
+func (f *fakeRenderer) startedIDs() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int(nil), f.started...)
+}
+
+func (f *fakeRenderer) persistedKeys() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.persisted...)
+}
+
+type displayLog struct {
+	mu     sync.Mutex
+	frames []string
+}
+
+func (d *displayLog) record(frame string) {
+	d.mu.Lock()
+	d.frames = append(d.frames, frame)
+	d.mu.Unlock()
+}
+
+func (d *displayLog) snapshot() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.frames...)
+}
+
+func (d *displayLog) last() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.frames) == 0 {
+		return ""
+	}
+	return d.frames[len(d.frames)-1]
+}
+
 func poke(id int) domain.Pokemon {
 	return domain.Pokemon{ID: id, Slug: "mon", DisplayName: "Mon"}
 }
@@ -190,7 +228,8 @@ func TestColdSchedulerLatestPendingWins(t *testing.T) {
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	lastStarted := f.started[len(f.started)-1]
+	started := f.startedIDs()
+	lastStarted := started[len(started)-1]
 	if lastStarted != 5 {
 		t.Fatalf("last render=%d want 5 (latest pending wins)", lastStarted)
 	}
@@ -212,7 +251,7 @@ func TestColdSchedulerDoesNotFIFOQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []int{2, 3, 4} {
-		for _, started := range f.started {
+		for _, started := range f.startedIDs() {
 			if started == id {
 				t.Fatalf("species %d should not have been rendered (no FIFO queue)", id)
 			}
@@ -223,8 +262,8 @@ func TestColdSchedulerDoesNotFIFOQueue(t *testing.T) {
 func TestColdSchedulerStaleResultNotDisplayed(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
-	var displayed []string
-	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) { displayed = append(displayed, res.Frame) })
+	var log displayLog
+	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) { log.record(res.Frame) })
 	ctx := context.Background()
 
 	s.Select(ctx, 1, poke(1), 32, false, false)
@@ -234,6 +273,7 @@ func TestColdSchedulerStaleResultNotDisplayed(t *testing.T) {
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
+	displayed := log.snapshot()
 	for _, frame := range displayed {
 		if frame == "frame-1:32" {
 			t.Fatal("stale frame displayed")
@@ -247,8 +287,8 @@ func TestColdSchedulerStaleResultNotDisplayed(t *testing.T) {
 func TestColdSchedulerFinalSelectionDisplayed(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
-	var lastFrame string
-	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) { lastFrame = res.Frame })
+	var log displayLog
+	s := coldsched.NewScheduler(context.Background(), f, func(_ coldsched.Request, res coldsched.ColdResult) { log.record(res.Frame) })
 	ctx := context.Background()
 
 	for id := 1; id <= 5; id++ {
@@ -259,8 +299,8 @@ func TestColdSchedulerFinalSelectionDisplayed(t *testing.T) {
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if lastFrame != "frame-5:32" {
-		t.Fatalf("last frame=%q want frame-5:32", lastFrame)
+	if log.last() != "frame-5:32" {
+		t.Fatalf("last frame=%q want frame-5:32", log.last())
 	}
 }
 
@@ -274,8 +314,8 @@ func TestColdSchedulerCachedHitBypassesColdWorker(t *testing.T) {
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.started) != 0 {
-		t.Fatalf("cold worker started=%v want none", f.started)
+	if len(f.startedIDs()) != 0 {
+		t.Fatalf("cold worker started=%v want none", f.startedIDs())
 	}
 }
 
@@ -310,7 +350,7 @@ func TestColdSchedulerStaleValidResultCanPersist(t *testing.T) {
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.persisted) == 0 {
+	if len(f.persistedKeys()) == 0 {
 		t.Fatal("expected stale valid result persisted")
 	}
 }

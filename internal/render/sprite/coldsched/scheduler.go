@@ -543,21 +543,30 @@ func (s *Scheduler) display(req Request, res ColdResult) {
 	}
 }
 
-// WaitIdle blocks until no active or pending jobs remain.
+// WaitIdle blocks until no active or pending jobs remain and render goroutines exit.
 func (s *Scheduler) WaitIdle(ctx context.Context) error {
 	ticker := time.NewTicker(2 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		s.mu.Lock()
-		idle := s.active == nil && s.pending == nil
+		queueIdle := s.active == nil && s.pending == nil
 		s.mu.Unlock()
-		if idle {
-			return nil
+		if !queueIdle {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+			continue
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
+		if err := s.waitRenderWG(ctx); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		stillIdle := s.active == nil && s.pending == nil
+		s.mu.Unlock()
+		if stillIdle {
+			return nil
 		}
 	}
 }

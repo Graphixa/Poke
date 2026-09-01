@@ -55,7 +55,8 @@ func TestSpinnerOnlyOnTrueColdMiss(t *testing.T) {
 }
 
 func TestSpinnerNotShownForNativeMemoryHit(t *testing.T) {
-	sprites := &memHitSprites{fakeSprites: fakeSprites{ansi: "NATIVE", native: true}}
+	block := make(chan struct{})
+	sprites := &memHitSprites{fakeSprites: fakeSprites{ansi: "NATIVE", native: true, block: block}}
 	m := newSpinnerModel(sprites)
 	cmd := m.ForceSpriteLoadForTest()
 	if cmd == nil {
@@ -65,6 +66,7 @@ func TestSpinnerNotShownForNativeMemoryHit(t *testing.T) {
 		t.Fatal("cold miss must show spinner before mem is warm")
 	}
 	var model tea.Model = m
+	close(block)
 	drainCmds(t, &model, cmd)
 	m = model.(tui.Model)
 	if m.ImageSpinnerForTest() {
