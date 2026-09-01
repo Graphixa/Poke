@@ -93,6 +93,13 @@ func (m *memStore) StoreNative(_ context.Context, key, frame string) error {
 	return nil
 }
 
+func (m *memStore) HasNativeFile(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.native[key]
+	return ok
+}
+
 func flushNativePersist(t *testing.T, e *sprite.Engine, res sprite.RenderResult) {
 	t.Helper()
 	if e == nil || res.CacheKey == "" || res.ANSI == "" {

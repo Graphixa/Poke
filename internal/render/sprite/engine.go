@@ -294,6 +294,30 @@ func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cel
 	return e.hasNativeFrame(ctx, canonical, fw, fh, bg, e.SixelColors)
 }
 
+// HasNativeFile reports whether a persisted native frame file exists (stat only).
+func (e *Engine) HasNativeFile(ctx context.Context, pokemon domain.Pokemon, cells int) bool {
+	if e == nil || e.Artefacts == nil || e.Source == nil || pokemon.ID == 0 {
+		return false
+	}
+	ref := e.resolveNativeAssetRef(ctx, pokemon)
+	if !ref.Ready {
+		return false
+	}
+	fw, fh := e.frameSize()
+	if cells >= MinFrameSize {
+		fw, fh = FrameSizeFor(cells)
+	}
+	bg := e.Background
+	if bg.A == 0 {
+		bg = DefaultBackground
+	}
+	canonical := ref.Hash
+	if !IsHexSHA256(canonical) {
+		canonical = ""
+	}
+	return e.hasNativeFile(canonical, fw, fh, bg, e.SixelColors)
+}
+
 func (e *Engine) protocolName() string {
 	if e == nil || e.Modes == nil {
 		return ""

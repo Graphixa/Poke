@@ -52,6 +52,10 @@ func (e *Engine) lookupNativeFrame(ctx context.Context, rend Renderer, opts Rend
 	return false, RenderResult{}
 }
 
+type nativeFileStore interface {
+	HasNativeFile(key string) bool
+}
+
 func (e *Engine) hasNativeFrame(ctx context.Context, canonicalHash string, fw, fh int, bg color.RGBA, sixelColors int) bool {
 	if e == nil || !IsHexSHA256(canonicalHash) {
 		return false
@@ -66,6 +70,25 @@ func (e *Engine) hasNativeFrame(ctx context.Context, canonicalHash string, fw, f
 	}
 	frame, err := e.Artefacts.Native(ctx, key)
 	return err == nil && frame != ""
+}
+
+func (e *Engine) hasNativeFile(canonicalHash string, fw, fh int, bg color.RGBA, sixelColors int) bool {
+	if e == nil || !IsHexSHA256(canonicalHash) {
+		return false
+	}
+	proto := e.protocolName()
+	key := NativeCacheKey(canonicalHash, proto, fw, fh, bg, sixelColors)
+	if _, ok := e.nativeMemory().Get(key); ok {
+		return true
+	}
+	if e.Artefacts == nil {
+		return false
+	}
+	checker, ok := e.Artefacts.(nativeFileStore)
+	if !ok {
+		return false
+	}
+	return checker.HasNativeFile(key)
 }
 
 // NativeCacheSpecKey identifies the active native render specification for progress.

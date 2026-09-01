@@ -130,6 +130,14 @@ func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
 
 var _ sprite.ArtefactCache = (*Service)(nil)
 
+// HasNativeFile reports whether a gzip native frame file exists on disk (stat only).
+func (s *Service) HasNativeFile(key string) bool {
+	if s == nil || s.store == nil {
+		return false
+	}
+	return s.store.HasNativeFile(key)
+}
+
 // Native returns a cached Kitty/iTerm/Sixel frame by key.
 func (s *Service) Native(ctx context.Context, key string) (string, error) {
 	data, err := s.store.Native(ctx, key)

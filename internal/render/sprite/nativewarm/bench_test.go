@@ -30,6 +30,10 @@ func (s *slowNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Po
 	return s.cached[cacheKey{pokemon.ID, cells}]
 }
 
+func (s *slowNativeRenderer) HasNativeFile(_ context.Context, pokemon domain.Pokemon, cells int) bool {
+	return s.HasNativeCache(context.Background(), pokemon, cells)
+}
+
 func (s *slowNativeRenderer) NativeWarmRender(_ context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
 	if s.delay > 0 {
 		time.Sleep(s.delay)

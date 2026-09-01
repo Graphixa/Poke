@@ -24,6 +24,7 @@ type PokemonLoader interface {
 // NativeRenderer encodes native graphics frames into the artefact cache.
 type NativeRenderer interface {
 	HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cells int) bool
+	HasNativeFile(ctx context.Context, pokemon domain.Pokemon, cells int) bool
 	NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
 	PersistNativeFrame(ctx context.Context, cacheKey, frame string) error
 	WaitPersistCapacity(ctx context.Context) error
@@ -138,8 +139,15 @@ func (s *Service) SetCells(cells int) {
 		s.priority = nil
 		s.countedDone = make(map[int]bool)
 		s.resetProgressLocked(cells)
+		ctx := s.workerCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		complete := s.auditDiskLocked(ctx, cells)
 		s.mu.Unlock()
-		s.emitProgress()
+		if !complete {
+			s.emitProgress()
+		}
 		s.signal()
 		return
 	}
@@ -208,7 +216,11 @@ func (s *Service) SetAnchorFromSpeciesID(speciesID int) {
 	s.mu.Lock()
 	for i, sum := range s.warmable {
 		if sum.ID == speciesID {
-			s.anchor = i
+			if s.anchor != i {
+				s.anchor = i
+				s.fwdOff = 1
+				s.bwdOff = 1
+			}
 			break
 		}
 	}
@@ -254,6 +266,25 @@ func (s *Service) resetProgressLocked(cells int) {
 		done:    0,
 		total:   len(s.warmable),
 	}
+}
+
+// auditDiskLocked counts persisted native frames for the active bucket using
+// cheap file existence checks. Returns true when every warmable species is
+// already on disk for this spec (worker traversal can stay idle).
+func (s *Service) auditDiskLocked(ctx context.Context, cells int) bool {
+	if s.cfg.Renderer == nil || cells < sprite.MinFrameSize || len(s.warmable) == 0 {
+		return false
+	}
+	done := 0
+	for _, sum := range s.warmable {
+		poke := domain.Pokemon{ID: sum.ID, Slug: sum.Slug}
+		if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
+			s.countedDone[sum.ID] = true
+			done++
+		}
+	}
+	s.progress.done = done
+	return done >= s.progress.total
 }
 
 func specKey(cells int) string {
@@ -368,7 +399,7 @@ func (s *Service) popNext() (int, bool) {
 	for len(s.priority) > 0 {
 		id := s.priority[0]
 		s.priority = s.priority[1:]
-		if s.shouldWarm(id) {
+		if s.shouldWarm(id) && !s.countedDone[id] {
 			return id, true
 		}
 	}
@@ -379,15 +410,25 @@ func (s *Service) popNext() (int, bool) {
 	if anchor >= len(s.warmable) {
 		anchor = len(s.warmable) - 1
 	}
-	if idx := anchor + s.fwdOff; idx < len(s.warmable) {
-		s.fwdOff++
-		return s.warmable[idx].ID, true
+	for {
+		if idx := anchor + s.fwdOff; idx < len(s.warmable) {
+			s.fwdOff++
+			id := s.warmable[idx].ID
+			if !s.countedDone[id] {
+				return id, true
+			}
+			continue
+		}
+		if idx := anchor - s.bwdOff; idx >= 0 {
+			s.bwdOff++
+			id := s.warmable[idx].ID
+			if !s.countedDone[id] {
+				return id, true
+			}
+			continue
+		}
+		return 0, false
 	}
-	if idx := anchor - s.bwdOff; idx >= 0 {
-		s.bwdOff++
-		return s.warmable[idx].ID, true
-	}
-	return 0, false
 }
 
 func (s *Service) uncountedAnchorOnly() (int, bool) {
