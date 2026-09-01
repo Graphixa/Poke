@@ -45,7 +45,7 @@ func (m *Model) runColdSelection(pokemon domain.Pokemon, cells int, force bool) 
 
 	m.setImageLoading()
 	m.syncWarmerBusy()
-	m.coldSched.Select(m.ctx, m.selectionGen, pokemon, cells, force)
+	m.coldSched.Select(m.ctx, m.selectionGen, pokemon, cells, force, true)
 
 	select {
 	case msg := <-m.coldFrameCh:

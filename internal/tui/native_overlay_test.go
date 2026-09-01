@@ -325,7 +325,7 @@ func TestClearCellRectCoversBox(t *testing.T) {
 	}
 }
 
-func TestWarmProgressNativeFooterHidden(t *testing.T) {
+func TestWarmProgressNativeFooterVisibleViaRaw(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}
 	m := tui.NewModel(tui.Options{
@@ -336,10 +336,27 @@ func TestWarmProgressNativeFooterHidden(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
-	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells,
+		"\x1bP0;0;8q#1~~~\x1b\\", false,
+	))
+	updated, _ = m.Update(msg)
 	m = updated.(tui.Model)
-	if hint := m.BrowseWarmHintForTest(); hint != "" {
-		t.Fatalf("native warm must not show footer progress, got %q", hint)
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+
+	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
+	m = updated.(tui.Model)
+	if hint := m.BrowseWarmHintForTest(); hint == "" {
+		t.Fatal("native warm must populate footer progress state")
+	}
+	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
+		t.Fatalf("warm hint must not render over native art: %q", vis)
+	}
+	if len(collectRawPayloads(cmd)) == 0 {
+		t.Fatal("native warm must patch footer via tea.Raw")
 	}
 }
 
@@ -368,8 +385,8 @@ func TestWarmHintHiddenUnderNativeSprite(t *testing.T) {
 
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(460, 649, 36))
 	m = updated.(tui.Model)
-	if m.BrowseWarmHintForTest() != "" {
-		t.Fatalf("native warm must not populate visible footer hint: %q", m.BrowseWarmHintForTest())
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatal("native warm must track footer progress while sprite visible")
 	}
 	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
 		t.Fatalf("warm hint must not render over native art: %q", vis)
@@ -403,15 +420,15 @@ func TestNativeWarmDoesNotPatchFooterWhileSpriteVisible(t *testing.T) {
 
 	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(3, 8, 40))
 	m = updated.(tui.Model)
-	if m.BrowseWarmHintForTest() != "" {
-		t.Fatalf("native warm must not populate footer hint: %q", m.BrowseWarmHintForTest())
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatal("native warm must populate footer hint state")
 	}
-	if raws := collectRawPayloads(cmd); len(raws) != 0 {
-		t.Fatalf("native warm must not patch footer via tea.Raw, got %v", raws)
+	if raws := collectRawPayloads(cmd); len(raws) == 0 {
+		t.Fatalf("native warm must patch footer via tea.Raw, got %v", raws)
 	}
 }
 
-func TestNativeWarmCompleteDoesNotClearFooter(t *testing.T) {
+func TestNativeWarmCompleteClearsFooterViaRaw(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}
 	m := tui.NewModel(tui.Options{
@@ -435,8 +452,8 @@ func TestNativeWarmCompleteDoesNotClearFooter(t *testing.T) {
 
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(1024, 1025, 40))
 	m = updated.(tui.Model)
-	if m.BrowseWarmHintForTest() != "" {
-		t.Fatalf("native warm must not show in-progress footer: %q", m.BrowseWarmHintForTest())
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatalf("native warm must show in-progress footer state")
 	}
 
 	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(1025, 1025, 40))
@@ -450,12 +467,12 @@ func TestNativeWarmCompleteDoesNotClearFooter(t *testing.T) {
 	if m.NativeOverlayDirtyForTest() || m.NativePaintPendingForTest() {
 		t.Fatal("completion must not trigger overlay repaint")
 	}
-	if raws := collectRawPayloads(cmd); len(raws) != 0 {
-		t.Fatalf("native complete must not emit footer Raw patches: %v", raws)
+	if raws := collectRawPayloads(cmd); len(raws) == 0 {
+		t.Fatalf("native complete must clear footer via tea.Raw")
 	}
 }
 
-func TestNativeWarmDoneEqualsTotalNoFooterPatch(t *testing.T) {
+func TestNativeWarmDoneEqualsTotalClearsFooterViaRaw(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}
 	m := tui.NewModel(tui.Options{
@@ -482,8 +499,8 @@ func TestNativeWarmDoneEqualsTotalNoFooterPatch(t *testing.T) {
 	if m.BrowseWarmHintForTest() != "" {
 		t.Fatalf("expected hidden bar at 8/8, got %q", m.BrowseWarmHintForTest())
 	}
-	if raws := collectRawPayloads(cmd); len(raws) != 0 {
-		t.Fatalf("native warm must not patch footer at completion: %v", raws)
+	if raws := collectRawPayloads(cmd); len(raws) == 0 {
+		t.Fatalf("native warm must clear footer at completion: %v", raws)
 	}
 }
 
@@ -498,7 +515,7 @@ func (fakeNativeWarmer) Snapshot() (int, int)   { return 0, 0 }
 func (fakeNativeWarmer) NoteActivity()          {}
 func (fakeNativeWarmer) SetForegroundBusy(bool) {}
 
-func TestNativeWarmHintHiddenBeforeSprite(t *testing.T) {
+func TestNativeWarmHintVisibleBeforeSpriteViaRaw(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}
 	m := tui.NewModel(tui.Options{
@@ -512,11 +529,8 @@ func TestNativeWarmHintHiddenBeforeSprite(t *testing.T) {
 
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
 	m = updated.(tui.Model)
-	if m.BrowseWarmHintForTest() != "" {
-		t.Fatalf("native warm must not show footer progress: %q", m.BrowseWarmHintForTest())
-	}
-	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
-		t.Fatalf("native warm must not render footer hint: %q", vis)
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatal("native warm must track footer progress before sprite paint")
 	}
 }
 

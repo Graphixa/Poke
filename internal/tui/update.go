@@ -182,9 +182,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reload = m.refreshSpriteAfterWarm(msg.SpeciesID, msg.Stage)
 		}
 		var patch tea.Cmd
-		if msg.Total > 0 && msg.Done >= msg.Total && m.nativeSpriteActive() && m.warmStage != "native" {
+		if msg.Total > 0 && msg.Done >= msg.Total && m.nativeSpriteActive() {
 			patch = clearWarmFooterRawCmd(m)
-		} else if m.warmActive && m.warmStage != "native" && m.nativeSpriteActive() {
+		} else if m.warmActive && m.nativeSpriteActive() {
 			patch = patchWarmFooterCmd(m)
 		}
 		return m, tea.Batch(reload, patch, listenWarmProgress(m.warmEvents))
