@@ -135,7 +135,7 @@ func poke(id int) domain.Pokemon {
 }
 
 func newTestScheduler(f *fakeRenderer) *coldsched.Scheduler {
-	return coldsched.NewScheduler(f, func(_ coldsched.Request, frame string) {})
+	return coldsched.NewScheduler(f, func(_ coldsched.Request, res coldsched.ColdResult) {})
 }
 
 func TestColdSchedulerAtMostOneActive(t *testing.T) {
@@ -144,7 +144,7 @@ func TestColdSchedulerAtMostOneActive(t *testing.T) {
 	s := newTestScheduler(f)
 	ctx := context.Background()
 
-	s.Select(ctx, 1, poke(1), 32, false)
+	s.Select(ctx, 1, poke(1), 32, false, false)
 	time.Sleep(5 * time.Millisecond)
 	m := s.Metrics()
 	if m.MaxActive > 1 {
@@ -160,9 +160,9 @@ func TestColdSchedulerAtMostOnePending(t *testing.T) {
 	s := newTestScheduler(f)
 	ctx := context.Background()
 
-	s.Select(ctx, 1, poke(1), 32, false)
-	s.Select(ctx, 2, poke(2), 32, false)
-	s.Select(ctx, 3, poke(3), 32, false)
+	s.Select(ctx, 1, poke(1), 32, false, false)
+	s.Select(ctx, 2, poke(2), 32, false, false)
+	s.Select(ctx, 3, poke(3), 32, false, false)
 	time.Sleep(5 * time.Millisecond)
 	m := s.Metrics()
 	if m.MaxPending > 1 {
@@ -179,11 +179,11 @@ func TestColdSchedulerLatestPendingWins(t *testing.T) {
 	s := newTestScheduler(f)
 	ctx := context.Background()
 
-	s.Select(ctx, 1, poke(1), 32, false)
-	s.Select(ctx, 2, poke(2), 32, false)
-	s.Select(ctx, 3, poke(3), 32, false)
-	s.Select(ctx, 4, poke(4), 32, false)
-	s.Select(ctx, 5, poke(5), 32, false)
+	s.Select(ctx, 1, poke(1), 32, false, false)
+	s.Select(ctx, 2, poke(2), 32, false, false)
+	s.Select(ctx, 3, poke(3), 32, false, false)
+	s.Select(ctx, 4, poke(4), 32, false, false)
+	s.Select(ctx, 5, poke(5), 32, false, false)
 
 	f.release(1)
 	f.release(5)
@@ -202,9 +202,9 @@ func TestColdSchedulerDoesNotFIFOQueue(t *testing.T) {
 	s := newTestScheduler(f)
 	ctx := context.Background()
 
-	s.Select(ctx, 1, poke(1), 32, false)
+	s.Select(ctx, 1, poke(1), 32, false, false)
 	for id := 2; id <= 5; id++ {
-		s.Select(ctx, id, poke(id), 32, false)
+		s.Select(ctx, id, poke(id), 32, false, false)
 	}
 	f.release(1)
 	f.release(5)
@@ -224,11 +224,11 @@ func TestColdSchedulerStaleResultNotDisplayed(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
 	var displayed []string
-	s := coldsched.NewScheduler(f, func(_ coldsched.Request, frame string) { displayed = append(displayed, frame) })
+	s := coldsched.NewScheduler(f, func(_ coldsched.Request, res coldsched.ColdResult) { displayed = append(displayed, res.Frame) })
 	ctx := context.Background()
 
-	s.Select(ctx, 1, poke(1), 32, false)
-	s.Select(ctx, 2, poke(2), 32, false)
+	s.Select(ctx, 1, poke(1), 32, false, false)
+	s.Select(ctx, 2, poke(2), 32, false, false)
 	f.release(1)
 	f.release(2)
 	if err := s.WaitIdle(ctx); err != nil {
@@ -248,11 +248,11 @@ func TestColdSchedulerFinalSelectionDisplayed(t *testing.T) {
 	f := newFakeRenderer()
 	f.setBlockAll(true)
 	var lastFrame string
-	s := coldsched.NewScheduler(f, func(_ coldsched.Request, frame string) { lastFrame = frame })
+	s := coldsched.NewScheduler(f, func(_ coldsched.Request, res coldsched.ColdResult) { lastFrame = res.Frame })
 	ctx := context.Background()
 
 	for id := 1; id <= 5; id++ {
-		s.Select(ctx, id, poke(id), 32, false)
+		s.Select(ctx, id, poke(id), 32, false, false)
 	}
 	f.release(1)
 	f.release(5)
@@ -270,7 +270,7 @@ func TestColdSchedulerCachedHitBypassesColdWorker(t *testing.T) {
 	s := newTestScheduler(f)
 	ctx := context.Background()
 
-	s.Select(ctx, 1, poke(7), 32, false)
+	s.Select(ctx, 1, poke(7), 32, false, false)
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestColdSchedulerCachedHitNotDebounced(t *testing.T) {
 
 	start := time.Now()
 	for i := 0; i < 20; i++ {
-		s.Select(ctx, i, poke(7), 32, false)
+		s.Select(ctx, i, poke(7), 32, false, false)
 	}
 	if err := s.WaitIdle(ctx); err != nil {
 		t.Fatal(err)
@@ -303,8 +303,8 @@ func TestColdSchedulerStaleValidResultCanPersist(t *testing.T) {
 	s := newTestScheduler(f)
 	ctx := context.Background()
 
-	s.Select(ctx, 1, poke(1), 32, false)
-	s.Select(ctx, 2, poke(2), 32, false)
+	s.Select(ctx, 1, poke(1), 32, false, false)
+	s.Select(ctx, 2, poke(2), 32, false, false)
 	f.release(1)
 	f.release(2)
 	if err := s.WaitIdle(ctx); err != nil {
@@ -322,7 +322,7 @@ func TestColdSchedulerWheel20RemainsBounded(t *testing.T) {
 	ctx := context.Background()
 
 	for id := 1; id <= 20; id++ {
-		s.Select(ctx, id, poke(id), 32, false)
+		s.Select(ctx, id, poke(id), 32, false, false)
 		time.Sleep(50 * time.Millisecond)
 	}
 	if err := s.WaitIdle(ctx); err != nil {
@@ -341,7 +341,7 @@ func TestColdSchedulerBurst40RemainsBounded(t *testing.T) {
 	ctx := context.Background()
 
 	for id := 1; id <= 50; id++ {
-		s.Select(ctx, id, poke(id), 32, false)
+		s.Select(ctx, id, poke(id), 32, false, false)
 		time.Sleep(25 * time.Millisecond)
 	}
 	if err := s.WaitIdle(ctx); err != nil {

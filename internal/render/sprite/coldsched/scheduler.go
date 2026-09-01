@@ -47,11 +47,14 @@ type RenderTimings struct {
 
 // ColdResult is the output of a cache lookup or cold render.
 type ColdResult struct {
-	Frame      string
-	CacheKey   string
-	CacheState string
-	Timings    RenderTimings
-	Err        error
+	Frame       string
+	CacheKey    string
+	CacheState  string
+	Native      bool
+	AssetKind   string
+	Placeholder bool
+	Timings     RenderTimings
+	Err         error
 }
 
 // Renderer performs cache lookups and cold encodes for the scheduler.
@@ -122,7 +125,7 @@ type activeJob struct {
 }
 
 // DisplayFunc receives a ready frame for the selected render target.
-type DisplayFunc func(req Request, frame string)
+type DisplayFunc func(req Request, res ColdResult)
 
 // Scheduler enforces at most one active and one pending cold render.
 type Scheduler struct {
@@ -161,7 +164,8 @@ func NewScheduler(renderer Renderer, onDisplay DisplayFunc) *Scheduler {
 
 // Select handles a selection change. When force is true, an in-flight encode for
 // the same target is aborted so a fresh cold render can start (artwork upgrade).
-func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon, cells int, force bool) {
+// When skipLookup is true the caller already performed an authoritative cache miss.
+func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon, cells int, force bool, skipLookup bool) {
 	now := time.Now()
 	req := Request{SpeciesID: pokemon.ID, Gen: gen, Cells: cells, Pokemon: pokemon}
 
@@ -171,11 +175,13 @@ func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon,
 	s.seq++
 	s.recordEventLocked(Event{Seq: s.seq, Kind: EventSelection, SpeciesID: pokemon.ID, SelectedAt: now})
 
-	if res, hit := s.renderer.LookupCached(ctx, pokemon, cells); hit && res.Frame != "" && res.Err == nil {
-		frame := s.recordCacheHitLocked(now, pokemon.ID, res)
-		s.mu.Unlock()
-		s.display(req, frame)
-		return
+	if !skipLookup {
+		if res, hit := s.renderer.LookupCached(ctx, pokemon, cells); hit && res.Frame != "" && res.Err == nil {
+			frame := s.recordCacheHitLocked(now, pokemon.ID, res)
+			s.mu.Unlock()
+			s.display(req, resWithFrame(res, frame))
+			return
+		}
 	}
 	s.coldMisses++
 
@@ -184,6 +190,9 @@ func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon,
 			s.mu.Unlock()
 			return
 		}
+		if force && s.active.req.Same(req) {
+			s.abortActiveLocked()
+		}
 		cp := req
 		if s.pending != nil && !s.pending.Same(req) {
 			s.pendingReplaced++
@@ -191,22 +200,14 @@ func (s *Scheduler) Select(ctx context.Context, gen int, pokemon domain.Pokemon,
 		}
 		s.pending = &cp
 		s.trackPendingLocked()
-		s.abortActiveLocked()
-		outcome := s.takeStartLocked(ctx, now)
 		s.mu.Unlock()
-		if outcome.cacheFrame != "" {
-			s.display(outcome.cacheReq, outcome.cacheFrame)
-		}
-		if outcome.job != nil {
-			go s.runRender(*outcome.job)
-		}
 		return
 	}
 
 	outcome := s.takeStartLocked(ctx, now, req)
 	s.mu.Unlock()
 	if outcome.cacheFrame != "" {
-		s.display(outcome.cacheReq, outcome.cacheFrame)
+		s.display(outcome.cacheReq, outcome.cacheRes)
 	}
 	if outcome.job != nil {
 		go s.runRender(*outcome.job)
@@ -235,6 +236,13 @@ type startOutcome struct {
 	job        *activeJob
 	cacheFrame string
 	cacheReq   Request
+	cacheRes   ColdResult
+}
+
+func resWithFrame(res ColdResult, frame string) ColdResult {
+	out := res
+	out.Frame = frame
+	return out
 }
 
 func (s *Scheduler) takeStartLocked(ctx context.Context, selectedAt time.Time, req ...Request) startOutcome {
@@ -254,7 +262,7 @@ func (s *Scheduler) takeStartLocked(ctx context.Context, selectedAt time.Time, r
 		}
 		if res, hit := s.renderer.LookupCached(ctx, startReq.Pokemon, startReq.Cells); hit && res.Frame != "" && res.Err == nil {
 			frame := s.recordCacheHitLocked(selectedAt, startReq.SpeciesID, res)
-			return startOutcome{cacheFrame: frame, cacheReq: startReq}
+			return startOutcome{cacheFrame: frame, cacheReq: startReq, cacheRes: resWithFrame(res, frame)}
 		}
 	} else {
 		return startOutcome{}
@@ -324,9 +332,9 @@ func (s *Scheduler) runRender(job activeJob) {
 				VisibleAt:   visible,
 				Timings:     res.Timings,
 			})
-			frame := res.Frame
+			displayRes := res
 			s.mu.Unlock()
-			s.display(job.req, frame)
+			s.display(job.req, displayRes)
 			s.mu.Lock()
 			if res.CacheKey != "" {
 				go func(key, f string) { _ = s.renderer.Persist(context.Background(), key, f) }(res.CacheKey, res.Frame)
@@ -352,7 +360,7 @@ func (s *Scheduler) runRender(job activeJob) {
 	outcome := s.takeStartLocked(context.Background(), s.lastSelectedAt)
 	s.mu.Unlock()
 	if outcome.cacheFrame != "" {
-		s.display(outcome.cacheReq, outcome.cacheFrame)
+		s.display(outcome.cacheReq, outcome.cacheRes)
 	}
 	if outcome.job != nil {
 		go s.runRender(*outcome.job)
@@ -432,9 +440,9 @@ func (s *Scheduler) PendingSpecies() int {
 	return 0
 }
 
-func (s *Scheduler) display(req Request, frame string) {
-	if s.onDisplay != nil && frame != "" {
-		s.onDisplay(req, frame)
+func (s *Scheduler) display(req Request, res ColdResult) {
+	if s.onDisplay != nil && res.Frame != "" {
+		s.onDisplay(req, res)
 	}
 }
 

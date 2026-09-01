@@ -68,28 +68,43 @@ func (s *laggyNativeStore) StoreNative(ctx context.Context, key, frame string) e
 	return s.memStore.StoreNative(ctx, key, frame)
 }
 
-func TestPersistQueueBoundedDropOldest(t *testing.T) {
+func TestPersistQueueDoesNotDropAcceptedBackgroundFrames(t *testing.T) {
 	base := newMemStore()
-	store := &laggyNativeStore{memStore: base, delay: 30 * time.Millisecond}
+	store := &laggyNativeStore{memStore: base, delay: 20 * time.Millisecond}
 
 	engine := &sprite.Engine{Artefacts: store}
 	for i := 0; i < 4; i++ {
 		key := "k" + string(rune('a'+i))
-		_ = engine.PersistFrame(context.Background(), key, "F")
+		if err := engine.PersistFrame(context.Background(), key, "F"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	engine.ClosePersist()
 
-	if n := len(base.native); n > 2 {
-		t.Fatalf("persisted %d keys want at most 2", n)
+	if n := len(base.native); n != 4 {
+		t.Fatalf("persisted %d keys want all 4 accepted jobs", n)
 	}
 }
 
 func TestClosePersistWaitsForWorker(t *testing.T) {
 	store := newMemStore()
 	engine := &sprite.Engine{Artefacts: store}
-	_ = engine.PersistFrame(context.Background(), "k", "FRAME")
+	if err := engine.PersistFrame(context.Background(), "k", "FRAME"); err != nil {
+		t.Fatal(err)
+	}
 	engine.ClosePersist()
 	if _, ok := store.native["k"]; !ok {
 		t.Fatal("expected frame persisted before close")
+	}
+}
+
+func TestShutdownDrainsAcceptedPersistenceJobs(t *testing.T) {
+	store := newMemStore()
+	engine := &sprite.Engine{Artefacts: store}
+	_ = engine.PersistFrame(context.Background(), "a", "A")
+	_ = engine.PersistFrame(context.Background(), "b", "B")
+	engine.ClosePersist()
+	if len(store.native) != 2 {
+		t.Fatalf("native keys=%d want 2 drained", len(store.native))
 	}
 }

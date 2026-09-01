@@ -3,6 +3,7 @@ package sprite
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 )
@@ -14,6 +15,7 @@ const nativePersistQueueCap = 2
 type persistJob struct {
 	key   string
 	frame string
+	done  chan error
 }
 
 type persistQueue struct {
@@ -36,37 +38,91 @@ func (q *persistQueue) start(store func(ctx context.Context, key, frame string) 
 		go func() {
 			defer q.wg.Done()
 			for job := range q.ch {
-				if err := q.store(context.Background(), job.key, job.frame); err != nil {
+				err := q.store(context.Background(), job.key, job.frame)
+				if err != nil {
 					debuglog.Renderf("persist.native err=%v key=%s", err, job.key)
+				}
+				if job.done != nil {
+					job.done <- err
+					close(job.done)
 				}
 			}
 		}()
 	})
 }
 
-func (q *persistQueue) enqueue(key, frame string) {
-	if q == nil || key == "" || frame == "" {
-		return
+func (q *persistQueue) waitCapacity(ctx context.Context) error {
+	if q == nil {
+		return nil
+	}
+	for {
+		q.mu.Lock()
+		closed := q.closed
+		ch := q.ch
+		full := ch != nil && len(ch) >= nativePersistQueueCap
+		q.mu.Unlock()
+		if closed {
+			return context.Canceled
+		}
+		if !full {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+func (q *persistQueue) pending() int {
+	if q == nil {
+		return 0
 	}
 	q.mu.Lock()
-	defer q.mu.Unlock()
+	ch := q.ch
+	q.mu.Unlock()
+	if ch == nil {
+		return 0
+	}
+	return len(ch)
+}
+
+func (q *persistQueue) submit(ctx context.Context, key, frame string, wait bool) error {
+	if q == nil || key == "" || frame == "" {
+		return nil
+	}
+	q.mu.Lock()
 	if q.closed || q.ch == nil {
-		return
+		q.mu.Unlock()
+		return context.Canceled
 	}
+	ch := q.ch
+	q.mu.Unlock()
+
+	if err := q.waitCapacity(ctx); err != nil {
+		return err
+	}
+
 	job := persistJob{key: key, frame: frame}
-	select {
-	case q.ch <- job:
-		return
-	default:
+	if wait {
+		job.done = make(chan error, 1)
 	}
-	// Queue full: drop oldest pending write, keep newest (latest selection wins).
+
 	select {
-	case <-q.ch:
-	default:
+	case ch <- job:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	if !wait {
+		return nil
 	}
 	select {
-	case q.ch <- job:
-	default:
+	case err := <-job.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -104,13 +160,39 @@ func (e *Engine) nativePersist() *persistQueue {
 	return e.persistQ
 }
 
-// PersistFrame enqueues a native frame gzip write. Returns immediately.
+// PersistFrame enqueues a native frame gzip write. Returns immediately; the
+// worker blocks when the queue is full rather than dropping accepted jobs.
 func (e *Engine) PersistFrame(_ context.Context, key, frame string) error {
 	if e == nil || key == "" || frame == "" {
 		return nil
 	}
-	e.nativePersist().enqueue(key, frame)
-	return nil
+	return e.nativePersist().submit(context.Background(), key, frame, false)
+}
+
+// PersistFrameWait enqueues a native frame and blocks until it is stored or ctx
+// is cancelled. Used by background warming so progress reflects persistence.
+func (e *Engine) PersistFrameWait(ctx context.Context, key, frame string) error {
+	if e == nil || key == "" || frame == "" {
+		return nil
+	}
+	return e.nativePersist().submit(ctx, key, frame, true)
+}
+
+// WaitPersistCapacity blocks until the persistence queue has space. Background
+// encoders call this before starting work to apply backpressure.
+func (e *Engine) WaitPersistCapacity(ctx context.Context) error {
+	if e == nil {
+		return nil
+	}
+	return e.nativePersist().waitCapacity(ctx)
+}
+
+// PersistQueuePending returns the number of frames waiting to be written.
+func (e *Engine) PersistQueuePending() int {
+	if e == nil {
+		return 0
+	}
+	return e.nativePersist().pending()
 }
 
 // ClosePersist drains the persistence worker (best-effort on shutdown).
