@@ -45,9 +45,8 @@ func TestPersistFrameReturnsBeforeSlowStore(t *testing.T) {
 	if persistErr != nil {
 		t.Fatalf("PersistFrame err=%v", persistErr)
 	}
-	if store.calls.Load() != 0 {
-		t.Fatalf("store invoked synchronously, calls=%d", store.calls.Load())
-	}
+	// Worker may already be blocked inside StoreNative; only require that
+	// PersistFrame returned before the slow store completed.
 
 	close(block)
 	deadline := time.Now().Add(2 * time.Second)
