@@ -202,6 +202,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		ClearNativeRegionFn: spriteimage.ClearNativeRegion,
 		OnNativeFail:        img.Disable,
 	}
+	defer engine.ClosePersist()
 
 	details := NewDetailService(svc.Cache)
 	workers := svc.Cache.MaxConcurrency()
@@ -249,10 +250,12 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 
 	nativeImageBrowse := caps.NativeImage && !opts.DisableSprite
 	if nativeImageBrowse {
+		useProgress = true
 		nativeWarmer = nativewarm.New(nativewarm.Config{
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
 			Index:    index,
+			Progress: forwardWarm,
 		})
 		defer nativeWarmer.Stop()
 		opts.NativeWarmer = nativeWarmer
