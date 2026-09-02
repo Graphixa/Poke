@@ -18,7 +18,7 @@ const interactiveReserve = 2
 
 // Progress reports refresh work without coupling to CLI or TUI rendering.
 type Progress struct {
-	Stage     string
+	Stage     Stage
 	Done      int
 	Total     int
 	Message   string
@@ -254,7 +254,7 @@ func (s *Service) refreshIndexOnce(ctx context.Context, progress ProgressFunc) e
 	if err := s.store.EnsureRoot(); err != nil {
 		return err
 	}
-	report(progress, Progress{Stage: "index", Message: "Fetching species index"})
+	report(progress, Progress{Stage: StageIndex, Message: "Fetching species index"})
 	summaries, err := s.api.ListSpecies(ctx)
 	if err != nil {
 		return err
@@ -268,7 +268,7 @@ func (s *Service) refreshIndexOnce(ctx context.Context, progress ProgressFunc) e
 	if err := s.store.StoreSpeciesIndex(ctx, summaries, now); err != nil {
 		return err
 	}
-	report(progress, Progress{Stage: "index", Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
+	report(progress, Progress{Stage: StageIndex, Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
 	return nil
 }
 
@@ -287,7 +287,7 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 	total := len(jobs)
 	if total == 0 {
 		_ = s.store.StoreSpeciesIndex(ctx, summaries, s.clock.Now())
-		report(progress, Progress{Stage: "enrich", Done: 0, Total: 0, Message: "Types already enriched"})
+		report(progress, Progress{Stage: StageEnrich, Done: 0, Total: 0, Message: "Types already enriched"})
 		return nil
 	}
 
@@ -323,7 +323,7 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 					mu.Unlock()
 				}
 				current := int(done.Add(1))
-				report(progress, Progress{Stage: "enrich", Done: current, Total: total, Message: j.sum.Slug})
+				report(progress, Progress{Stage: StageEnrich, Done: current, Total: total, Message: j.sum.Slug})
 				continue
 			}
 			types := make([]string, 0, len(pokemon.Types))
@@ -336,7 +336,7 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 			mu.Unlock()
 
 			current := int(done.Add(1))
-			report(progress, Progress{Stage: "enrich", Done: current, Total: total, Message: j.sum.DisplayName})
+			report(progress, Progress{Stage: StageEnrich, Done: current, Total: total, Message: j.sum.DisplayName})
 		}
 	}
 

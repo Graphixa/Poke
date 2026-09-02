@@ -10,11 +10,11 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-func formatWarmFooterRight(stage string, done, total, cells int) string {
+func formatWarmFooterRight(stage WarmStage, done, total, cells int) string {
 	if total <= 0 || done >= total {
 		return ""
 	}
-	if stage != "native" {
+	if stage != WarmStageNative {
 		return ""
 	}
 	return formatNativeImageCacheFooter(done, total)

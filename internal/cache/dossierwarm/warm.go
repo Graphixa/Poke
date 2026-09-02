@@ -251,7 +251,7 @@ func (s *Service) runJob(ctx context.Context, id int) {
 	total := int(s.totalN.Load())
 	if s.cfg.Progress != nil {
 		s.cfg.Progress(cache.Progress{
-			Stage:     "dossier",
+			Stage:     cache.StageDossier,
 			Done:      done,
 			Total:     total,
 			Message:   "dossier warm",

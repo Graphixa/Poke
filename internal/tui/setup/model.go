@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
@@ -37,9 +36,9 @@ type Deps struct {
 	Native     bool
 	Protocol   string // kitty|iterm|sixel|chafa
 
-	EnsureIndex func(ctx context.Context, progress cache.ProgressFunc) ([]domain.SpeciesSummary, error)
+	EnsureIndex func(ctx context.Context, progress ProgressFunc) ([]domain.SpeciesSummary, error)
 	EstimateHD  func(ctx context.Context, index []domain.SpeciesSummary) int64
-	WarmArtwork func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error
+	WarmArtwork func(ctx context.Context, index []domain.SpeciesSummary, progress ProgressFunc) error
 	SaveConfig  func(cfg config.Config) error
 }
 
@@ -85,6 +84,17 @@ type warmDoneMsg struct {
 type estimateDoneMsg struct {
 	bytes int64
 }
+
+// Progress is setup-wizard download/index progress (not cache.Progress).
+type Progress struct {
+	Done    int
+	Total   int
+	Message string
+}
+
+// ProgressFunc receives setup progress. App adapts cache.Progress into this.
+type ProgressFunc func(Progress)
+
 type progressMsg struct {
 	done, total int
 	message     string
@@ -325,7 +335,7 @@ func (m Model) beginArtworkWarm() (tea.Model, tea.Cmd) {
 	deps := m.deps
 	index := m.index
 	go func() {
-		err := deps.WarmArtwork(ctx, index, func(p cache.Progress) {
+		err := deps.WarmArtwork(ctx, index, func(p Progress) {
 			select {
 			case ch <- progressMsg{done: p.Done, total: p.Total, message: p.Message}:
 			default:

@@ -94,7 +94,7 @@ func sendWarmProgress(ch chan tui.WarmProgress, p cache.Progress) {
 	}
 	msg := tui.WarmProgress{
 		Done: p.Done, Total: p.Total, Message: p.Message,
-		SpeciesID: p.SpeciesID, Stage: p.Stage, Cells: p.Cells,
+		SpeciesID: p.SpeciesID, Stage: tui.WarmStage(p.Stage), Cells: p.Cells,
 	}
 	select {
 	case ch <- msg:
@@ -277,7 +277,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		useProgress = true
 		artworkWarmer = assetwarm.New(assetwarm.Config{
 			Mode:     assetwarm.ModeArtwork,
-			Stage:    "artwork",
+			Stage:    cache.StageArtwork,
 			Workers:  assetwarm.ArtworkWorkers(workers),
 			Loader:   warmPokemonLoader{details},
 			Resolver: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},

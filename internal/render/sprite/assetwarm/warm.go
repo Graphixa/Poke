@@ -53,7 +53,7 @@ type Config struct {
 	Index    []domain.SpeciesSummary
 	Progress ProgressFunc
 	// Stage label reported in Progress (default depends on Mode).
-	Stage   string
+	Stage   cache.Stage
 	Message string
 }
 
@@ -101,9 +101,9 @@ func New(cfg Config) *Service {
 	}
 	if cfg.Stage == "" {
 		if cfg.Mode == ModeArtwork {
-			cfg.Stage = "artwork"
+			cfg.Stage = cache.StageArtwork
 		} else {
-			cfg.Stage = "sprites"
+			cfg.Stage = cache.StageSprites
 		}
 	}
 	if cfg.Message == "" {

@@ -156,11 +156,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				clear = clearWarmFooterRawCmd(m)
 			}
 			if sel, ok := m.selected(); ok {
-				return m, tea.Batch(clear, m.refreshSpriteAfterWarm(sel.ID, "artwork"), listenWarmProgress(m.warmEvents))
+				return m, tea.Batch(clear, m.refreshSpriteAfterWarm(sel.ID, WarmStageArtwork), listenWarmProgress(m.warmEvents))
 			}
 			return m, tea.Batch(clear, listenWarmProgress(m.warmEvents))
 		}
-		if msg.Stage == "native" {
+		if msg.Stage == WarmStageNative {
 			m.nativeWarmDone = msg.Done
 			m.nativeWarmTotal = msg.Total
 			m.nativeWarmActive = msg.Total > 0 && msg.Done < msg.Total
@@ -199,7 +199,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reload = m.refreshSpriteAfterWarm(msg.SpeciesID, msg.Stage)
 		}
 		var patch tea.Cmd
-		nativeComplete := msg.Stage == "native" && msg.Total > 0 && msg.Done >= msg.Total
+		nativeComplete := msg.Stage == WarmStageNative && msg.Total > 0 && msg.Done >= msg.Total
 		if nativeComplete && m.nativeSpriteActive() {
 			patch = clearWarmFooterRawCmd(m)
 		} else if m.nativeSpriteActive() {
@@ -378,7 +378,7 @@ func (m *Model) effectiveWarmFooterRight() string {
 	if !m.nativeWarmActive {
 		return ""
 	}
-	return formatWarmFooterRight("native", m.nativeWarmDone, m.nativeWarmTotal, m.nativeWarmCells)
+	return formatWarmFooterRight(WarmStageNative, m.nativeWarmDone, m.nativeWarmTotal, m.nativeWarmCells)
 }
 
 func (m *Model) syncSelectionLoads() tea.Cmd {
@@ -658,7 +658,7 @@ func (m *Model) artworkReady(speciesID int) bool {
 // refreshSpriteAfterWarm reloads the selected sprite when background warm just
 // finished that species. Artwork stage always upgrades (even if ANSI present);
 // other stages only reload placeholders / non-artwork frames.
-func (m *Model) refreshSpriteAfterWarm(speciesID int, stage string) tea.Cmd {
+func (m *Model) refreshSpriteAfterWarm(speciesID int, stage WarmStage) tea.Cmd {
 	if speciesID == 0 || m.sprites == nil || !m.layout().ShowSprite {
 		return nil
 	}
@@ -666,7 +666,7 @@ func (m *Model) refreshSpriteAfterWarm(speciesID int, stage string) tea.Cmd {
 	if !ok || sel.ID != speciesID {
 		return nil
 	}
-	artworkDone := stage == "artwork" || stage == ""
+	artworkDone := stage == WarmStageArtwork || stage == ""
 	_ = stage // native warm does not force selected reload when art is already visible
 	if m.imageSpeciesID == speciesID && !m.imagePlaceholder && m.imageANSI != "" && m.imageKind == "artwork" {
 		return nil

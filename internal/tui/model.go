@@ -72,14 +72,25 @@ type NativeWarmer interface {
 	SetForegroundBusy(busy bool)
 }
 
+// WarmStage is a browse warm-progress phase. Values match cache.Stage wire
+// strings so app can map without renaming user-visible behaviour.
+type WarmStage string
+
+const (
+	WarmStageArtwork       WarmStage = "artwork"
+	WarmStageNative        WarmStage = "native"
+	WarmStageSpritesRender WarmStage = "sprites_render"
+	WarmStageDossier       WarmStage = "dossier"
+)
+
 // WarmProgress is a TUI-friendly warm status snapshot.
 type WarmProgress struct {
 	Done      int
 	Total     int
 	Message   string
-	SpeciesID int    // species that just finished a warm unit (0 if unknown)
-	Stage     string // artwork | sprites_render | dossier | …
-	Cells     int    // native frame longest-side bucket
+	SpeciesID int       // species that just finished a warm unit (0 if unknown)
+	Stage     WarmStage // artwork | native | sprites_render | dossier | …
+	Cells     int       // native frame longest-side bucket
 }
 
 // Model is the Bubble Tea browse state machine.
@@ -147,7 +158,7 @@ type Model struct {
 	warmDone         int
 	warmTotal        int
 	warmActive       bool
-	warmStage        string
+	warmStage        WarmStage
 	warmCells        int
 	nativeWarmDone   int
 	nativeWarmTotal  int

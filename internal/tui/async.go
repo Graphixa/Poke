@@ -171,7 +171,7 @@ type warmProgressMsg struct {
 	Total     int
 	Message   string
 	SpeciesID int
-	Stage     string
+	Stage     WarmStage
 	Cells     int
 	closed    bool
 }

@@ -92,17 +92,17 @@ func WarmProgressMsgForTest(done, total int) warmProgressMsg {
 
 // WarmProgressSpeciesMsgForTest builds a warm tick for a finished species.
 func WarmProgressSpeciesMsgForTest(done, total, speciesID int) warmProgressMsg {
-	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: "artwork"}
+	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: WarmStageArtwork}
 }
 
 // WarmProgressSpeciesStageMsgForTest builds a warm tick with an explicit stage.
 func WarmProgressSpeciesStageMsgForTest(done, total, speciesID int, stage string) warmProgressMsg {
-	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: stage}
+	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: WarmStage(stage)}
 }
 
 // WarmProgressNativeMsgForTest builds a native warm tick with optional size bucket.
 func WarmProgressNativeMsgForTest(done, total, cells int) warmProgressMsg {
-	return warmProgressMsg{Done: done, Total: total, Message: "Building image cache", Stage: "native", Cells: cells}
+	return warmProgressMsg{Done: done, Total: total, Message: "Building image cache", Stage: WarmStageNative, Cells: cells}
 }
 
 func (m Model) NativePaintPendingForTest() bool { return m.nativePaintPending }

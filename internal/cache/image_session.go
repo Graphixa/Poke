@@ -288,7 +288,7 @@ func (c *ImageCacheCoordinator) PublishStart() {
 		return
 	}
 	fn(Progress{
-		Stage:   "native",
+		Stage:   StageNative,
 		Done:    p.Done,
 		Total:   p.Total,
 		Message: "Building image cache",
@@ -429,7 +429,7 @@ func (c *ImageCacheCoordinator) persistAndEmit(persist bool, st PokemonImageCach
 		return
 	}
 	fn(Progress{
-		Stage:     "native",
+		Stage:     StageNative,
 		Done:      p.Done,
 		Total:     p.Total,
 		Message:   "Building image cache",
@@ -451,7 +451,7 @@ func (c *ImageCacheCoordinator) Progress() ImageCacheProgress {
 func (c *ImageCacheCoordinator) AsCacheProgress(speciesID int) Progress {
 	p := c.Progress()
 	return Progress{
-		Stage:     "native",
+		Stage:     StageNative,
 		Done:      p.Done,
 		Total:     p.Total,
 		Message:   "Building image cache",
@@ -568,7 +568,7 @@ func (c *ImageCacheCoordinator) ReconcileImageCacheSession(index []domain.Specie
 		_ = c.writer.flush()
 	}
 	if fn != nil && p.Total > 0 {
-		fn(Progress{Stage: "native", Done: p.Done, Total: p.Total, Message: "Building image cache"})
+		fn(Progress{Stage: StageNative, Done: p.Done, Total: p.Total, Message: "Building image cache"})
 	}
 	if onActive != nil && p.Total > 0 && p.Done < p.Total {
 		onActive()

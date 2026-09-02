@@ -42,7 +42,7 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 		if err := s.store.EnsureRoot(); err != nil {
 			return err
 		}
-		report(progress, Progress{Stage: "index", Message: "Fetching species index"})
+		report(progress, Progress{Stage: StageIndex, Message: "Fetching species index"})
 		summaries, err = s.api.ListSpecies(ctx)
 		if err != nil {
 			return err
@@ -52,7 +52,7 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 		if err := s.store.StoreSpeciesIndex(ctx, summaries, now); err != nil {
 			return err
 		}
-		report(progress, Progress{Stage: "index", Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
+		report(progress, Progress{Stage: StageIndex, Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
 	} else {
 		summaries, _ = typeseed.Apply(summaries)
 	}
@@ -129,7 +129,7 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 	for res := range results {
 		done++
 		report(progress, Progress{
-			Stage: "records", Done: done, Total: total,
+			Stage: StageRecords, Done: done, Total: total,
 			Message: res.sum.DisplayName, SpeciesID: res.sum.ID,
 		})
 		if err := ctx.Err(); err != nil {
@@ -210,13 +210,13 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 	if !staging.Complete {
 		return fmt.Errorf("cache: dataset %s incomplete (%s)", id, rep.summary())
 	}
-	report(progress, Progress{Stage: "dataset", Done: 1, Total: 1, Message: "Activating dataset"})
+	report(progress, Progress{Stage: StageDataset, Done: 1, Total: 1, Message: "Activating dataset"})
 	if err := s.store.ActivateDataset(id); err != nil {
 		return err
 	}
 	s.localOnly.Store(true)
 	debuglog.Cachef("dataset.bootstrap.complete id=%s count=%d", id, staging.PokemonCount)
-	report(progress, Progress{Stage: "dataset", Done: 1, Total: 1, Message: fmt.Sprintf("Dataset %s active", id)})
+	report(progress, Progress{Stage: StageDataset, Done: 1, Total: 1, Message: fmt.Sprintf("Dataset %s active", id)})
 	return nil
 }
 
@@ -372,7 +372,7 @@ func (s *Service) parallelEvolutionFetch(ctx context.Context, ids []int, progres
 	done := 0
 	for res := range results {
 		done++
-		report(progress, Progress{Stage: "evolution", Done: done, Total: total})
+		report(progress, Progress{Stage: StageEvolution, Done: done, Total: total})
 		if res.err != nil {
 			rep.add("evolution", res.id, res.err, true)
 			continue
@@ -428,7 +428,7 @@ func (s *Service) parallelMoveFetch(ctx context.Context, ids []int, progress Pro
 	done := 0
 	for res := range results {
 		done++
-		report(progress, Progress{Stage: "moves", Done: done, Total: total})
+		report(progress, Progress{Stage: StageMoves, Done: done, Total: total})
 		if res.err != nil {
 			rep.add("move", res.id, res.err, true)
 			continue

@@ -39,7 +39,7 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 	resolver := &sprite.SourceResolver{Store: svc.Cache, API: svc.API}
 	workers := svc.Cache.MaxConcurrency()
 
-	warmArtwork := func(ctx context.Context, index []domain.SpeciesSummary, progress cache.ProgressFunc) error {
+	warmArtwork := func(ctx context.Context, index []domain.SpeciesSummary, progress setup.ProgressFunc) error {
 		w := assetwarm.New(assetwarm.Config{
 			Mode:     assetwarm.ModeArtwork,
 			Workers:  assetwarm.ArtworkWorkers(workers),
@@ -48,7 +48,7 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 			Index:    index,
 			Progress: func(p cache.Progress) {
 				if progress != nil {
-					progress(p)
+					progress(setup.Progress{Done: p.Done, Total: p.Total, Message: p.Message})
 				}
 			},
 		})
@@ -62,13 +62,13 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 		Config:   cfg,
 		Native:   caps.NativeImage,
 		Protocol: protocol,
-		EnsureIndex: func(ctx context.Context, progress cache.ProgressFunc) ([]domain.SpeciesSummary, error) {
-			index, _, err := svc.Cache.EnsureIndex(ctx, progress)
+		EnsureIndex: func(ctx context.Context, progress setup.ProgressFunc) ([]domain.SpeciesSummary, error) {
+			index, _, err := svc.Cache.EnsureIndex(ctx, adaptSetupProgress(progress))
 			if err != nil {
 				return nil, err
 			}
 			if cache.NeedsTypeEnrichment(index) {
-				svc.Cache.BackgroundEnrich(ctx, progress)
+				svc.Cache.BackgroundEnrich(ctx, adaptSetupProgress(progress))
 			}
 			return index, nil
 		},
@@ -93,4 +93,13 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 	debuglog.StartupMark("startup.setup_complete")
 	svc.Config = result.Config
 	return result.Config, result.StartBackgroundArtwork, nil
+}
+
+func adaptSetupProgress(progress setup.ProgressFunc) cache.ProgressFunc {
+	if progress == nil {
+		return nil
+	}
+	return func(p cache.Progress) {
+		progress(setup.Progress{Done: p.Done, Total: p.Total, Message: p.Message})
+	}
 }

@@ -23,7 +23,7 @@ func (h *Handler) runDatasetBootstrap(ctx context.Context, svc *Services) error 
 		return svc.Cache.BootstrapDataset(ctx, progress)
 	}
 	if isTerminal(h.Stderr) {
-		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: run})
+		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptBootstrapRun(run)})
 		if err != nil {
 			return err
 		}
@@ -35,10 +35,26 @@ func (h *Handler) runDatasetBootstrap(ctx context.Context, svc *Services) error 
 	return run(ctx, throttledCLIProgress(h.Stderr))
 }
 
+func adaptBootstrapRun(run func(context.Context, cache.ProgressFunc) error) func(context.Context, bootstrap.ProgressFunc) error {
+	return func(ctx context.Context, progress bootstrap.ProgressFunc) error {
+		return run(ctx, func(p cache.Progress) {
+			if progress == nil {
+				return
+			}
+			progress(bootstrap.Progress{
+				Stage:   bootstrap.Stage(p.Stage),
+				Done:    p.Done,
+				Total:   p.Total,
+				Message: p.Message,
+			})
+		})
+	}
+}
+
 // cacheDatasetProgress returns TUI progress on a terminal stderr, otherwise throttled lines.
 func cacheDatasetProgress(ctx context.Context, w io.Writer, run func(context.Context, cache.ProgressFunc) error) error {
 	if isTerminal(w) {
-		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: run})
+		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptBootstrapRun(run)})
 		if err != nil {
 			return err
 		}
@@ -63,7 +79,7 @@ type throttledProgress struct {
 	mu        sync.Mutex
 	lastWrite time.Time
 	lastPct   int
-	lastStage string
+	lastStage cache.Stage
 }
 
 func throttledCLIProgress(w io.Writer) cache.ProgressFunc {
@@ -90,7 +106,7 @@ func (t *throttledProgress) report(p cache.Progress) {
 	pct := p.Done * 100 / p.Total
 	stage := p.Stage
 	if stage == "" {
-		stage = "dataset"
+		stage = cache.StageDataset
 	}
 	if p.Done != p.Total && pct/5 == t.lastPct/5 && stage == t.lastStage && now.Sub(t.lastWrite) < 2*time.Second {
 		return
@@ -110,27 +126,27 @@ func (t *throttledProgress) report(p cache.Progress) {
 func formatBootstrapProgress(p cache.Progress) string {
 	stage := p.Stage
 	if stage == "" {
-		stage = "dataset"
+		stage = cache.StageDataset
 	}
 	pct := 0
 	if p.Total > 0 {
 		pct = p.Done * 100 / p.Total
 	}
 	switch stage {
-	case "index":
+	case cache.StageIndex:
 		if p.Done == p.Total && p.Total > 0 {
 			return p.Message
 		}
 		return "Fetching species index"
-	case "enrich":
+	case cache.StageEnrich:
 		return fmt.Sprintf("Enriching types %d%% (%d/%d)", pct, p.Done, p.Total)
-	case "records":
+	case cache.StageRecords:
 		return fmt.Sprintf("Building dataset %d%% (%d/%d records)", pct, p.Done, p.Total)
-	case "evolution":
+	case cache.StageEvolution:
 		return fmt.Sprintf("Fetching evolution chains %d%% (%d/%d)", pct, p.Done, p.Total)
-	case "moves":
+	case cache.StageMoves:
 		return fmt.Sprintf("Fetching moves %d%% (%d/%d)", pct, p.Done, p.Total)
-	case "dataset":
+	case cache.StageDataset:
 		if p.Message != "" {
 			return p.Message
 		}

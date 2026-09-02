@@ -41,7 +41,7 @@ func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary
 		cdnURL := sprite.CDNArtworkURL(sum.ID)
 		if cdnURL == "" {
 			result.Failed++
-			reportArtworkSync(progress, i+1, total, sum.ID, "artwork")
+			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
 			continue
 		}
 		hasPNG := s.store.HasNamedSprite(sum.ID, sum.Slug, SpriteKindArtwork)
@@ -52,20 +52,20 @@ func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary
 		}
 		if !needDownload {
 			result.Unchanged++
-			reportArtworkSync(progress, i+1, total, sum.ID, "artwork")
+			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
 			continue
 		}
 		data, err := downloadSprite(ctx, dl, cdnURL)
 		if err != nil || len(data) == 0 || sprite.ValidatePNG(data) != nil {
 			result.Failed++
-			reportArtworkSync(progress, i+1, total, sum.ID, "artwork")
+			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
 			continue
 		}
 		hash := sha256HexBytes(data)
 		changed := !hasPNG || metaErr != nil || meta.SHA256 != hash
 		if err := s.StoreNamedSpriteWithURL(ctx, sum.ID, sum.Slug, SpriteKindArtwork, cdnURL, hash, data); err != nil {
 			result.Failed++
-			reportArtworkSync(progress, i+1, total, sum.ID, "artwork")
+			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
 			continue
 		}
 		if changed {
@@ -81,12 +81,12 @@ func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary
 		} else {
 			result.Unchanged++
 		}
-		reportArtworkSync(progress, i+1, total, sum.ID, "artwork")
+		reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
 	}
 	return result, nil
 }
 
-func reportArtworkSync(progress ProgressFunc, done, total, speciesID int, stage string) {
+func reportArtworkSync(progress ProgressFunc, done, total, speciesID int, stage Stage) {
 	if progress == nil {
 		return
 	}

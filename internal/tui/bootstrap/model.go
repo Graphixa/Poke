@@ -9,13 +9,34 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
+// Stage is a dataset-bootstrap phase. Values match cache.Stage wire strings.
+type Stage string
+
+const (
+	StageIndex     Stage = "index"
+	StageRecords   Stage = "records"
+	StageEvolution Stage = "evolution"
+	StageMoves     Stage = "moves"
+	StageDataset   Stage = "dataset"
+)
+
+// Progress is the bootstrap TUI's view of dataset work (not cache.Progress).
+type Progress struct {
+	Stage   Stage
+	Done    int
+	Total   int
+	Message string
+}
+
+// ProgressFunc receives bootstrap progress. App adapts cache.Progress into this.
+type ProgressFunc func(Progress)
+
 // Deps are injected bootstrap capabilities (app layer wires the cache service).
 type Deps struct {
-	Run func(ctx context.Context, progress cache.ProgressFunc) error
+	Run func(ctx context.Context, progress ProgressFunc) error
 }
 
 // Result is returned after the progress screen exits.
@@ -47,7 +68,7 @@ type Model struct {
 }
 
 type progressMsg struct {
-	stage       string
+	stage       Stage
 	done, total int
 	message     string
 }
@@ -171,23 +192,23 @@ func (m Model) View() tea.View {
 	return v
 }
 
-func stageLabel(stage string) string {
+func stageLabel(stage Stage) string {
 	switch stage {
-	case "index":
+	case StageIndex:
 		return "Fetching species index"
-	case "records":
+	case StageRecords:
 		return "Building Pokédex records"
-	case "evolution":
+	case StageEvolution:
 		return "Fetching evolution chains"
-	case "moves":
+	case StageMoves:
 		return "Fetching moves"
-	case "dataset":
+	case StageDataset:
 		return "Activating dataset"
 	default:
 		if stage == "" {
 			return "Working"
 		}
-		return stage
+		return string(stage)
 	}
 }
 
@@ -200,7 +221,7 @@ func (m Model) attachBootstrap() (tea.Model, tea.Cmd) {
 	m.events = ch
 	deps := m.deps
 	go func() {
-		err := deps.Run(ctx, func(p cache.Progress) {
+		err := deps.Run(ctx, func(p Progress) {
 			select {
 			case ch <- progressMsg{stage: p.Stage, done: p.Done, total: p.Total, message: p.Message}:
 			default:

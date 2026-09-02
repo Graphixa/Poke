@@ -332,7 +332,7 @@ func (s *Service) emitProgress() {
 	}
 	s.mu.Lock()
 	p := cache.Progress{
-		Stage:   "native",
+		Stage:   cache.StageNative,
 		Done:    s.progress.done,
 		Total:   s.progress.total,
 		Message: "Building image cache",

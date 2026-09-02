@@ -388,7 +388,7 @@ func (s *Service) report(speciesID int) {
 	done := int(s.doneN.Load())
 	total := int(s.totalN.Load())
 	s.cfg.Progress(cache.Progress{
-		Stage:     "sprites_render",
+		Stage:     cache.StageSpritesRender,
 		Done:      done,
 		Total:     total,
 		Message:   "Warming sprites",

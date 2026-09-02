@@ -14,9 +14,15 @@ func TestStageLabel(t *testing.T) {
 		"dataset":   "Activating dataset",
 	}
 	for stage, want := range cases {
-		if got := stageLabel(stage); got != want {
+		if got := stageLabel(Stage(stage)); got != want {
 			t.Fatalf("stageLabel(%q)=%q want %q", stage, got, want)
 		}
+	}
+	if got := stageLabel(""); got != "Working" {
+		t.Fatalf("empty stage=%q want Working", got)
+	}
+	if got := stageLabel("enrich"); got != "enrich" {
+		t.Fatalf("unknown stage must pass through, got %q", got)
 	}
 }
 

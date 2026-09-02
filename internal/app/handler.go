@@ -144,11 +144,11 @@ func (h *Handler) ensureIndex(ctx context.Context) ([]domain.SpeciesSummary, err
 			return
 		}
 		switch p.Stage {
-		case "index":
+		case cache.StageIndex:
 			if p.Message != "" {
 				fmt.Fprintf(h.Stderr, "%s\n", p.Message)
 			}
-		case "enrich":
+		case cache.StageEnrich:
 			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
 				fmt.Fprintf(h.Stderr, "Enriching types %d/%d\n", p.Done, p.Total)
 			}

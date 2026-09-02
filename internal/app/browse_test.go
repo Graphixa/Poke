@@ -125,7 +125,24 @@ func TestImageCacheCompletionEventNotDropped(t *testing.T) {
 		if got.Done != 1025 || got.Total != 1025 {
 			t.Fatalf("got %+v want 1025/1025", got)
 		}
+		if got.Stage != "native" {
+			t.Fatalf("stage=%q want native", got.Stage)
+		}
 	default:
 		t.Fatal("completion event dropped")
+	}
+}
+
+func TestSendWarmProgressPreservesStageAndSpecies(t *testing.T) {
+	ch := make(chan tui.WarmProgress, 1)
+	sendWarmProgress(ch, cache.Progress{
+		Stage: "artwork", Done: 3, Total: 10, Message: "Downloading official artwork", SpeciesID: 25, Cells: 40,
+	})
+	got := <-ch
+	if got.Stage != "artwork" || got.Done != 3 || got.Total != 10 || got.SpeciesID != 25 || got.Cells != 40 {
+		t.Fatalf("got %+v", got)
+	}
+	if got.Message != "Downloading official artwork" {
+		t.Fatalf("message=%q", got.Message)
 	}
 }
