@@ -14,17 +14,10 @@ func formatWarmFooterRight(stage string, done, total, cells int) string {
 	if total <= 0 || done >= total {
 		return ""
 	}
-	switch stage {
-	case "native":
-		return formatNativeImageCacheFooter(done, total)
-	case "artwork":
-		return formatArtworkCacheBar(done, total)
-	default:
-		if stage != "" {
-			return formatWarmBar(stage, done, total)
-		}
-		return formatWarmBar("warming", done, total)
+	if stage != "native" {
+		return ""
 	}
+	return formatNativeImageCacheFooter(done, total)
 }
 
 func warmBarStyles() (label, fill, track, count lipgloss.Style) {
@@ -51,10 +44,6 @@ func formatNativeImageCacheFooter(done, total int) string {
 	count := countSty.Render(fmt.Sprintf("%d/%d", done, total))
 	line := labelSty.Render("Image Cache") + " " + bar + " " + count
 	return fitWarmFooterRight(line)
-}
-
-func formatArtworkCacheBar(done, total int) string {
-	return formatWarmBar("Artwork", done, total)
 }
 
 func formatWarmBar(labelText string, done, total int) string {

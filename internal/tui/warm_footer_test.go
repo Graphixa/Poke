@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/Graphixa/Pokedex/internal/tui"
@@ -57,5 +58,26 @@ func TestNativeCacheBarFitsFooterWidth(t *testing.T) {
 	}
 	if w := lipgloss.Width(got); w > components.FooterRightWidth {
 		t.Fatalf("bar width=%d max=%d", w, components.FooterRightWidth)
+	}
+}
+
+func TestArtworkWarmDoesNotShowBrowseFooter(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(131, 1025, 0, "artwork"))
+	m = updated.(tui.Model)
+	if hint := m.BrowseWarmHintForTest(); hint != "" {
+		t.Fatalf("artwork warm must not populate footer, got %q", hint)
+	}
+	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
+		t.Fatalf("artwork warm must not render in browse footer, got %q", vis)
 	}
 }

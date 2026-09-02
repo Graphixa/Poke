@@ -472,6 +472,56 @@ func TestNativeWarmCompleteClearsFooterViaRaw(t *testing.T) {
 	}
 }
 
+func TestArtworkWarmClearsStaleFooterUnderNativeSprite(t *testing.T) {
+	details := &fakeDetails{}
+	sprites := &fakeSprites{ansi: "ART"}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: details,
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells,
+		"\x1bP0;0;8q#1~~~\x1b\\", false,
+	))
+	updated, _ = m.Update(msg)
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+
+	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
+	m = updated.(tui.Model)
+	if m.BrowseWarmHintForTest() == "" {
+		t.Fatal("native warm must populate footer progress state")
+	}
+
+	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(10, 10, 40))
+	m = updated.(tui.Model)
+	if m.BrowseWarmHintForTest() != "" {
+		t.Fatalf("native complete must clear footer state, got %q", m.BrowseWarmHintForTest())
+	}
+	if raws := collectRawPayloads(cmd); len(raws) == 0 {
+		t.Fatal("native complete must clear footer via tea.Raw")
+	}
+
+	updated, cmd = m.Update(tui.WarmProgressSpeciesStageMsgForTest(981, 1025, 0, "artwork"))
+	m = updated.(tui.Model)
+	if hint := m.BrowseWarmHintForTest(); hint != "" {
+		t.Fatalf("artwork warm must hide footer, got %q", hint)
+	}
+	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
+		t.Fatalf("artwork warm must not render over native art: %q", vis)
+	}
+	if raws := collectRawPayloads(cmd); len(raws) != 0 {
+		t.Fatalf("artwork warm must not repaint footer, got raw %v", raws)
+	}
+}
+
 func TestNativeWarmDoneEqualsTotalClearsFooterViaRaw(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}

@@ -17,6 +17,7 @@ func clearNativeEnv(t *testing.T) {
 	t.Setenv("KITTY_WINDOW_ID", "")
 	t.Setenv("GHOSTTY_RESOURCES_DIR", "")
 	t.Setenv("WT_SESSION", "")
+	t.Setenv("WT_PROFILE_ID", "")
 	t.Setenv("TERM", "xterm")
 }
 

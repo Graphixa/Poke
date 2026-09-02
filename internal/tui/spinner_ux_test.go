@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,11 +94,15 @@ func TestSpinnerNotShownForNativeMemoryHit(t *testing.T) {
 // memHitSprites simulates process-local mem cache: miss until RenderCold stores frame.
 type memHitSprites struct {
 	fakeSprites
+	mu  sync.Mutex
 	mem map[int]string
 }
 
 func (m *memHitSprites) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells int) (sprite.RenderResult, bool) {
-	if s, ok := m.mem[pokemon.ID]; ok && s != "" {
+	m.mu.Lock()
+	s, ok := m.mem[pokemon.ID]
+	m.mu.Unlock()
+	if ok && s != "" {
 		return sprite.RenderResult{ANSI: s, Native: m.native, AssetKind: "artwork"}, true
 	}
 	return m.fakeSprites.LookupCached(ctx, pokemon, cells)
@@ -106,10 +111,12 @@ func (m *memHitSprites) LookupCached(ctx context.Context, pokemon domain.Pokemon
 func (m *memHitSprites) RenderCold(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
 	res := m.fakeSprites.RenderCold(ctx, pokemon, cells)
 	if !res.UsePlaceholder && res.ANSI != "" {
+		m.mu.Lock()
 		if m.mem == nil {
 			m.mem = map[int]string{}
 		}
 		m.mem[pokemon.ID] = res.ANSI
+		m.mu.Unlock()
 	}
 	return res
 }

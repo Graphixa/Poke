@@ -185,7 +185,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			(!m.nativeWarmActive && m.warmActive && m.warmDone == m.warmTotal)
 		shouldShow := rightChanged && (m.warmRight == "" || right == "" ||
 			now.Sub(m.warmHintAt) >= warmHintMinInterval || footerComplete)
-		if shouldShow {
+		if right == "" {
+			if m.warmRight != "" {
+				m.warmRight = ""
+				m.warmHintAt = now
+			}
+		} else if shouldShow {
 			m.warmRight = right
 			m.warmHintAt = now
 		}
@@ -197,8 +202,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		nativeComplete := msg.Stage == "native" && msg.Total > 0 && msg.Done >= msg.Total
 		if nativeComplete && m.nativeSpriteActive() {
 			patch = clearWarmFooterRawCmd(m)
-		} else if (m.nativeWarmActive || m.warmActive) && m.nativeSpriteActive() && right != "" {
-			patch = patchWarmFooterCmd(m)
+		} else if m.nativeSpriteActive() {
+			switch {
+			case right != "":
+				patch = patchWarmFooterCmd(m)
+			case rightChanged:
+				// Drop stale tea.Raw footer when non-native stages hide progress.
+				patch = clearWarmFooterRawCmd(m)
+			}
 		}
 		return m, tea.Batch(reload, patch, listenWarmProgress(m.warmEvents))
 
@@ -364,13 +375,10 @@ func (m *Model) isSelectedID(id int) bool {
 }
 
 func (m *Model) effectiveWarmFooterRight() string {
-	if m.nativeWarmActive {
-		return formatWarmFooterRight("native", m.nativeWarmDone, m.nativeWarmTotal, m.nativeWarmCells)
+	if !m.nativeWarmActive {
+		return ""
 	}
-	if m.warmActive {
-		return formatWarmFooterRight(m.warmStage, m.warmDone, m.warmTotal, m.warmCells)
-	}
-	return ""
+	return formatWarmFooterRight("native", m.nativeWarmDone, m.nativeWarmTotal, m.nativeWarmCells)
 }
 
 func (m *Model) syncSelectionLoads() tea.Cmd {

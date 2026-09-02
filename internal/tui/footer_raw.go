@@ -50,7 +50,13 @@ func clearWarmFooterRawCmd(m Model) tea.Cmd {
 }
 
 func (m Model) warmFooterPatchIfNeeded() tea.Cmd {
-	if (!m.nativeWarmActive && !m.warmActive) || !m.nativeSpriteActive() {
+	if !m.nativeSpriteActive() {
+		return nil
+	}
+	if m.effectiveWarmFooterRight() == "" {
+		if m.warmRight != "" {
+			return clearWarmFooterRawCmd(m)
+		}
 		return nil
 	}
 	return patchWarmFooterCmd(m)

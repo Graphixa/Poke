@@ -159,6 +159,33 @@ func waitPersists(t *testing.T, rend *fakeNativeRenderer, n int) {
 	t.Fatalf("persists=%d want >=%d", rend.persists(), n)
 }
 
+type progressRecorder struct {
+	mu        sync.Mutex
+	last      cache.Progress
+	emits     int
+	firstEmit cache.Progress
+	hasFirst  bool
+	all       []cache.Progress
+}
+
+func (p *progressRecorder) record(c cache.Progress) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.last = c
+	p.emits++
+	if !p.hasFirst {
+		p.firstEmit = c
+		p.hasFirst = true
+	}
+	p.all = append(p.all, c)
+}
+
+func (p *progressRecorder) snapshot() (last cache.Progress, emits int, firstEmit cache.Progress, hasFirst bool, all []cache.Progress) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.last, p.emits, p.firstEmit, p.hasFirst, append([]cache.Progress(nil), p.all...)
+}
+
 func TestWarmerOnlyCurrentBucket(t *testing.T) {
 	index := indexN(5)
 	rend := &fakeNativeRenderer{}
@@ -408,16 +435,14 @@ func TestAlreadyCachedCandidatesAreSkipped(t *testing.T) {
 
 func TestNativeProgressDoesNotCountFailedSpecies(t *testing.T) {
 	index := indexN(5)
-	var last cache.Progress
+	var rec progressRecorder
 	svc := nativewarm.New(nativewarm.Config{
 		Loader: failingLoader{failID: 2},
 		Renderer: &placeholderRenderer{
 			placeholderID: 3,
 		},
-		Index: index,
-		Progress: func(p cache.Progress) {
-			last = p
-		},
+		Index:    index,
+		Progress: rec.record,
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
@@ -426,6 +451,7 @@ func TestNativeProgressDoesNotCountFailedSpecies(t *testing.T) {
 	for time.Now().Before(deadline) {
 		done, total := svc.Snapshot()
 		if done >= 3 && done < total {
+			last, _, _, _, _ := rec.snapshot()
 			if last.Done != done || last.Total != total {
 				t.Fatalf("progress=%+v snapshot=%d/%d", last, done, total)
 			}
@@ -435,6 +461,7 @@ func TestNativeProgressDoesNotCountFailedSpecies(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	done, total := svc.Snapshot()
+	last, _, _, _, _ := rec.snapshot()
 	if done >= total {
 		t.Fatalf("progress falsely complete at %d/%d last=%+v", done, total, last)
 	}
@@ -497,20 +524,22 @@ func TestNativeProgressDoneIncrementsOnlyAfterPersistence(t *testing.T) {
 func TestNativeProgressStartsWhenBucketIncomplete(t *testing.T) {
 	index := indexN(10)
 	rend := &fakeNativeRenderer{}
-	var last cache.Progress
+	var rec progressRecorder
 	svc := nativewarm.New(nativewarm.Config{
 		Loader: fakeLoader{}, Renderer: rend, Index: index,
-		Progress: func(p cache.Progress) { last = p },
+		Progress: rec.record,
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
+		last, _, _, _, _ := rec.snapshot()
 		if last.Total == 10 && last.Stage == "native" {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	last, _, _, _, _ := rec.snapshot()
 	if last.Total != 10 || last.Stage != "native" {
 		t.Fatalf("progress=%+v want native 0/10", last)
 	}
@@ -584,16 +613,16 @@ func TestFastPathCompleteCacheNoProgressEmit(t *testing.T) {
 		disk[fakeKey{sum.ID, 32}] = true
 	}
 	rend := &fakeNativeRenderer{disk: disk}
-	var emits int
+	var rec progressRecorder
 	svc := nativewarm.New(nativewarm.Config{
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
 		Progress: func(p cache.Progress) {
-			emits++
 			if p.Done < p.Total {
 				t.Fatalf("progress=%+v want complete or no emit", p)
 			}
+			rec.record(p)
 		},
 	})
 	ctx := context.Background()
@@ -602,6 +631,7 @@ func TestFastPathCompleteCacheNoProgressEmit(t *testing.T) {
 	for time.Now().Before(deadline) {
 		done, total := svc.Snapshot()
 		if done == total && total == len(index) {
+			_, emits, _, _, _ := rec.snapshot()
 			if emits != 0 {
 				t.Fatalf("progress emits=%d want 0 for complete disk cache", emits)
 			}
@@ -620,33 +650,26 @@ func TestFastPathPartialCacheHonestInitialDone(t *testing.T) {
 	index := indexN(10)
 	disk := map[fakeKey]bool{{1, 32}: true, {2, 32}: true, {3, 32}: true}
 	rend := &fakeNativeRenderer{disk: disk}
-	var last cache.Progress
-	var firstEmit *cache.Progress
-	var emits int
+	var rec progressRecorder
 	svc := nativewarm.New(nativewarm.Config{
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
-		Progress: func(p cache.Progress) {
-			emits++
-			last = p
-			if firstEmit == nil {
-				cp := p
-				firstEmit = &cp
-			}
-		},
+		Progress: rec.record,
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if firstEmit != nil && firstEmit.Done == 3 && firstEmit.Total == 10 {
+		_, _, firstEmit, hasFirst, _ := rec.snapshot()
+		if hasFirst && firstEmit.Done == 3 && firstEmit.Total == 10 {
 			svc.Stop()
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for partial disk audit, first=%+v emits=%d last=%+v", firstEmit, emits, last)
+	last, emits, firstEmit, hasFirst, _ := rec.snapshot()
+	t.Fatalf("timed out waiting for partial disk audit, first=%+v hasFirst=%v emits=%d last=%+v", firstEmit, hasFirst, emits, last)
 }
 
 func TestFastPathResizeBucketReaudit(t *testing.T) {
@@ -656,12 +679,12 @@ func TestFastPathResizeBucketReaudit(t *testing.T) {
 		disk[fakeKey{sum.ID, 32}] = true
 	}
 	rend := &fakeNativeRenderer{disk: disk}
-	var emits []cache.Progress
+	var rec progressRecorder
 	svc := nativewarm.New(nativewarm.Config{
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
-		Progress: func(p cache.Progress) { emits = append(emits, p) },
+		Progress: rec.record,
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
@@ -676,6 +699,7 @@ func TestFastPathResizeBucketReaudit(t *testing.T) {
 	if done, total := svc.Snapshot(); done != total {
 		t.Fatalf("snapshot=%d/%d want complete at bucket 32", done, total)
 	}
+	_, _, _, _, emits := rec.snapshot()
 	if len(emits) != 0 {
 		t.Fatalf("emits=%d want 0 at complete bucket 32", len(emits))
 	}
@@ -683,17 +707,21 @@ func TestFastPathResizeBucketReaudit(t *testing.T) {
 	emitBefore := len(emits)
 	svc.SetCells(40)
 	deadline = time.Now().Add(3 * time.Second)
-	var resizeEmit *cache.Progress
+	var resizeEmit cache.Progress
+	var gotResizeEmit bool
 	for time.Now().Before(deadline) {
+		_, _, _, _, emits = rec.snapshot()
 		if len(emits) > emitBefore {
-			resizeEmit = &emits[emitBefore]
+			resizeEmit = emits[emitBefore]
 			if resizeEmit.Cells == 40 && resizeEmit.Done == 0 && resizeEmit.Total == len(index) {
+				gotResizeEmit = true
 				break
 			}
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if resizeEmit == nil || resizeEmit.Cells != 40 || resizeEmit.Done != 0 || resizeEmit.Total != len(index) {
+	if !gotResizeEmit || resizeEmit.Cells != 40 || resizeEmit.Done != 0 || resizeEmit.Total != len(index) {
+		_, _, _, _, emits = rec.snapshot()
 		t.Fatalf("emits=%+v want first post-resize progress 0/%d @40", emits, len(index))
 	}
 	svc.SetNeighborsFromList(index, 0, 1)
