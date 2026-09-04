@@ -6,7 +6,7 @@ Inventory of the current tree at `d:\Data\Programming\Pokedex` (`module github.c
 
 **Supported GOOS/GOARCH (Makefile + CI):** `linux/amd64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`. CI also builds natively on ubuntu, macos, and windows hosts.
 
-**Formatting / lint:** `gofmt` (Makefile `fmt` / `fmt-check`; CI `gofmt -l`). `go vet ./...`. No golangci-lint config. Race: `CGO_ENABLED=1 go test -race ./...`.
+**Formatting / lint:** `gofmt` (Makefile `fmt` / `fmt-check`; CI `gofmt -l`). `go vet ./...`. No golangci-lint config. Race: `CGO_ENABLED=1 go test -race ./...` — Windows **can** run this (gcc/CGO required; recorded PASS ~197s on this tree). Linux CI (`ubuntu-latest`, `go test -race ./...`) is the merge gate.
 
 ---
 
@@ -42,12 +42,27 @@ pkg/version       → linker-stamped version
 | Background encode / download queues | `nativewarm`, `assetwarm`, `warm`, `dossierwarm` |
 | Presentation, keys, overlay, footer | `internal/tui` |
 
-**Cross-cutting types that leak layers today**
+**Internal-dependency contract**
 
-- `cache.Progress` (`Stage string`) is the shared progress bus for dataset bootstrap, type enrich, artwork sync, chafa warm, native warm, and dossier warm.
-- `tui.WarmProgress` mirrors that struct (including `Stage string`).
-- `tui/bootstrap` and `tui/setup` import `cache.ProgressFunc`.
-- Four warmer packages share nearly the same priority-queue + `Prioritize` / `SetNeighborsFromList` / `Snapshot` shape.
+Target import rules. `app` is allowed to assemble services and translate progress. Forbidden edges are locked by `internal/app/architecture_test.go`.
+
+| Layer | May | Must not |
+| --- | --- | --- |
+| `internal/tui` (browse, bootstrap, setup) | presentation types (`WarmStage`, local bootstrap/setup `Progress`) | import `internal/cache` |
+| `nativewarm`, `assetwarm`, `warm` | own `Progress` types; encode/download mechanics | import `cache` just for event/progress types |
+| `cache`, `dataset` | storage, snapshots, dataset bootstrap | import `app` or `tui` |
+| `internal/app` | construct services, map subsystem progress → TUI/CLI | dump presentation terminology into renderer packages |
+| renderer / warmer packages | mechanical progress for their work units | know TUI footer/bootstrap copy or `tui.WarmStage` |
+
+`cache` owns **dataset** progress (`DatasetStage` / `DatasetProgress`). It is not a global event-types package. Native/artwork/dossier/chafa stages belong to the producing subsystem; `app` classifies them into `tui.WarmStage`. Architecture/import tests in `internal/app/architecture_test.go` lock the forbidden edges.
+
+**Progress ownership (current)**
+
+- `cache.DatasetProgress` / `DatasetStage` — dataset bootstrap, enrich, and CLI artwork-sync ticks only. No native/artwork/dossier/chafa constants on this type.
+- `nativewarm.Progress`, `assetwarm.Progress`, `warm.Progress`, `dossierwarm.Progress` — owning packages. Rendering warmers do not import `cache`.
+- `app` maps warmer progress → `tui.WarmProgress` / `tui.WarmStage`, and dataset progress → bootstrap/CLI copy.
+- `tui.WarmProgress.Stage` is `tui.WarmStage`. Browse, bootstrap, and setup do not import `cache`.
+- Three heap warmers share nearly the same priority-queue + `Prioritize` / `SetNeighborsFromList` / `Snapshot` shape. `nativewarm` is a different algorithm. Do not assume a shared scheduler.
 
 ---
 
@@ -69,7 +84,7 @@ pkg/version       → linker-stamped version
 1. Triggered when `!cache.Service.HasActiveDataset()` on browse, or `poke update` / `poke cache refresh`.
 2. App chooses TUI (`tui/bootstrap.Run`) if stderr is a terminal, else throttled CLI lines (`formatBootstrapProgress`).
 3. `Service.BootstrapDataset` is single-flight (`group.Do("dataset-bootstrap")`).
-4. Stages (string `Progress.Stage`): `index` → parallel `records` (pokemon+species+encounters) → `evolution` → `moves` → validate → write aggregates → `dataset` activate.
+4. Stages (`cache.DatasetStage`): `index` → parallel `records` (pokemon+species+encounters) → `evolution` → `moves` → validate → write aggregates → `dataset` activate.
 5. Staging snapshot under `datasets/<id>/`. `ActivateDataset` writes `active.json` only if complete. Failed run leaves the previous snapshot.
 6. Workers: HTTP semaphore + `datasetWorkers()` goroutines, result channels, cancel via context.
 
@@ -88,8 +103,8 @@ Consent: `config.Setup.ArtworkMode` (`off|blocking|background`) + `SpriteHD`. Br
 2. TUI `notifyWarmer` calls `NativeWarmer.EnsureStarted(ctx, cells)` after first layout. Bucket is `ClampFrameSide` of available cells (`24|32|40` only).
 3. Single worker: disk audit (`HasNativeFile`) then opportunistic encode of the active bucket only. `SetCells` switches bucket; old gzip files stay on disk.
 4. Encode: `Engine.NativeWarmRender` → mem LRU (decompressed) → async `persistQueue` gzip to `cache/native/<key>.sixel.gz`.
-5. Progress: `cache.Progress{Stage:"native", Done, Total, Cells}`. TUI footer shows only this stage (`formatWarmFooterRight` ignores others).
-6. `cache.ImageCacheCoordinator` exists (manifest + outstanding set) but is **not wired** into browse/`nativewarm` — tests and `Service.StartImageCacheSessionDeferred` only.
+5. Progress: `nativewarm.Progress` (Done/Total/Cells; message `"Building image cache"`). `app` maps it to `tui.WarmStageNative`. TUI footer shows only native (`formatWarmFooterRight` ignores others). Native progress counts persisted/readable `.sixel.gz` frames.
+6. Completeness is reconstructed from content-addressed `.sixel.gz` files (`HasNativeFile` / nativewarm disk audit). There is no aggregate image-completion coordinator or Pokémon-level completion manifest. `native/manifest.json` (`NativeManifest`) is a small version/protocol stamp used by compatibility and acceptance-audit tooling — not a Done/Total authority. `scripts/acceptance_audit.go` reads the stamp, then counts exact files on disk.
 
 Read path for a paint: mem LRU → gunzip disk → cold encode.
 
@@ -106,7 +121,7 @@ Read path for a paint: mem LRU → gunzip disk → cold encode.
 
 `Model.Update` → `update` → `scheduleNativeOverlay`.
 
-Message kinds: `tea.WindowSizeMsg`, keys, `spinner.TickMsg`, `spriteMsg` / `spritePrefetchMsg`, `coldFrameMsg`, dossier core/extras, `warmProgressMsg`, `nativeOverlayMsg`, `tea.RawMsg` (ack after overlay write).
+Message kinds: `tea.WindowSizeMsg`, keys, `spinner.TickMsg`, `spriteMsg`, `coldFrameMsg`, dossier core/extras, `warmProgressMsg`, `nativeOverlayMsg`, `tea.RawMsg` (ack after overlay write).
 
 Warm channel: `listenWarmProgress` is a recusive tea.Cmd on `<-chan WarmProgress`. Closed channel clears footer.
 
@@ -187,8 +202,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `contracts.go`
 
-- **Responsibility:** `PokeAPI` and `Cache` interfaces (domain-shaped). `Clock` / `SystemClock`.
-- **Callers:** compile-time check `var _ Cache = (*cache.Store)(nil)` in `bootstrap.go`. Note: browse uses `*cache.Service`, not this interface, for most work.
+- **Responsibility:** `Clock` / `SystemClock` for tests and timestamps. One-implementation `Cache` / `PokeAPI` interfaces were removed; orchestration uses `*cache.Service` and `*pokeapi.Client`.
 
 #### `bootstrap.go`
 
@@ -199,21 +213,20 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `dataset_bootstrap.go`
 
-- **Responsibility:** terminal vs CLI progress for dataset runs; string-stage formatting.
+- **Responsibility:** terminal vs CLI progress for dataset runs; typed `DatasetStage` formatting.
 - **Types / funcs:** `runDatasetBootstrap`, `cacheDatasetProgress`, `throttledProgress`, `formatBootstrapProgress`.
 - **Ownership:** presentation strings live in app (`"index"|"enrich"|"records"|…`) duplicated with `tui/bootstrap.stageLabel`.
 - **Tests:** `dataset_bootstrap_test.go`.
 
 #### `handler.go`
 
-- **Responsibility:** `RunRoot`, `Search`, `Random`, inline print, `ensureIndex` with string-stage stderr progress.
+- **Responsibility:** `RunRoot`, `Search`, `Random`, inline print, `ensureIndex` with typed `DatasetStage` stderr progress.
 - **Types / funcs:** `Handler`, `BrowseRequest`, `IntnRand`, `FixedRand`.
 - **Tests:** `handler_test.go` (external `app_test`).
 
 #### `browse.go`
 
-- **Responsibility:** wires engine, warmers, progress channel, `tui.Run`. Adapters `tuiDetails`, `tuiSprites`, `warmPokemonLoader`. `sendWarmProgress` maps `cache.Progress` → `tui.WarmProgress`.
-- **Ownership:** this is the intended orchestration file; it still leaks `cache.Progress` and hardcoded `Stage: "artwork"`.
+- **Responsibility:** wires engine, warmers, progress channel, `tui.Run`. Adapters `tuiDetails`, `tuiSprites`, `warmPokemonLoader`. `sendWarmProgress` plus `nativeWarmToTUI` / `assetWarmToTUI` / `spriteWarmToTUI` / `dossierWarmToTUI` classify subsystem progress → `tui.WarmProgress`. Does not import `cache`.
 - **Tests:** `browse_test.go` (`sendWarmProgress` completion must not drop).
 
 #### `setup.go`
@@ -348,14 +361,14 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 **Deps:** `config`, `dataset`, `debuglog`, `domain`, `pokeapi` (bootstrap only), `render/sprite` (keys, CDN URL, PNG validate), `typeseed`.
 
-**Callers:** `app`, `tui/bootstrap` (progress type only), `tui/setup` (progress type), warmers (progress type), `usererr`.
+**Callers:** `app`, `usererr`. Rendering warmers do not import `cache`. TUI browse/bootstrap/setup do **not** import `cache`.
 
-**Concurrency:** `Service.sema` HTTP slots; `singleFlight`; `inFlight` atomic; `localOnly` atomic; `Store` RWMutex (active id + snapshot); bootstrap worker pools; `BackgroundRefresh`/`BackgroundEnrich` goroutines; `imageManifestWriter` mutex; `dossierwarm` workers.
+**Concurrency:** `Service.sema` HTTP slots; `singleFlight`; `inFlight` atomic; `localOnly` atomic; `Store` RWMutex (active id + snapshot); bootstrap worker pools; `BackgroundRefresh`/`BackgroundEnrich` goroutines; `dossierwarm` workers.
 
 #### `service.go`
 
-- **Responsibility:** cache-first reads, `EnsureIndex`, `Refresh`, `EnrichTypes`, `BootstrapDataset` entry, concurrency budget, generic `Progress` + `ProgressFunc`.
-- **Ownership:** `Progress.Stage` is an untyped string used by every warmer and the TUI.
+- **Responsibility:** cache-first reads, `EnsureIndex`, `Refresh`, `EnrichTypes`, `BootstrapDataset` entry, concurrency budget, `DatasetProgress` / `DatasetProgressFunc`.
+- **Ownership:** dataset/enrich/bootstrap progress only. Warmers own their own `Progress`. TUI does not import this type.
 
 #### `store.go`
 
@@ -379,11 +392,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `native_frame.go` / `native_manifest.go`
 
-- `.sixel.gz` gzip, legacy `.frame` purge, protocol/version invalidation.
-
-#### `image_spec.go` / `image_manifest.go` / `image_session.go`
-
-- Aggregate image-cache completeness. Coordinator **unused by browse** (see ownership).
+- `.sixel.gz` gzip, legacy `.frame` purge. `NativeManifest` (`native/manifest.json`) is a small version/protocol stamp for compatibility and acceptance-audit tooling. It is **not** a completeness/Done-Total index; `scripts/acceptance_audit.go` uses its protocol only while counting exact filesystem artefacts. Runtime hits and nativewarm progress use exact content-addressed file existence.
 
 #### `dossier.go` / `detail.go` / `aggregate.go`
 
@@ -405,7 +414,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 - Priority dossier prewarm. Stage `"dossier"`. Same heap pattern as `warm`/`assetwarm`.
 
-**Tests (selected):** `cache_test.go`, `bootstrap_test.go`, `bootstrap_cancel_test.go`, `dataset_test.go`, `dataset_corruption_test.go`, `completeness_test.go`, `artwork` via `sprites_test.go` / lifecycle, `native_gzip_test.go`, `native_manifest_test.go`, `image_session_test.go`, `deferred_image_test.go`, `race_test.go`, `dossier_test.go`, `moves_bootstrap_test.go`, `schema_reset_test.go`, `acceptance_spec_test.go`, `refactor_fix_test.go`, `typeseed/typeseed_test.go`.
+**Tests (selected):** `cache_test.go`, `bootstrap_test.go`, `bootstrap_cancel_test.go`, `dataset_test.go`, `dataset_corruption_test.go`, `completeness_test.go`, `artwork` via `sprites_test.go` / lifecycle, `native_gzip_test.go`, `native_manifest_test.go`, `race_test.go`, `dossier_test.go`, `moves_bootstrap_test.go`, `schema_reset_test.go`, `acceptance_spec_test.go`, `refactor_fix_test.go`, `typeseed/typeseed_test.go`.
 
 ---
 
@@ -425,9 +434,9 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 **Callers:** `app/browse`, `app/setup`, TUI (via `SpriteRenderer` + coldsched), cache (CDN helpers, keys).
 
-#### `engine.go` / `engine_batch.go`
+#### `engine.go`
 
-- Orchestrates resolve → mode → mem/disk → cold encode. `NativeWarmBatch` unused by current single-bucket `nativewarm` (batch helper remains).
+- Orchestrates resolve → mode → mem/disk → cold encode. Native warming uses the active bucket through `NativeWarmRender`; the unused multi-bucket API was removed in Slice I.
 - **Concurrency:** `sync.Once` mem caches; persist queue goroutine.
 
 #### `native_cache.go` / `memcache.go` / `cache.go` / `persistqueue.go`
@@ -470,17 +479,17 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `nativewarm/warm.go`
 
-- Single-lane opportunistic native warm. Mutex + wake chan + one worker + `ActivityGate`. Stage `"native"`.
+- Single-lane opportunistic native warm. Mutex + wake chan + one worker + `ActivityGate`. Emits `nativewarm.Progress` (no cache import). App classifies to `tui.WarmStageNative`.
 - **Tests:** `warm_test.go`, `integration_test.go`, `bench_test.go`.
 
 #### `assetwarm/warm.go` / `estimate.go`
 
-- Priority PNG download. Heap + workers + atomics. Stage string configurable.
+- Priority PNG download. Heap + workers + atomics. Emits `assetwarm.Progress`. App classifies to `tui.WarmStageArtwork`.
 - **Tests:** `warm_test.go`.
 
 #### `warm/warm.go`
 
-- Chafa artefact prewarm. Same queue shape. Stage `"sprites_render"`.
+- Chafa artefact prewarm. Same queue shape. Emits `warm.Progress`. App classifies to `tui.WarmStageSpritesRender`.
 - **Tests:** `warm_test.go`.
 
 #### `coldsched/scheduler.go`
@@ -492,13 +501,13 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ### `internal/tui` — browse presentation
 
-**Deps:** bubbles/bubbletea/lipgloss, `domain`, `search`, `debuglog`, `render/sprite`, `coldsched`, `tui/style`, `tui/components`, `tui/views`. **Does not import** `cache` in the browse package itself. **Does import** cache in `bootstrap` and `setup` subpackages.
+**Deps:** bubbles/bubbletea/lipgloss, `domain`, `search`, `debuglog`, `render/sprite`, `coldsched`, `tui/style`, `tui/components`, `tui/views`. **Does not import** `cache` (browse, bootstrap, or setup). Contract: TUI presentation has no metadata-cache dependency.
 
 **Concurrency:** tea commands (goroutines); `coldFrameCh`; `warmEvents` channel; overlay follow-up timer; no mutex on `Model` (single-threaded tea loop). Warmers run off-loop.
 
 #### `model.go`
 
-- Browse state machine. `WarmProgress.Stage string`. `warmStage` / `nativeWarm*` string-split state.
+- Browse state machine. `WarmProgress.Stage` is `WarmStage`. Footer/reload policy switches on typed constants.
 
 #### `deps.go`
 
@@ -506,11 +515,11 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `update.go`
 
-- Event switch. Compares `msg.Stage == "native"` and `"artwork"` for footer vs sprite refresh.
+- Event switch. Footer vs sprite-refresh policy uses `tui.WarmStage` constants (`WarmStageNative`, `WarmStageArtwork`).
 
 #### `async.go`
 
-- Tea cmds for dossier/sprite/prefetch; `listenWarmProgress`.
+- Tea cmds for dossier/sprite; `listenWarmProgress`.
 
 #### `fgrender.go` / `coldbridge.go`
 
@@ -524,16 +533,16 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 - Image pane state, dossier cache LRU, dialog text, view assembly, breakpoints, panel split, key map, browse/dialog enums, `Run`.
 
-**Tests:** `model_test.go`, `layout_test.go`, `sprite_test.go`, `prefetch_test.go`, `artwork_ready_test.go`, `ui_ready_test.go`, `spinner_ux_test.go`, `native_overlay_test.go`, `warm_footer_test.go`, `warm_footer_internal_test.go` (untracked), `e2e_acceptance_test.go`, `export_test.go` (test helpers).
+**Tests:** `model_test.go`, `layout_test.go`, `sprite_test.go`, `artwork_ready_test.go`, `ui_ready_test.go`, `spinner_ux_test.go`, `native_overlay_test.go`, `warm_footer_test.go`, `warm_footer_internal_test.go`, `e2e_acceptance_test.go`, `export_test.go` (test helpers).
 
 #### `tui/bootstrap/model.go`
 
-- Fullscreen dataset progress. `stageLabel(string)` duplicates app CLI copy. Imports `cache.ProgressFunc`.
+- Fullscreen dataset progress. Local `Stage` / `Progress` / `ProgressFunc`. `stageLabel` duplicates app CLI copy (wording not identical; do not unify). No `cache` import.
 - **Tests:** `model_test.go`.
 
 #### `tui/setup/model.go`
 
-- First-run wizard (`Step` is typed). Still uses `cache.ProgressFunc` and string progress messages.
+- First-run wizard (`Step` is typed). Local `Progress` / `ProgressFunc`; app adapts cache/warmer progress. No `cache` import.
 - **Tests:** `setup_test.go`.
 
 #### `tui/style/colors.go`
@@ -614,16 +623,14 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ## Known ownership concerns
 
-1. **`cache.Progress` is a generic bag** (`Stage string` + Done/Total/Message/SpeciesID/Cells). Dataset bootstrap, enrich, artwork, native warm, chafa warm, and dossier warm all share it. TUI branches on magic strings `"native"` and `"artwork"`.
-2. **Duplicate stage copy:** `app.formatBootstrapProgress` vs `tui/bootstrap.stageLabel` vs `Handler.ensureIndex` switch.
-3. **Four warmer clones:** `warm`, `assetwarm`, `dossierwarm` (heap + workers) and `nativewarm` (single lane). Shared *behavior* (prioritize / neighbors / snapshot / progress emit) is duplicated; extracting a generic framework would be speculative unless limited to the three heap warmers' identical queue.
-4. **TUI/setup/bootstrap depend on `cache.ProgressFunc`.** Presentation packages know the cache progress type.
-5. **`ImageCacheCoordinator` is orphaned** relative to browse: native progress is counted inside `nativewarm`, not the manifest coordinator. Manifest still matters for tests and future reconcile.
+1. **`cache.Progress` is still a shared bus** (`cache.Stage` + Done/Total/Message/SpeciesID/Cells). Dataset bootstrap, enrich, artwork, native warm, chafa warm, and dossier warm all share it. TUI browse stages are typed (`WarmStage`); cache still names native/artwork/dossier/chafa stages. Destination: per-subsystem progress; `app` adapts.
+2. **Duplicate stage copy:** `app.formatBootstrapProgress` vs `tui/bootstrap.stageLabel` vs `Handler.ensureIndex` switch. Keep separate (CLI vs TUI); do not unify.
+3. **Three heap warmer clones** (`warm`, `assetwarm`, `dossierwarm`) plus `nativewarm` (single lane). Similar shape is not a shared framework; extract only if remaining duplicate code has identical invariants after Slice D. `nativewarm` must stay separate.
+4. **Warmers import `cache` for `Progress`.** Presentation no longer does (Slice C). Slice D must stop encode/download packages depending on metadata-cache DTOs.
+5. **Resolved (Slice F):** `ImageCacheCoordinator`, its aggregate Pokémon completion manifest, and their symbol-only tests were deleted after production call-site searches found no callers. Native progress remains reconstructed by `nativewarm` from on-disk `.sixel.gz` files. The separate small `NativeManifest` version/protocol stamp is retained for compatibility and acceptance-audit tooling; it is not a completeness authority.
 6. **`app.Cache` interface vs `*cache.Service`:** contracts.go is only partially used; orchestration talks to the concrete service.
-7. **`Engine.NativeWarmBatch` vs single-bucket policy:** batch API remains while production warms one bucket. Not a bug; leftover surface.
-8. **`scheduleSpritePrefetchIfIdle` is a no-op** (comment: warmer handles it). Prefetch types/tests still exist.
-9. **`uiimage` vs `sprite/chafa`:** correct split (mechanics vs renderer), not a layering violation.
-10. **Working tree:** uncommitted TUI/sixel/test edits and untracked `warm_footer_internal_test.go` / `bin/poke.exe`. This inventory includes those Go sources.
+7. **`uiimage` vs `sprite/chafa`:** correct split (mechanics vs renderer), not a layering violation.
+8. **Working tree:** uncommitted TUI/sixel/test edits and untracked `warm_footer_internal_test.go` / `bin/poke.exe`. This inventory includes those Go sources.
 
 ---
 
