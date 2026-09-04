@@ -22,11 +22,10 @@ func TestArchitectureForbiddenImports(t *testing.T) {
 	appPkg := modulePath + "/internal/app"
 	tuiPrefix := modulePath + "/internal/tui"
 	renderPrefix := modulePath + "/internal/render"
-	warmers := map[string]bool{
+	renderingWarmers := map[string]bool{
 		modulePath + "/internal/render/sprite/nativewarm": true,
 		modulePath + "/internal/render/sprite/assetwarm":  true,
 		modulePath + "/internal/render/sprite/warm":       true,
-		modulePath + "/internal/cache/dossierwarm":        true,
 	}
 
 	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, d fs.DirEntry, err error) error {
@@ -52,7 +51,7 @@ func TestArchitectureForbiddenImports(t *testing.T) {
 			switch {
 			case isTUIPackage(pkg, tuiPrefix) && (imp == cachePkg || strings.HasPrefix(imp, cachePkg+"/")):
 				t.Errorf("%s imports %s; TUI must not depend on cache", rel(root, path), imp)
-			case warmers[pkg] && (imp == cachePkg || strings.HasPrefix(imp, cachePkg+"/")):
+			case renderingWarmers[pkg] && (imp == cachePkg || strings.HasPrefix(imp, cachePkg+"/")):
 				t.Errorf("%s imports %s; rendering warmers must not import cache", rel(root, path), imp)
 			case isCacheOrDataset(pkg, cachePkg, datasetPkg) && (imp == appPkg || strings.HasPrefix(imp, appPkg+"/") || isTUIPackage(imp, tuiPrefix)):
 				t.Errorf("%s imports %s; cache/dataset must not import app or tui", rel(root, path), imp)
@@ -64,35 +63,6 @@ func TestArchitectureForbiddenImports(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestAppAssemblesWarmersAndTUI(t *testing.T) {
-	t.Parallel()
-	root := moduleRoot(t)
-	path := filepath.Join(root, "internal", "app", "browse.go")
-	imps, err := fileImports(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	need := []string{
-		modulePath + "/internal/tui",
-		modulePath + "/internal/render/sprite/nativewarm",
-		modulePath + "/internal/render/sprite/assetwarm",
-		modulePath + "/internal/render/sprite/warm",
-		modulePath + "/internal/cache/dossierwarm",
-	}
-	have := map[string]bool{}
-	for _, imp := range imps {
-		have[imp] = true
-	}
-	for _, pkg := range need {
-		if !have[pkg] {
-			t.Errorf("internal/app/browse.go must import %s (app classifies subsystem progress)", pkg)
-		}
-	}
-	if have[modulePath+"/internal/cache"] {
-		t.Error("internal/app/browse.go must not import cache; dataset progress lives on CLI/bootstrap paths")
 	}
 }
 
@@ -139,7 +109,14 @@ func TestWarmersDoNotReferenceCacheProgressTypes(t *testing.T) {
 		filepath.Join(root, "internal", "render", "sprite", "warm"),
 		filepath.Join(root, "internal", "cache", "dossierwarm"),
 	}
-	forbidden := []string{"cache.Progress", "cache.Stage", "cache.DatasetProgress", "cache.DatasetStage", "cache.ProgressFunc", "cache.DatasetProgressFunc"}
+	forbidden := map[string]bool{
+		"Progress":            true,
+		"Stage":               true,
+		"DatasetProgress":     true,
+		"DatasetStage":        true,
+		"ProgressFunc":        true,
+		"DatasetProgressFunc": true,
+	}
 	for _, dir := range dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -150,17 +127,75 @@ func TestWarmersDoNotReferenceCacheProgressTypes(t *testing.T) {
 				continue
 			}
 			path := filepath.Join(dir, ent.Name())
-			data, err := os.ReadFile(path)
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, path, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
-			src := string(data)
-			for _, needle := range forbidden {
-				if strings.Contains(src, needle) {
-					t.Errorf("%s references %s; warmers own their progress types", rel(root, path), needle)
+			cacheNames := importedPackageNames(f, modulePath+"/internal/cache")
+			ast.Inspect(f, func(node ast.Node) bool {
+				sel, ok := node.(*ast.SelectorExpr)
+				if !ok {
+					return true
 				}
-			}
+				pkg, ok := sel.X.(*ast.Ident)
+				if ok && cacheNames[pkg.Name] && forbidden[sel.Sel.Name] {
+					t.Errorf("%s references cache.%s; warmers own their progress types", rel(root, path), sel.Sel.Name)
+				}
+				return true
+			})
 		}
+	}
+}
+
+func TestProductionDoesNotCastNonDatasetStages(t *testing.T) {
+	t.Parallel()
+	root := moduleRoot(t)
+	cachePkg := modulePath + "/internal/cache"
+	allowed := map[string]bool{
+		"index": true, "enrich": true, "records": true,
+		"evolution": true, "moves": true, "dataset": true,
+	}
+	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		cacheNames := importedPackageNames(f, cachePkg)
+		ast.Inspect(f, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || len(call.Args) != 1 {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "DatasetStage" {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			lit, literal := call.Args[0].(*ast.BasicLit)
+			if !ok || !cacheNames[pkg.Name] || !literal || lit.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(lit.Value)
+			if err == nil && !allowed[value] {
+				t.Errorf("%s casts %q to cache.DatasetStage; dataset stages cannot carry non-dataset work", rel(root, path), value)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -212,7 +247,24 @@ func isTUIPackage(pkg, tuiPrefix string) bool {
 }
 
 func isCacheOrDataset(pkg, cachePkg, datasetPkg string) bool {
-	return pkg == cachePkg || strings.HasPrefix(pkg, cachePkg+"/") || pkg == datasetPkg
+	return pkg == cachePkg || strings.HasPrefix(pkg, cachePkg+"/") ||
+		pkg == datasetPkg || strings.HasPrefix(pkg, datasetPkg+"/")
+}
+
+func importedPackageNames(f *ast.File, importPath string) map[string]bool {
+	names := make(map[string]bool)
+	for _, imp := range f.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil || path != importPath {
+			continue
+		}
+		name := filepath.Base(path)
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		names[name] = true
+	}
+	return names
 }
 
 func rel(root, path string) string {

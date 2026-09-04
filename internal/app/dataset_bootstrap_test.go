@@ -2,10 +2,12 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/Graphixa/Pokedex/internal/cache"
+	"github.com/Graphixa/Pokedex/internal/tui/bootstrap"
 )
 
 func TestThrottledCLIProgress(t *testing.T) {
@@ -29,6 +31,38 @@ func TestFormatBootstrapProgressStages(t *testing.T) {
 	}
 	if got := formatBootstrapProgress(cache.DatasetProgress{Stage: "index", Done: 1, Total: 1, Message: "Indexed 25 species"}); got != "Indexed 25 species" {
 		t.Fatalf("got=%q", got)
+	}
+}
+
+func TestBootstrapStageFromDataset(t *testing.T) {
+	t.Parallel()
+	cases := map[cache.DatasetStage]bootstrap.Stage{
+		cache.DatasetStageIndex:     bootstrap.StageIndex,
+		cache.DatasetStageEnrich:    bootstrap.StageEnrich,
+		cache.DatasetStageRecords:   bootstrap.StageRecords,
+		cache.DatasetStageEvolution: bootstrap.StageEvolution,
+		cache.DatasetStageMoves:     bootstrap.StageMoves,
+		cache.DatasetStageDataset:   bootstrap.StageDataset,
+	}
+	for datasetStage, want := range cases {
+		if got := bootstrapStageFromDataset(datasetStage); got != want {
+			t.Fatalf("bootstrapStageFromDataset(%q) = %q, want %q", datasetStage, got, want)
+		}
+	}
+}
+
+func TestAdaptUpdateRunKeepsArtworkOutOfDatasetStages(t *testing.T) {
+	t.Parallel()
+	run := func(_ context.Context, progress updateProgressFunc) error {
+		progress(updateProgress{kind: updateProgressArtwork, done: 2, total: 4, message: "Downloading artwork"})
+		return nil
+	}
+	var got bootstrap.Progress
+	if err := adaptUpdateRun(run)(context.Background(), func(p bootstrap.Progress) { got = p }); err != nil {
+		t.Fatal(err)
+	}
+	if got.Stage != bootstrap.StageArtwork || got.Done != 2 || got.Total != 4 {
+		t.Fatalf("adapted progress = %+v", got)
 	}
 }
 

@@ -328,13 +328,9 @@ Different interfaces; no universal copy source. CLI percents vs TUI short titles
 
 **Do not implement** without explicit product approval.
 
-### Formatting (touched files only)
+### Formatting
 
-Do **not** mix repo-wide `gofmt` into this refactor. Baseline format check already **FAIL**s on dozens of pre-existing unformatted files.
-
-**End state for this branch:** every **touched** Go file is `gofmt`-clean. Leave untouched drift alone.
-
-A separate mechanical formatting PR can normalise the rest of the repo later. Leaving the repo permanently unable to pass its documented formatting check is not the long-term goal — it is just out of scope for this consolidation.
+The historical baseline below records the pre-refactor formatting failure. The current committed branch is repo-wide `gofmt` clean, and the CI formatting step is green. Focused follow-up changes must preserve that state.
 
 ---
 
@@ -350,7 +346,7 @@ The refactor is **not** finished when A–C compile. It is finished when all of 
 | `cache` no longer exports a global stage enum covering native/artwork/dossier/chafa | **PASS** — `DatasetStage` / `DatasetProgress` only; warmer stages removed from cache |
 | Proved-dead prefetch / batch / format helpers deleted | **PASS** (Slice I) |
 | No unused native-completeness coordinator or manifest machinery | **PASS** (Slice F) |
-| All **touched** Go files formatted | **PASS** — 48 touched `*.go` files, `gofmt -l` clean |
+| Repository is `gofmt` clean | **PASS** — the current committed branch passes the repo-wide CI formatting check |
 | `go vet ./...`, `go test ./...`, `go test -race ./...` (CGO on) | **PASS** — see [End-of-plan validation](#end-of-plan-validation) |
 | Cross-build (`CGO_ENABLED=0`) | **PASS** — linux/amd64, darwin/amd64, darwin/arm64, windows/amd64 → `.cross-build/` |
 | Existing startup / native-cache acceptance behaviour unchanged | **PASS** — non-regression locks retained; no browse-path coordinator resurrection |
@@ -375,7 +371,7 @@ The refactor is **not** finished when A–C compile. It is finished when all of 
 | E — shared heap queue | **No presumption.** Only if identical invariants remain after A–D |
 | H — footer for artwork/dossier/chafa | **Needs approval** — product behaviour |
 | G — unify CLI/TUI copy | **Rejected** |
-| Repo-wide gofmt | **Out of scope** for this branch; touched files must be clean |
+| Repo-wide gofmt | **Done** — current committed branch and CI formatting step are clean |
 
 ---
 
@@ -388,8 +384,7 @@ See [Baseline results](#baseline-results) at the bottom — filled after the sui
 ### Validation commands
 
 ```powershell
-# Format: CI uses gofmt -l on all *.go; Makefile uses cmd/internal/pkg only.
-# This refactor formats touched files only. Do not mass-gofmt the repo here.
+# Format: CI uses gofmt -l on all *.go; the current branch is repo-wide clean.
 Get-ChildItem -Recurse -Filter *.go | Where-Object { $_.FullName -notmatch '\\(vendor|bin)\\' } | ForEach-Object { $_.FullName } | ForEach-Object { gofmt -l $_ }
 
 go vet ./...
@@ -412,7 +407,7 @@ Equivalent: `make fmt-check vet test race cross-build` when Make/bash/`gcc` are 
 
 ## Phase 4 execution notes
 
-- After every remaining slice: focused tests for touched packages; `gofmt` those files.
+- After every remaining slice: focused tests for touched packages; preserve repo-wide `gofmt` cleanliness.
 - After D+J+I+K (and coordinator investigation): full vet, unit, race (`CGO_ENABLED=1`), cross-build with `CGO_ENABLED=0`.
 - Stop before any user-visible string or footer change (Slice H still needs approval; G is rejected).
 - Do not commit; do not touch `bin/poke.exe` except as a local build output.
@@ -445,7 +440,7 @@ Recorded after slices D+J+I+F+K on branch `codebase-cleanup` (Windows, PowerShel
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| `gofmt -l` (48 touched `*.go` files only) | **PASS** | No dirty files; repo-wide drift unchanged |
+| Repo-wide `gofmt -l` / CI formatting | **PASS** | Current committed branch is clean; latest CI formatting step is green |
 | `go vet ./...` | **PASS** | |
 | `go test ./...` | **PASS** | ~22s |
 | `go test -race ./...` (`CGO_ENABLED=1`) | **PASS** | ~184s; `internal/render/sprite/image` dominates (~139s) |
@@ -460,4 +455,4 @@ Recorded after slices D+J+I+F+K on branch `codebase-cleanup` (Windows, PowerShel
 | E — shared heap warmer core | **Not scheduled** | No presumption; identical-invariants bar not met |
 | G — unify CLI/TUI bootstrap wording | **Rejected** | Intentional copy differences |
 | H — footer for artwork/dossier/chafa | **Needs approval** | Product behaviour change |
-| Repo-wide gofmt | **Out of scope** | Pre-existing drift; separate mechanical PR |
+| Repo-wide gofmt | **Done** | Current committed branch is clean |

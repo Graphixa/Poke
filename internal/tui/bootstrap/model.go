@@ -12,18 +12,20 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-// Stage is a dataset-bootstrap phase. Values match cache.DatasetStage wire strings.
+// Stage is a bootstrap progress-screen phase.
 type Stage string
 
 const (
 	StageIndex     Stage = "index"
+	StageEnrich    Stage = "enrich"
 	StageRecords   Stage = "records"
 	StageEvolution Stage = "evolution"
 	StageMoves     Stage = "moves"
 	StageDataset   Stage = "dataset"
+	StageArtwork   Stage = "artwork"
 )
 
-// Progress is the bootstrap TUI's view of dataset work (not cache.DatasetProgress).
+// Progress is the bootstrap TUI's view of app-classified update work.
 type Progress struct {
 	Stage   Stage
 	Done    int
@@ -196,6 +198,8 @@ func stageLabel(stage Stage) string {
 	switch stage {
 	case StageIndex:
 		return "Fetching species index"
+	case StageEnrich:
+		return "Enriching types"
 	case StageRecords:
 		return "Building Pokédex records"
 	case StageEvolution:
@@ -204,6 +208,8 @@ func stageLabel(stage Stage) string {
 		return "Fetching moves"
 	case StageDataset:
 		return "Activating dataset"
+	case StageArtwork:
+		return "Downloading artwork"
 	default:
 		if stage == "" {
 			return "Working"

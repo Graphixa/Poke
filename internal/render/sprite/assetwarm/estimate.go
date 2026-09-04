@@ -2,7 +2,6 @@ package assetwarm
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -12,9 +11,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
-
-// ArtworkSizeThreshold is the estimate above which setup offers background download.
-const ArtworkSizeThreshold int64 = 100 * 1024 * 1024 // 100 MiB
 
 // FallbackBytesPerArtwork used when sampling fails (~120 KiB).
 const FallbackBytesPerArtwork int64 = 120 * 1024
@@ -52,11 +48,6 @@ func (s HTTPSizeSampler) ProbeBytes(ctx context.Context, url string) (int64, err
 		return resp.ContentLength, nil
 	}
 	return 0, io.EOF
-}
-
-// NeedsModePrompt reports whether estimatedBytes warrants Now vs Background choice.
-func NeedsModePrompt(estimatedBytes int64) bool {
-	return estimatedBytes >= ArtworkSizeThreshold
 }
 
 // ArtworkWorkers returns concurrency for ModeArtwork bulk download.
@@ -167,20 +158,4 @@ func EstimateArtworkBytes(ctx context.Context, index []domain.SpeciesSummary, lo
 	}
 	avg := sum.Load() / c
 	return avg * n
-}
-
-// FormatBytes returns a short human size for UI copy.
-func FormatBytes(n int64) string {
-	const (
-		kb = 1024.0
-		mb = 1024.0 * kb
-	)
-	switch {
-	case float64(n) >= mb:
-		return fmt.Sprintf("%.1f MB", float64(n)/mb)
-	case float64(n) >= kb:
-		return fmt.Sprintf("%.0f KB", float64(n)/kb)
-	default:
-		return fmt.Sprintf("%d B", n)
-	}
 }

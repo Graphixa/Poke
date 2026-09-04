@@ -1,6 +1,6 @@
 # Pokedex Go codebase
 
-Inventory of the current tree at `d:\Data\Programming\Pokedex` (`module github.com/Graphixa/Pokedex`, Go 1.26). Grounded in source as it exists now (including uncommitted working-tree files). Not a copy of `plans/pokedex-backend-refactor-plan.md`.
+Repository architecture for module `github.com/Graphixa/Pokedex` (Go 1.26). Not a copy of `plans/pokedex-backend-refactor-plan.md`.
 
 **Public binary:** `poke` (`cmd/poke`). Alias name `pokedex` is the same program.
 
@@ -49,7 +49,8 @@ Target import rules. `app` is allowed to assemble services and translate progres
 | Layer | May | Must not |
 | --- | --- | --- |
 | `internal/tui` (browse, bootstrap, setup) | presentation types (`WarmStage`, local bootstrap/setup `Progress`) | import `internal/cache` |
-| `nativewarm`, `assetwarm`, `warm` | own `Progress` types; encode/download mechanics | import `cache` just for event/progress types |
+| `nativewarm`, `assetwarm`, `warm` | own `Progress` types; encode/download mechanics | import `cache` |
+| `dossierwarm` | own progress semantics; cache storage when needed | import cache progress types |
 | `cache`, `dataset` | storage, snapshots, dataset bootstrap | import `app` or `tui` |
 | `internal/app` | construct services, map subsystem progress → TUI/CLI | dump presentation terminology into renderer packages |
 | renderer / warmer packages | mechanical progress for their work units | know TUI footer/bootstrap copy or `tui.WarmStage` |
@@ -58,9 +59,9 @@ Target import rules. `app` is allowed to assemble services and translate progres
 
 **Progress ownership (current)**
 
-- `cache.DatasetProgress` / `DatasetStage` — dataset bootstrap, enrich, and CLI artwork-sync ticks only. No native/artwork/dossier/chafa constants on this type.
+- `cache.DatasetProgress` / `DatasetStage` — dataset bootstrap and enrich only. No native/artwork/dossier/chafa work uses this type.
 - `nativewarm.Progress`, `assetwarm.Progress`, `warm.Progress`, `dossierwarm.Progress` — owning packages. Rendering warmers do not import `cache`.
-- `app` maps warmer progress → `tui.WarmProgress` / `tui.WarmStage`, and dataset progress → bootstrap/CLI copy.
+- `app` maps warmer progress → `tui.WarmProgress` / `tui.WarmStage`, dataset progress → bootstrap/CLI copy, and composite update progress → bootstrap/CLI presentation.
 - `tui.WarmProgress.Stage` is `tui.WarmStage`. Browse, bootstrap, and setup do not import `cache`.
 - Three heap warmers share nearly the same priority-queue + `Prioritize` / `SetNeighborsFromList` / `Snapshot` shape. `nativewarm` is a different algorithm. Do not assume a shared scheduler.
 
@@ -92,7 +93,7 @@ Target import rules. `app` is allowed to assemble services and translate progres
 
 Two production paths:
 
-- **CLI / update:** `Service.SyncArtwork` walks the index, compares CDN URL + SHA, downloads official-artwork PNGs, invalidates native frames when bytes change. Stage `"artwork"`.
+- **CLI / update:** `Service.SyncArtwork` walks the index, compares CDN URL + SHA, downloads official-artwork PNGs, and invalidates native frames when bytes change. It emits `ArtworkSyncProgress`; app owns the composite dataset-refresh → artwork-sync presentation.
 - **Browse / setup:** `assetwarm.Service` priority queue (selected / neighbors / background). Resolves via `sprite.SourceResolver` (store then HTTP). Stage default `"artwork"`. Started on `OnUIReady` or blocking in setup wizard.
 
 Consent: `config.Setup.ArtworkMode` (`off|blocking|background`) + `SpriteHD`. Browse starts the warmer only when setup asked for background or config says background + HD enabled.
@@ -213,8 +214,8 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `dataset_bootstrap.go`
 
-- **Responsibility:** terminal vs CLI progress for dataset runs; typed `DatasetStage` formatting.
-- **Types / funcs:** `runDatasetBootstrap`, `cacheDatasetProgress`, `throttledProgress`, `formatBootstrapProgress`.
+- **Responsibility:** terminal vs CLI progress for dataset runs and the composite update operation; explicit dataset → bootstrap stage mapping.
+- **Types / funcs:** `runDatasetBootstrap`, `cacheDatasetProgress`, `cacheUpdateProgress`, `bootstrapStageFromDataset`, `throttledProgress`, `formatBootstrapProgress`.
 - **Ownership:** presentation strings live in app (`"index"|"enrich"|"records"|…`) duplicated with `tui/bootstrap.stageLabel`.
 - **Tests:** `dataset_bootstrap_test.go`.
 
@@ -456,7 +457,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 #### `sixel/sixel.go`
 
 - Sixel encode (mattn/go-sixel + quant). Palette 64/128/256.
-- **Tests:** `sixel_test.go`. Uncommitted working-tree edits exist.
+- **Tests:** `sixel_test.go`.
 
 #### `image/renderer.go`
 
@@ -537,7 +538,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `tui/bootstrap/model.go`
 
-- Fullscreen dataset progress. Local `Stage` / `Progress` / `ProgressFunc`. `stageLabel` duplicates app CLI copy (wording not identical; do not unify). No `cache` import.
+- Fullscreen dataset/composite-update progress. Local `Stage` / `Progress` / `ProgressFunc`; app explicitly maps dataset and artwork subsystem events into it. `stageLabel` duplicates app CLI copy (wording not identical; do not unify). No `cache` import.
 - **Tests:** `model_test.go`.
 
 #### `tui/setup/model.go`
@@ -623,14 +624,10 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ## Known ownership concerns
 
-1. **`cache.Progress` is still a shared bus** (`cache.Stage` + Done/Total/Message/SpeciesID/Cells). Dataset bootstrap, enrich, artwork, native warm, chafa warm, and dossier warm all share it. TUI browse stages are typed (`WarmStage`); cache still names native/artwork/dossier/chafa stages. Destination: per-subsystem progress; `app` adapts.
-2. **Duplicate stage copy:** `app.formatBootstrapProgress` vs `tui/bootstrap.stageLabel` vs `Handler.ensureIndex` switch. Keep separate (CLI vs TUI); do not unify.
-3. **Three heap warmer clones** (`warm`, `assetwarm`, `dossierwarm`) plus `nativewarm` (single lane). Similar shape is not a shared framework; extract only if remaining duplicate code has identical invariants after Slice D. `nativewarm` must stay separate.
-4. **Warmers import `cache` for `Progress`.** Presentation no longer does (Slice C). Slice D must stop encode/download packages depending on metadata-cache DTOs.
-5. **Resolved (Slice F):** `ImageCacheCoordinator`, its aggregate Pokémon completion manifest, and their symbol-only tests were deleted after production call-site searches found no callers. Native progress remains reconstructed by `nativewarm` from on-disk `.sixel.gz` files. The separate small `NativeManifest` version/protocol stamp is retained for compatibility and acceptance-audit tooling; it is not a completeness authority.
-6. **`app.Cache` interface vs `*cache.Service`:** contracts.go is only partially used; orchestration talks to the concrete service.
-7. **`uiimage` vs `sprite/chafa`:** correct split (mechanics vs renderer), not a layering violation.
-8. **Working tree:** uncommitted TUI/sixel/test edits and untracked `warm_footer_internal_test.go` / `bin/poke.exe`. This inventory includes those Go sources.
+1. **Duplicate stage copy:** `app.formatBootstrapProgress` vs `tui/bootstrap.stageLabel` vs `Handler.ensureIndex` switch. Keep separate (CLI vs TUI); do not unify.
+2. **Three heap warmer clones:** `warm`, `assetwarm`, and `dossierwarm` have different invariants. Do not presume a shared scheduler; `nativewarm` remains a separate single-lane algorithm.
+3. **Native protocol stamp:** `NativeManifest` is retained for compatibility and acceptance-audit tooling. It is not a completeness authority and its protocol/version requires separate investigation before any change.
+4. **Test-only diagnostics:** rendering diagnostics may retain test-specific call sites; audit them separately rather than widening production ownership.
 
 ---
 

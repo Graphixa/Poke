@@ -8,10 +8,12 @@ func TestStageLabel(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"index":     "Fetching species index",
+		"enrich":    "Enriching types",
 		"records":   "Building Pokédex records",
 		"evolution": "Fetching evolution chains",
 		"moves":     "Fetching moves",
 		"dataset":   "Activating dataset",
+		"artwork":   "Downloading artwork",
 	}
 	for stage, want := range cases {
 		if got := stageLabel(Stage(stage)); got != want {
@@ -21,7 +23,7 @@ func TestStageLabel(t *testing.T) {
 	if got := stageLabel(""); got != "Working" {
 		t.Fatalf("empty stage=%q want Working", got)
 	}
-	if got := stageLabel("enrich"); got != "enrich" {
+	if got := stageLabel("unknown"); got != "unknown" {
 		t.Fatalf("unknown stage must pass through, got %q", got)
 	}
 }

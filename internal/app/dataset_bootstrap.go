@@ -42,12 +42,32 @@ func adaptBootstrapRun(run func(context.Context, cache.DatasetProgressFunc) erro
 				return
 			}
 			progress(bootstrap.Progress{
-				Stage:   bootstrap.Stage(p.Stage),
+				Stage:   bootstrapStageFromDataset(p.Stage),
 				Done:    p.Done,
 				Total:   p.Total,
 				Message: p.Message,
 			})
 		})
+	}
+}
+
+func bootstrapStageFromDataset(stage cache.DatasetStage) bootstrap.Stage {
+	switch stage {
+	case cache.DatasetStageIndex:
+		return bootstrap.StageIndex
+	case cache.DatasetStageEnrich:
+		// Enrich is dataset work and gets an explicit bootstrap label.
+		return bootstrap.StageEnrich
+	case cache.DatasetStageRecords:
+		return bootstrap.StageRecords
+	case cache.DatasetStageEvolution:
+		return bootstrap.StageEvolution
+	case cache.DatasetStageMoves:
+		return bootstrap.StageMoves
+	case cache.DatasetStageDataset:
+		return bootstrap.StageDataset
+	default:
+		return ""
 	}
 }
 
@@ -64,6 +84,40 @@ func cacheDatasetProgress(ctx context.Context, w io.Writer, run func(context.Con
 		return nil
 	}
 	return run(ctx, throttledCLIProgress(w))
+}
+
+func cacheUpdateProgress(ctx context.Context, w io.Writer, run func(context.Context, updateProgressFunc) error) error {
+	if isTerminal(w) {
+		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptUpdateRun(run)})
+		if err != nil {
+			return err
+		}
+		if result.Aborted {
+			return context.Canceled
+		}
+		return nil
+	}
+	return run(ctx, throttledCLIUpdateProgress(w))
+}
+
+func adaptUpdateRun(run func(context.Context, updateProgressFunc) error) func(context.Context, bootstrap.ProgressFunc) error {
+	return func(ctx context.Context, progress bootstrap.ProgressFunc) error {
+		return run(ctx, func(p updateProgress) {
+			if progress == nil {
+				return
+			}
+			stage := bootstrap.StageArtwork
+			if p.kind == updateProgressDataset {
+				stage = bootstrapStageFromDataset(p.datasetStage)
+			}
+			progress(bootstrap.Progress{
+				Stage:   stage,
+				Done:    p.done,
+				Total:   p.total,
+				Message: p.message,
+			})
+		})
+	}
 }
 
 func isTerminal(w io.Writer) bool {
@@ -88,6 +142,38 @@ func throttledCLIProgress(w io.Writer) cache.DatasetProgressFunc {
 	}
 	t := &throttledProgress{w: w}
 	return t.report
+}
+
+func throttledCLIUpdateProgress(w io.Writer) updateProgressFunc {
+	if w == nil {
+		return nil
+	}
+	dataset := throttledCLIProgress(w)
+	lastArtworkBucket := -1
+	return func(p updateProgress) {
+		if p.kind == updateProgressDataset {
+			dataset(cache.DatasetProgress{
+				Stage:   p.datasetStage,
+				Done:    p.done,
+				Total:   p.total,
+				Message: p.message,
+			})
+			return
+		}
+		if p.total <= 0 {
+			if p.message != "" {
+				_, _ = fmt.Fprintln(w, p.message)
+			}
+			return
+		}
+		pct := p.done * 100 / p.total
+		bucket := pct / 5
+		if p.done != p.total && bucket == lastArtworkBucket {
+			return
+		}
+		lastArtworkBucket = bucket
+		_, _ = fmt.Fprintf(w, "Downloading artwork %d%% (%d/%d)\n", pct, p.done, p.total)
+	}
 }
 
 func (t *throttledProgress) report(p cache.DatasetProgress) {

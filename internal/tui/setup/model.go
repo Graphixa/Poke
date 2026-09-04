@@ -13,9 +13,10 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
+
+const artworkSizeThreshold int64 = 100 * 1024 * 1024 // 100 MiB
 
 // Step is the wizard phase.
 type Step int
@@ -211,7 +212,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case estimateDoneMsg:
 		m.estimate = msg.bytes
-		if assetwarm.NeedsModePrompt(msg.bytes) {
+		if needsModePrompt(msg.bytes) {
 			m.step = StepModePrompt
 			m.status = "Large download"
 			return m, nil
@@ -268,7 +269,7 @@ func (m Model) View() tea.View {
 		fmt.Fprintf(&b, "  %s\n", ok.Render("[Y] Yes   [N] Skip — download on demand while browsing"))
 	case StepModePrompt:
 		fmt.Fprintf(&b, "  %s\n", warn.Render(fmt.Sprintf("Estimated download ≈ %s (over %s).",
-			assetwarm.FormatBytes(m.estimate), assetwarm.FormatBytes(assetwarm.ArtworkSizeThreshold))))
+			formatBytes(m.estimate), formatBytes(artworkSizeThreshold))))
 		fmt.Fprintf(&b, "  %s\n\n", body.Render("Choose how to fetch official artwork:"))
 		fmt.Fprintf(&b, "  %s\n", ok.Render("[1] Download now (blocking)"))
 		fmt.Fprintf(&b, "  %s\n", body.Render("[2] Background — open browse; art fills in over time"))
@@ -288,6 +289,25 @@ func (m Model) View() tea.View {
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v
+}
+
+func needsModePrompt(estimatedBytes int64) bool {
+	return estimatedBytes >= artworkSizeThreshold
+}
+
+func formatBytes(n int64) string {
+	const (
+		kb = 1024.0
+		mb = 1024.0 * kb
+	)
+	switch {
+	case float64(n) >= mb:
+		return fmt.Sprintf("%.1f MB", float64(n)/mb)
+	case float64(n) >= kb:
+		return fmt.Sprintf("%.0f KB", float64(n)/kb)
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 func (m Model) loadIndexForArtwork() (tea.Model, tea.Cmd) {

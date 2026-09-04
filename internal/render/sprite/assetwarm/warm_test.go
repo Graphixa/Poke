@@ -16,15 +16,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 )
 
-func TestNeedsModePrompt(t *testing.T) {
-	if assetwarm.NeedsModePrompt(assetwarm.ArtworkSizeThreshold - 1) {
-		t.Fatal("under threshold should not prompt")
-	}
-	if !assetwarm.NeedsModePrompt(assetwarm.ArtworkSizeThreshold) {
-		t.Fatal("at threshold should prompt")
-	}
-}
-
 func TestEstimateFallback(t *testing.T) {
 	index := make([]domain.SpeciesSummary, 10)
 	for i := range index {

@@ -204,7 +204,8 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 
 	// Chafa artefact warm only helps chafa-only terminals. Native (Sixel/Kitty/
-	// iTerm) browse uses interactive encode + prefetch; chafa warm would steal CPU.
+	// iTerm) browse uses foreground latest-selection-wins rendering plus
+	// active-bucket native warming; chafa warm would steal CPU.
 	prewarm := warm.Mode(svc.Config.EffectiveSpritePrewarm())
 	var spriteWarmer *warm.Service
 	if prewarm != warm.ModeOff && !opts.DisableSprite && !caps.NativeImage {

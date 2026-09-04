@@ -58,6 +58,25 @@ type cacheCommands struct {
 	stderr   io.Writer
 }
 
+type updateProgressKind uint8
+
+const (
+	updateProgressDataset updateProgressKind = iota
+	updateProgressArtwork
+)
+
+// updateProgress is app-owned because update composes dataset refresh and
+// artwork sync, whose progress types remain owned by their subsystems.
+type updateProgress struct {
+	kind         updateProgressKind
+	datasetStage cache.DatasetStage
+	done         int
+	total        int
+	message      string
+}
+
+type updateProgressFunc func(updateProgress)
+
 func (c cacheCommands) Refresh(ctx context.Context) error {
 	svc, err := c.services()
 	if err != nil {
@@ -122,8 +141,19 @@ func (c cacheCommands) Update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	run := func(ctx context.Context, progress cache.DatasetProgressFunc) error {
-		if err := svc.Cache.RefreshDataset(ctx, progress); err != nil {
+	run := func(ctx context.Context, progress updateProgressFunc) error {
+		datasetProgress := func(p cache.DatasetProgress) {
+			if progress != nil {
+				progress(updateProgress{
+					kind:         updateProgressDataset,
+					datasetStage: p.Stage,
+					done:         p.Done,
+					total:        p.Total,
+					message:      p.Message,
+				})
+			}
+		}
+		if err := svc.Cache.RefreshDataset(ctx, datasetProgress); err != nil {
 			return err
 		}
 		index, _, err := svc.Cache.EnsureIndex(ctx, nil)
@@ -131,17 +161,14 @@ func (c cacheCommands) Update(ctx context.Context) error {
 			return err
 		}
 		syncResult, err := svc.Cache.SyncArtwork(ctx, index, func(p cache.ArtworkSyncProgress) {
-			if progress == nil {
-				return
+			if progress != nil {
+				progress(updateProgress{
+					kind:    updateProgressArtwork,
+					done:    p.Done,
+					total:   p.Total,
+					message: p.Message,
+				})
 			}
-			// Preserve the historical update progress label while keeping artwork
-			// stages out of cache's dataset-stage API.
-			progress(cache.DatasetProgress{
-				Stage:   cache.DatasetStage("artwork"),
-				Done:    p.Done,
-				Total:   p.Total,
-				Message: p.Message,
-			})
 		})
 		if err != nil {
 			return err
@@ -153,7 +180,7 @@ func (c cacheCommands) Update(ctx context.Context) error {
 		}
 		return nil
 	}
-	if err := cacheDatasetProgress(ctx, c.stderr, run); err != nil {
+	if err := cacheUpdateProgress(ctx, c.stderr, run); err != nil {
 		return err
 	}
 	return nil
