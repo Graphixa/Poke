@@ -347,11 +347,11 @@ The refactor is **not** finished when A–C compile. It is finished when all of 
 | Proved-dead prefetch / batch / format helpers deleted | **PASS** (Slice I) |
 | No unused native-completeness coordinator or manifest machinery | **PASS** (Slice F) |
 | Repository is `gofmt` clean | **PASS** — the current committed branch passes the repo-wide CI formatting check |
-| `go vet ./...`, `go test ./...`, `go test -race ./...` (CGO on) | **PASS** — see [End-of-plan validation](#end-of-plan-validation) |
+| `go vet ./...`, `go test ./...`, `go test -race ./...` (CGO on) | **PASS** — Linux CI merge gate was green for `c6887466a8d5a09b13cf5323925b2e6e532a27b0`; see [End-of-plan validation](#end-of-plan-validation) |
 | Cross-build (`CGO_ENABLED=0`) | **PASS** — linux/amd64, darwin/amd64, darwin/arm64, windows/amd64 → `.cross-build/` |
 | Existing startup / native-cache acceptance behaviour unchanged | **PASS** — non-regression locks retained; no browse-path coordinator resurrection |
 
-**Consolidation gate: PASS.** Remaining slices E (not presumed), G (rejected), H (needs approval) are out of scope.
+**Consolidation gate: PASS.** GitHub Actions run [33861827097](https://github.com/Graphixa/Pokedex/actions/runs/33861827097) passed formatting, vet, race, cross-builds, OS builds, and release smoke for `c6887466a8d5a09b13cf5323925b2e6e532a27b0`. Remaining slices E (not presumed), G (rejected), H (needs approval) are out of scope.
 
 ---
 
@@ -391,7 +391,8 @@ go vet ./...
 go test ./...
 
 # Race detector runs on Windows with CGO_ENABLED=1 (gcc required). Recorded PASS ~197s
-# on this tree. Linux CI (`go test -race ./...` on ubuntu-latest) remains the merge gate.
+# on this tree. Linux CI (`go test -race ./...` on ubuntu-latest) is the merge gate;
+# run 33861827097 was green for c6887466a8d5a09b13cf5323925b2e6e532a27b0.
 $env:CGO_ENABLED = "1"; go test -race ./...
 
 # Cross-build (Makefile cross-build)
@@ -440,10 +441,10 @@ Recorded after slices D+J+I+F+K on branch `codebase-cleanup` (Windows, PowerShel
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| Repo-wide `gofmt -l` / CI formatting | **PASS** | Current committed branch is clean; latest CI formatting step is green |
+| Repo-wide `gofmt -l` / CI formatting | **PASS** | GitHub Actions run 33861827097 is green for `c6887466a8d5a09b13cf5323925b2e6e532a27b0` |
 | `go vet ./...` | **PASS** | |
 | `go test ./...` | **PASS** | ~22s |
-| `go test -race ./...` (`CGO_ENABLED=1`) | **PASS** | ~184s; `internal/render/sprite/image` dominates (~139s) |
+| `go test -race ./...` (`CGO_ENABLED=1`) | **PASS** | Linux CI merge gate passed in run 33861827097 for `c6887466a8d5a09b13cf5323925b2e6e532a27b0`; local package race stress also passed |
 | Cross-build (`CGO_ENABLED=0`) | **PASS** | `.cross-build/poke-{linux,darwin-amd64,darwin-arm64,windows-amd64}` |
 | DoD grep: production stage string comparisons | **PASS** | Raw `"native"` / `"artwork"` comparisons only in tests |
 | DoD grep: warmer packages → `cache` import | **PASS** | No production warmer imports cache for progress; `nativewarm/integration_test.go` test import only |
