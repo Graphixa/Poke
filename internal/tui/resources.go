@@ -28,10 +28,6 @@ type resourceCache struct {
 	loadingExtras bool
 }
 
-func (r *resourceCache) coreReady() bool {
-	return r != nil && r.HasCore
-}
-
 func (r *resourceCache) extrasReady() bool {
 	return r != nil && r.HasEvolution && r.HasEncounters && r.HasMoves
 }

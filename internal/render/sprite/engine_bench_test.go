@@ -29,8 +29,7 @@ func benchEngine(store *namedMemStore, mode sprite.RenderMode, extra sprite.Rend
 func BenchmarkChafaColdRender(b *testing.B) {
 	png := mustPNG(b, color.RGBA{0, 128, 255, 255})
 	poke := domain.Pokemon{ID: 4, Slug: "charmander", DisplayName: "Charmander"}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		store := newNamedMemStore()
 		if err := store.StoreNamedSprite(context.Background(), 4, "charmander", "pixel", "", png); err != nil {
@@ -56,8 +55,7 @@ func BenchmarkChafaWarmRender(b *testing.B) {
 	if res := engine.Render(context.Background(), poke, 24); res.UsePlaceholder {
 		b.Fatal(res)
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res := engine.Render(context.Background(), poke, 24)
 		if res.UsePlaceholder {
 			b.Fatal(res)
@@ -91,8 +89,7 @@ func BenchmarkNativeWarmRender(b *testing.B) {
 	if res := engine.Render(context.Background(), poke, 24); !res.Native {
 		b.Fatal(res)
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res := engine.Render(context.Background(), poke, 24)
 		if !res.Native {
 			b.Fatal(res)
@@ -103,8 +100,7 @@ func BenchmarkNativeWarmRender(b *testing.B) {
 func BenchmarkHalfblockColdRender(b *testing.B) {
 	png := mustPNG(b, color.RGBA{255, 0, 0, 255})
 	poke := domain.Pokemon{ID: 1, Slug: "bulbasaur", DisplayName: "Bulbasaur"}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		store := newNamedMemStore()
 		if err := store.StoreNamedSprite(context.Background(), 1, "bulbasaur", "pixel", "", png); err != nil {
@@ -130,8 +126,7 @@ func BenchmarkHalfblockWarmRender(b *testing.B) {
 	if res := engine.Render(context.Background(), poke, 24); res.UsePlaceholder {
 		b.Fatal(res)
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res := engine.Render(context.Background(), poke, 24)
 		if res.UsePlaceholder {
 			b.Fatal(res)
@@ -151,8 +146,7 @@ func BenchmarkLookupCachedMem(b *testing.B) {
 		b.Fatal(res)
 	}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res, hit := engine.LookupCached(context.Background(), poke, 24)
 		if !hit || res.UsePlaceholder {
 			b.Fatal(res)
@@ -172,8 +166,7 @@ func BenchmarkLookupCachedDisk(b *testing.B) {
 		b.Fatal(res)
 	}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		engine := benchEngine(store, sprite.ModeChafa, spritechafa.Renderer{})
 		b.StartTimer()
@@ -187,8 +180,7 @@ func BenchmarkLookupCachedDisk(b *testing.B) {
 func BenchmarkColdNativeRender(b *testing.B) {
 	png := mustPNG(b, color.RGBA{255, 200, 0, 255})
 	poke := domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu"}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		store := newNamedMemStore()
 		if err := store.StoreNamedSprite(context.Background(), 25, "pikachu", "pixel", "", png); err != nil {
@@ -280,8 +272,7 @@ func BenchmarkLookupCachedNativeMem24(b *testing.B) {
 	store, poke, _ := seedNativeBench(b, 24)
 	engine := benchNativeEngine(store)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res, hit := engine.LookupCached(context.Background(), poke, 24)
 		if !hit || !res.Native {
 			b.Fatal(res)
@@ -293,8 +284,7 @@ func BenchmarkLookupCachedNativeMem32(b *testing.B) {
 	store, poke, _ := seedNativeBench(b, 32)
 	engine := benchNativeEngine(store)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res, hit := engine.LookupCached(context.Background(), poke, 32)
 		if !hit || !res.Native {
 			b.Fatal(res)
@@ -306,8 +296,7 @@ func BenchmarkLookupCachedNativeMem40(b *testing.B) {
 	store, poke, _ := seedNativeBench(b, 40)
 	engine := benchNativeEngine(store)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		res, hit := engine.LookupCached(context.Background(), poke, 40)
 		if !hit || !res.Native {
 			b.Fatal(res)
@@ -318,8 +307,7 @@ func BenchmarkLookupCachedNativeMem40(b *testing.B) {
 func BenchmarkLookupCachedNativeDisk24(b *testing.B) {
 	store, poke, _ := seedNativeBench(b, 24)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		engine := benchNativeEngine(store)
 		b.StartTimer()
@@ -333,8 +321,7 @@ func BenchmarkLookupCachedNativeDisk24(b *testing.B) {
 func BenchmarkLookupCachedNativeDisk32(b *testing.B) {
 	store, poke, _ := seedNativeBench(b, 32)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		engine := benchNativeEngine(store)
 		b.StartTimer()
@@ -348,8 +335,7 @@ func BenchmarkLookupCachedNativeDisk32(b *testing.B) {
 func BenchmarkLookupCachedNativeDisk40(b *testing.B) {
 	store, poke, _ := seedNativeBench(b, 40)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		engine := benchNativeEngine(store)
 		b.StartTimer()

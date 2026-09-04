@@ -14,9 +14,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/pokeapi"
 )
 
-// Ensure the file store satisfies the application cache contract.
-var _ Cache = (*cache.Store)(nil)
-
 // Services holds runtime dependencies constructed from config and paths.
 type Services struct {
 	Config config.Config
@@ -66,7 +63,7 @@ func (c cacheCommands) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	run := func(ctx context.Context, progress cache.ProgressFunc) error {
+	run := func(ctx context.Context, progress cache.DatasetProgressFunc) error {
 		return svc.Cache.RefreshDataset(ctx, progress)
 	}
 	if err := cacheDatasetProgress(ctx, c.stderr, run); err != nil {
@@ -101,7 +98,7 @@ func (c cacheCommands) WarmSprites(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	progress := func(p cache.Progress) {
+	progress := func(p cache.ArtworkSyncProgress) {
 		if c.stderr == nil || p.Total <= 0 {
 			return
 		}
@@ -125,7 +122,7 @@ func (c cacheCommands) Update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	run := func(ctx context.Context, progress cache.ProgressFunc) error {
+	run := func(ctx context.Context, progress cache.DatasetProgressFunc) error {
 		if err := svc.Cache.RefreshDataset(ctx, progress); err != nil {
 			return err
 		}
@@ -133,7 +130,19 @@ func (c cacheCommands) Update(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		syncResult, err := svc.Cache.SyncArtwork(ctx, index, progress)
+		syncResult, err := svc.Cache.SyncArtwork(ctx, index, func(p cache.ArtworkSyncProgress) {
+			if progress == nil {
+				return
+			}
+			// Preserve the historical update progress label while keeping artwork
+			// stages out of cache's dataset-stage API.
+			progress(cache.DatasetProgress{
+				Stage:   cache.DatasetStage("artwork"),
+				Done:    p.Done,
+				Total:   p.Total,
+				Message: p.Message,
+			})
+		})
 		if err != nil {
 			return err
 		}

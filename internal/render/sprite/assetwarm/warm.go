@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
@@ -32,8 +31,13 @@ type Resolver interface {
 	Resolve(ctx context.Context, pokemon domain.Pokemon, tier ...sprite.AssetTier) sprite.SourceResult
 }
 
-// ProgressFunc receives progress updates. Must be safe for concurrent calls.
-type ProgressFunc func(cache.Progress)
+// Progress reports artwork/pixel download work. App classifies this into TUI/CLI.
+type Progress struct {
+	Done      int
+	Total     int
+	Message   string
+	SpeciesID int
+}
 
 // Mode selects which asset family to download.
 type Mode string
@@ -51,10 +55,9 @@ type Config struct {
 	Loader   PokemonLoader
 	Resolver Resolver
 	Index    []domain.SpeciesSummary
-	Progress ProgressFunc
-	// Stage label reported in Progress (default depends on Mode).
-	Stage   cache.Stage
-	Message string
+	// Progress must be safe for concurrent calls.
+	Progress func(Progress)
+	Message  string
 }
 
 // Service owns a priority download queue.
@@ -97,13 +100,6 @@ func New(cfg Config) *Service {
 	default:
 		if cfg.Workers > 8 {
 			cfg.Workers = 8
-		}
-	}
-	if cfg.Stage == "" {
-		if cfg.Mode == ModeArtwork {
-			cfg.Stage = cache.StageArtwork
-		} else {
-			cfg.Stage = cache.StageSprites
 		}
 	}
 	if cfg.Message == "" {
@@ -448,8 +444,7 @@ func (s *Service) report(force bool, speciesID int) {
 	} else {
 		s.lastReport.Store(time.Now().UnixNano())
 	}
-	s.cfg.Progress(cache.Progress{
-		Stage:     s.cfg.Stage,
+	s.cfg.Progress(Progress{
 		Done:      done,
 		Total:     total,
 		Message:   s.cfg.Message,

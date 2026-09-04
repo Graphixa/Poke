@@ -11,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
@@ -32,8 +31,13 @@ type CoreLoader interface {
 	WarmCore(ctx context.Context, speciesID int) error
 }
 
-// ProgressFunc receives warm progress updates.
-type ProgressFunc func(cache.Progress)
+// Progress reports dossier prewarm work. App classifies this into TUI/CLI.
+type Progress struct {
+	Done      int
+	Total     int
+	Message   string
+	SpeciesID int
+}
 
 // Mode controls warm scope.
 type Mode string
@@ -52,7 +56,7 @@ type Config struct {
 	// CoreLoader, when set, is used for ModeWindow instead of full LoadDossier.
 	CoreLoader CoreLoader
 	Index      []domain.SpeciesSummary
-	Progress   ProgressFunc
+	Progress   func(Progress)
 }
 
 // Service owns the priority dossier warm queue.
@@ -250,8 +254,7 @@ func (s *Service) runJob(ctx context.Context, id int) {
 	done := int(s.doneN.Add(1))
 	total := int(s.totalN.Load())
 	if s.cfg.Progress != nil {
-		s.cfg.Progress(cache.Progress{
-			Stage:     cache.StageDossier,
+		s.cfg.Progress(Progress{
 			Done:      done,
 			Total:     total,
 			Message:   "dossier warm",

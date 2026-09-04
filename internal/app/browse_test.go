@@ -106,7 +106,7 @@ func TestSendWarmProgressNeverBlocks(t *testing.T) {
 	ch <- tui.WarmProgress{}
 	done := make(chan struct{})
 	go func() {
-		sendWarmProgress(ch, cache.Progress{SpeciesID: 25, Done: 1, Total: 2})
+		sendWarmProgress(ch, tui.WarmProgress{SpeciesID: 25, Done: 1, Total: 2})
 		close(done)
 	}()
 	select {
@@ -119,7 +119,7 @@ func TestSendWarmProgressNeverBlocks(t *testing.T) {
 func TestImageCacheCompletionEventNotDropped(t *testing.T) {
 	ch := make(chan tui.WarmProgress, 1)
 	ch <- tui.WarmProgress{Done: 1024, Total: 1025, Stage: "native"}
-	sendWarmProgress(ch, cache.Progress{Done: 1025, Total: 1025, Stage: "native"})
+	sendWarmProgress(ch, tui.WarmProgress{Done: 1025, Total: 1025, Stage: tui.WarmStageNative})
 	select {
 	case got := <-ch:
 		if got.Done != 1025 || got.Total != 1025 {
@@ -135,8 +135,8 @@ func TestImageCacheCompletionEventNotDropped(t *testing.T) {
 
 func TestSendWarmProgressPreservesStageAndSpecies(t *testing.T) {
 	ch := make(chan tui.WarmProgress, 1)
-	sendWarmProgress(ch, cache.Progress{
-		Stage: "artwork", Done: 3, Total: 10, Message: "Downloading official artwork", SpeciesID: 25, Cells: 40,
+	sendWarmProgress(ch, tui.WarmProgress{
+		Stage: tui.WarmStageArtwork, Done: 3, Total: 10, Message: "Downloading official artwork", SpeciesID: 25, Cells: 40,
 	})
 	got := <-ch
 	if got.Stage != "artwork" || got.Done != 3 || got.Total != 10 || got.SpeciesID != 25 || got.Cells != 40 {

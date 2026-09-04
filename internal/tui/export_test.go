@@ -96,8 +96,8 @@ func WarmProgressSpeciesMsgForTest(done, total, speciesID int) warmProgressMsg {
 }
 
 // WarmProgressSpeciesStageMsgForTest builds a warm tick with an explicit stage.
-func WarmProgressSpeciesStageMsgForTest(done, total, speciesID int, stage string) warmProgressMsg {
-	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: WarmStage(stage)}
+func WarmProgressSpeciesStageMsgForTest(done, total, speciesID int, stage WarmStage) warmProgressMsg {
+	return warmProgressMsg{Done: done, Total: total, Message: "warming", SpeciesID: speciesID, Stage: stage}
 }
 
 // WarmProgressNativeMsgForTest builds a native warm tick with optional size bucket.
@@ -181,21 +181,8 @@ func (m Model) HeaderLoading() bool {
 // EnsureDossierLoadForTest runs ensureDossierLoad (for dialog race tests).
 func (m *Model) EnsureDossierLoadForTest() tea.Cmd { return m.ensureDossierLoad() }
 
-// EnsureSelectionLoadsForTest runs the selected-species sprite load only
-// (prefetch is tested separately).
+// EnsureSelectionLoadsForTest runs the selected-species sprite load only.
 func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.beginSpriteLoad() }
-
-// ScheduleSpritePrefetchForTest starts neighbor sprite encodes.
-func (m *Model) ScheduleSpritePrefetchForTest() tea.Cmd { return m.scheduleSpritePrefetch() }
-
-// PrefetchGenForTest exposes the prefetch generation counter.
-func (m Model) PrefetchGenForTest() int { return m.prefetchGen }
-
-// BumpPrefetchGenForTest cancels in-flight prefetch and advances the generation.
-func (m *Model) BumpPrefetchGenForTest() {
-	m.cancelPrefetch()
-	m.prefetchGen++
-}
 
 func (m Model) ResourceCountForTest() int { return len(m.resources) }
 
@@ -228,8 +215,6 @@ func (m Model) FgPendingSpeciesForTest() int {
 	}
 	return m.coldSched.PendingSpecies()
 }
-
-func PrefetchRadiusForTest() int { return spritePrefetchRadius }
 
 // ColdFrameMsgForTest builds a cold-scheduler frame message for spinner tests.
 func ColdFrameMsgForTest(gen, speciesID, cells int, ansi string, placeholder, native bool, assetKind string) coldFrameMsg {

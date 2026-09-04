@@ -509,7 +509,7 @@ func TestArtworkWarmClearsStaleFooterUnderNativeSprite(t *testing.T) {
 		t.Fatal("native complete must clear footer via tea.Raw")
 	}
 
-	updated, cmd = m.Update(tui.WarmProgressSpeciesStageMsgForTest(981, 1025, 0, "artwork"))
+	updated, cmd = m.Update(tui.WarmProgressSpeciesStageMsgForTest(981, 1025, 0, tui.WarmStageArtwork))
 	m = updated.(tui.Model)
 	if hint := m.BrowseWarmHintForTest(); hint != "" {
 		t.Fatalf("artwork warm must hide footer, got %q", hint)

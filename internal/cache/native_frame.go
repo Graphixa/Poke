@@ -3,7 +3,6 @@ package cache
 import (
 	"bytes"
 	"compress/gzip"
-	"fmt"
 	"io"
 	"strings"
 )
@@ -59,11 +58,4 @@ func gzipDecompressFrame(data []byte) ([]byte, error) {
 func isNativeArtefactName(name string) bool {
 	_, ok := nativeKeyFromFilename(name)
 	return ok
-}
-
-func validateNativeKeyFormat(key string) error {
-	if key == "" {
-		return fmt.Errorf("empty native key")
-	}
-	return nil
 }

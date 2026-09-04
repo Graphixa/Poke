@@ -1,20 +1,16 @@
 package cache
 
-// Stage names a progress phase. Values are the historical wire strings used by
-// CLI copy, the bootstrap TUI, and warmer → browse footer mapping. Changing a
-// constant value is a user-visible change.
-type Stage string
+// DatasetStage names a cache/dataset progress phase. Values are the historical
+// wire strings used by CLI copy and the bootstrap TUI. Changing a constant
+// value is a user-visible change. Native/artwork/dossier/chafa stages belong
+// to the producing warmer packages, not this type.
+type DatasetStage string
 
 const (
-	StageIndex         Stage = "index"
-	StageEnrich        Stage = "enrich"
-	StageRecords       Stage = "records"
-	StageEvolution     Stage = "evolution"
-	StageMoves         Stage = "moves"
-	StageDataset       Stage = "dataset"
-	StageArtwork       Stage = "artwork"
-	StageNative        Stage = "native"
-	StageSpritesRender Stage = "sprites_render"
-	StageDossier       Stage = "dossier"
-	StageSprites       Stage = "sprites"
+	DatasetStageIndex     DatasetStage = "index"
+	DatasetStageEnrich    DatasetStage = "enrich"
+	DatasetStageRecords   DatasetStage = "records"
+	DatasetStageEvolution DatasetStage = "evolution"
+	DatasetStageMoves     DatasetStage = "moves"
+	DatasetStageDataset   DatasetStage = "dataset"
 )

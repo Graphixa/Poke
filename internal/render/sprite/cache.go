@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
 // BackgroundHash returns a short hex identity for the theme background RGB.
 func BackgroundHash(bg color.RGBA) string {
 	if bg.A == 0 {

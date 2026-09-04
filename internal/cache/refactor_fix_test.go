@@ -14,11 +14,11 @@ import (
 )
 
 func TestBootstrapParallelMoveReport(t *testing.T) {
-	testBootstrapParallelReport(t, cache.StageMoves)
+	testBootstrapParallelReport(t, cache.DatasetStageMoves)
 }
 
 func TestBootstrapParallelEvolutionReport(t *testing.T) {
-	testBootstrapParallelReport(t, cache.StageEvolution)
+	testBootstrapParallelReport(t, cache.DatasetStageEvolution)
 }
 
 func TestBootstrapParallelFailureReport(t *testing.T) {
@@ -56,7 +56,7 @@ func TestBootstrapParallelFailureReport(t *testing.T) {
 	}
 }
 
-func testBootstrapParallelReport(t *testing.T, stage cache.Stage) {
+func testBootstrapParallelReport(t *testing.T, stage cache.DatasetStage) {
 	t.Helper()
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)}
@@ -84,8 +84,8 @@ func testBootstrapParallelReport(t *testing.T, stage cache.Stage) {
 	cfg := testConfig()
 	cfg.Network.MaxConcurrency = 4
 	svc := cache.NewService(store, api, cfg, clock)
-	seen := map[cache.Stage]bool{}
-	if err := svc.BootstrapDataset(context.Background(), func(p cache.Progress) {
+	seen := map[cache.DatasetStage]bool{}
+	if err := svc.BootstrapDataset(context.Background(), func(p cache.DatasetProgress) {
 		if p.Stage == stage {
 			seen[stage] = true
 		}
@@ -100,16 +100,16 @@ func testBootstrapParallelReport(t *testing.T, stage cache.Stage) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stage == cache.StageMoves && rep.MoveOK != rep.MoveWanted {
+	if stage == cache.DatasetStageMoves && rep.MoveOK != rep.MoveWanted {
 		t.Fatalf("moves=%d/%d", rep.MoveOK, rep.MoveWanted)
 	}
-	if stage == cache.StageEvolution && rep.EvolutionOK != rep.EvolutionWanted {
+	if stage == cache.DatasetStageEvolution && rep.EvolutionOK != rep.EvolutionWanted {
 		t.Fatalf("evo=%d/%d", rep.EvolutionOK, rep.EvolutionWanted)
 	}
 }
 
 func TestBootstrapParallelReportRace(t *testing.T) {
-	testBootstrapParallelReport(t, cache.StageMoves)
+	testBootstrapParallelReport(t, cache.DatasetStageMoves)
 }
 
 func TestConcurrentDatasetLoadAndReset(t *testing.T) {

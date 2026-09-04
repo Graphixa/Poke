@@ -72,7 +72,7 @@ func TestArtworkWarmDoesNotShowBrowseFooter(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 
-	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(131, 1025, 0, "artwork"))
+	updated, _ = m.Update(tui.WarmProgressSpeciesStageMsgForTest(131, 1025, 0, tui.WarmStageArtwork))
 	m = updated.(tui.Model)
 	if hint := m.BrowseWarmHintForTest(); hint != "" {
 		t.Fatalf("artwork warm must not populate footer, got %q", hint)

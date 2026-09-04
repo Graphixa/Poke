@@ -16,19 +16,17 @@ import (
 
 const interactiveReserve = 2
 
-// Progress reports refresh work without coupling to CLI or TUI rendering.
-type Progress struct {
-	Stage     Stage
-	Done      int
-	Total     int
-	Message   string
-	SpeciesID int // optional: species that just finished (warmers)
-	Cells     int // native frame longest-side bucket (warmers)
+// DatasetProgress reports cache/dataset work without coupling to CLI or TUI rendering.
+type DatasetProgress struct {
+	Stage   DatasetStage
+	Done    int
+	Total   int
+	Message string
 }
 
-// ProgressFunc receives progress updates during refresh. It must be safe for
+// DatasetProgressFunc receives dataset progress updates. It must be safe for
 // concurrent calls from enrichment workers.
-type ProgressFunc func(Progress)
+type DatasetProgressFunc func(DatasetProgress)
 
 // pokeAPI adapts app.PokeAPI plus optional slug lookup used during enrichment.
 type pokeAPI interface {
@@ -107,7 +105,7 @@ func (s *Service) Clear() error {
 // EnsureIndex returns the browse index from the active dataset when present,
 // otherwise the cached species index. An empty cache triggers a blocking thin
 // index fetch only (full metadata bootstrap is explicit via BootstrapDataset).
-func (s *Service) EnsureIndex(ctx context.Context, progress ProgressFunc) (index []domain.SpeciesSummary, stale bool, err error) {
+func (s *Service) EnsureIndex(ctx context.Context, progress DatasetProgressFunc) (index []domain.SpeciesSummary, stale bool, err error) {
 	if s.store.HasActiveDataset() {
 		s.localOnly.Store(true)
 		browse, berr := s.store.LoadBrowseSummaries()
@@ -168,7 +166,7 @@ func NeedsTypeEnrichment(index []domain.SpeciesSummary) bool {
 }
 
 // BackgroundRefresh starts at most one in-flight Refresh. It does not block the caller.
-func (s *Service) BackgroundRefresh(ctx context.Context, progress ProgressFunc) {
+func (s *Service) BackgroundRefresh(ctx context.Context, progress DatasetProgressFunc) {
 	go func() {
 		debuglog.Cachef("background refresh start")
 		err := s.Refresh(ctx, progress)
@@ -181,7 +179,7 @@ func (s *Service) BackgroundRefresh(ctx context.Context, progress ProgressFunc) 
 }
 
 // BackgroundEnrich starts type enrichment without blocking (single-flight).
-func (s *Service) BackgroundEnrich(ctx context.Context, progress ProgressFunc) {
+func (s *Service) BackgroundEnrich(ctx context.Context, progress DatasetProgressFunc) {
 	go func() {
 		debuglog.Cachef("background enrich start")
 		err := s.EnrichTypes(ctx, progress)
@@ -195,7 +193,7 @@ func (s *Service) BackgroundEnrich(ctx context.Context, progress ProgressFunc) {
 
 // Refresh fetches the national species index and enriches types (CLI path; waits for enrich).
 // Concurrent Refresh calls share a single in-flight run (single-flight).
-func (s *Service) Refresh(ctx context.Context, progress ProgressFunc) error {
+func (s *Service) Refresh(ctx context.Context, progress DatasetProgressFunc) error {
 	_, err := s.group.Do("refresh", func() (any, error) {
 		if err := s.refreshIndexOnce(ctx, progress); err != nil {
 			return nil, err
@@ -212,7 +210,7 @@ func (s *Service) Refresh(ctx context.Context, progress ProgressFunc) error {
 // RefreshDataset rebuilds metadata beside the active snapshot and activates the
 // new snapshot only when complete. A failed bootstrap leaves the previous
 // active snapshot in place.
-func (s *Service) RefreshDataset(ctx context.Context, progress ProgressFunc) error {
+func (s *Service) RefreshDataset(ctx context.Context, progress DatasetProgressFunc) error {
 	if err := s.Refresh(ctx, progress); err != nil {
 		return err
 	}
@@ -232,7 +230,7 @@ func (s *Service) LocalOnly() bool {
 }
 
 // EnrichTypes fills missing type hints on the cached index (sync).
-func (s *Service) EnrichTypes(ctx context.Context, progress ProgressFunc) error {
+func (s *Service) EnrichTypes(ctx context.Context, progress DatasetProgressFunc) error {
 	_, err := s.group.Do("enrich", func() (any, error) {
 		index, _, err := s.loadIndex()
 		if err != nil {
@@ -243,18 +241,18 @@ func (s *Service) EnrichTypes(ctx context.Context, progress ProgressFunc) error 
 	return err
 }
 
-func (s *Service) refreshIndex(ctx context.Context, progress ProgressFunc) error {
+func (s *Service) refreshIndex(ctx context.Context, progress DatasetProgressFunc) error {
 	_, err := s.group.Do("refresh-index", func() (any, error) {
 		return nil, s.refreshIndexOnce(ctx, progress)
 	})
 	return err
 }
 
-func (s *Service) refreshIndexOnce(ctx context.Context, progress ProgressFunc) error {
+func (s *Service) refreshIndexOnce(ctx context.Context, progress DatasetProgressFunc) error {
 	if err := s.store.EnsureRoot(); err != nil {
 		return err
 	}
-	report(progress, Progress{Stage: StageIndex, Message: "Fetching species index"})
+	report(progress, DatasetProgress{Stage: DatasetStageIndex, Message: "Fetching species index"})
 	summaries, err := s.api.ListSpecies(ctx)
 	if err != nil {
 		return err
@@ -268,11 +266,11 @@ func (s *Service) refreshIndexOnce(ctx context.Context, progress ProgressFunc) e
 	if err := s.store.StoreSpeciesIndex(ctx, summaries, now); err != nil {
 		return err
 	}
-	report(progress, Progress{Stage: StageIndex, Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
+	report(progress, DatasetProgress{Stage: DatasetStageIndex, Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
 	return nil
 }
 
-func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSummary, progress ProgressFunc) error {
+func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSummary, progress DatasetProgressFunc) error {
 	type job struct {
 		idx int
 		sum domain.SpeciesSummary
@@ -287,7 +285,7 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 	total := len(jobs)
 	if total == 0 {
 		_ = s.store.StoreSpeciesIndex(ctx, summaries, s.clock.Now())
-		report(progress, Progress{Stage: StageEnrich, Done: 0, Total: 0, Message: "Types already enriched"})
+		report(progress, DatasetProgress{Stage: DatasetStageEnrich, Done: 0, Total: 0, Message: "Types already enriched"})
 		return nil
 	}
 
@@ -323,7 +321,7 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 					mu.Unlock()
 				}
 				current := int(done.Add(1))
-				report(progress, Progress{Stage: StageEnrich, Done: current, Total: total, Message: j.sum.Slug})
+				report(progress, DatasetProgress{Stage: DatasetStageEnrich, Done: current, Total: total, Message: j.sum.Slug})
 				continue
 			}
 			types := make([]string, 0, len(pokemon.Types))
@@ -336,7 +334,7 @@ func (s *Service) enrichTypes(ctx context.Context, summaries []domain.SpeciesSum
 			mu.Unlock()
 
 			current := int(done.Add(1))
-			report(progress, Progress{Stage: StageEnrich, Done: current, Total: total, Message: j.sum.DisplayName})
+			report(progress, DatasetProgress{Stage: DatasetStageEnrich, Done: current, Total: total, Message: j.sum.DisplayName})
 		}
 	}
 
@@ -465,7 +463,7 @@ func mergeTypeHints(fresh, existing []domain.SpeciesSummary) []domain.SpeciesSum
 	return fresh
 }
 
-func report(fn ProgressFunc, p Progress) {
+func report(fn DatasetProgressFunc, p DatasetProgress) {
 	if fn != nil {
 		fn(p)
 	}

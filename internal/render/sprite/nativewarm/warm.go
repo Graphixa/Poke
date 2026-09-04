@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
@@ -33,14 +32,24 @@ type NativeRenderer interface {
 	WaitPersistCapacity(ctx context.Context) error
 }
 
+// Progress reports native-cache warm work. Done counts persisted/readable
+// .sixel.gz frames for the active bucket. App classifies this into TUI/CLI.
+type Progress struct {
+	Done    int
+	Total   int
+	Message string
+	Cells   int
+}
+
 // Config configures the opportunistic native warm service.
 type Config struct {
 	Loader   PokemonLoader
 	Renderer NativeRenderer
 	Index    []domain.SpeciesSummary
 	// OnlyIDs when non-empty restricts warm targets (poke update tooling).
-	OnlyIDs  map[int]struct{}
-	Progress cache.ProgressFunc
+	OnlyIDs map[int]struct{}
+	// Progress must be safe for concurrent calls.
+	Progress func(Progress)
 }
 
 // Service owns a single-lane background native encoder for the active bucket.
@@ -331,8 +340,7 @@ func (s *Service) emitProgress() {
 		return
 	}
 	s.mu.Lock()
-	p := cache.Progress{
-		Stage:   cache.StageNative,
+	p := Progress{
 		Done:    s.progress.done,
 		Total:   s.progress.total,
 		Message: "Building image cache",

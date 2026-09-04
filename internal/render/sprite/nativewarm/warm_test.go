@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
@@ -161,14 +160,14 @@ func waitPersists(t *testing.T, rend *fakeNativeRenderer, n int) {
 
 type progressRecorder struct {
 	mu        sync.Mutex
-	last      cache.Progress
+	last      nativewarm.Progress
 	emits     int
-	firstEmit cache.Progress
+	firstEmit nativewarm.Progress
 	hasFirst  bool
-	all       []cache.Progress
+	all       []nativewarm.Progress
 }
 
-func (p *progressRecorder) record(c cache.Progress) {
+func (p *progressRecorder) record(c nativewarm.Progress) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.last = c
@@ -180,10 +179,10 @@ func (p *progressRecorder) record(c cache.Progress) {
 	p.all = append(p.all, c)
 }
 
-func (p *progressRecorder) snapshot() (last cache.Progress, emits int, firstEmit cache.Progress, hasFirst bool, all []cache.Progress) {
+func (p *progressRecorder) snapshot() (last nativewarm.Progress, emits int, firstEmit nativewarm.Progress, hasFirst bool, all []nativewarm.Progress) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.last, p.emits, p.firstEmit, p.hasFirst, append([]cache.Progress(nil), p.all...)
+	return p.last, p.emits, p.firstEmit, p.hasFirst, append([]nativewarm.Progress(nil), p.all...)
 }
 
 func TestWarmerOnlyCurrentBucket(t *testing.T) {
@@ -534,13 +533,13 @@ func TestNativeProgressStartsWhenBucketIncomplete(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		last, _, _, _, _ := rec.snapshot()
-		if last.Total == 10 && last.Stage == "native" {
+		if last.Total == 10 && last.Message == "Building image cache" {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	last, _, _, _, _ := rec.snapshot()
-	if last.Total != 10 || last.Stage != "native" {
+	if last.Total != 10 || last.Message != "Building image cache" {
 		t.Fatalf("progress=%+v want native 0/10", last)
 	}
 	svc.Stop()
@@ -553,7 +552,7 @@ func TestMarkDoneWithProgressDoesNotDeadlock(t *testing.T) {
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
-		Progress: func(p cache.Progress) {},
+		Progress: func(p nativewarm.Progress) {},
 	})
 	ctx := context.Background()
 	svc.EnsureStarted(ctx, 32)
@@ -618,7 +617,7 @@ func TestFastPathCompleteCacheNoProgressEmit(t *testing.T) {
 		Loader:   fakeLoader{},
 		Renderer: rend,
 		Index:    index,
-		Progress: func(p cache.Progress) {
+		Progress: func(p nativewarm.Progress) {
 			if p.Done < p.Total {
 				t.Fatalf("progress=%+v want complete or no emit", p)
 			}
@@ -707,7 +706,7 @@ func TestFastPathResizeBucketReaudit(t *testing.T) {
 	emitBefore := len(emits)
 	svc.SetCells(40)
 	deadline = time.Now().Add(3 * time.Second)
-	var resizeEmit cache.Progress
+	var resizeEmit nativewarm.Progress
 	var gotResizeEmit bool
 	for time.Now().Before(deadline) {
 		_, _, _, _, emits = rec.snapshot()

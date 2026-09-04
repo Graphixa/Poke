@@ -14,11 +14,6 @@ func (m *Model) foregroundColdBusy() bool {
 	return m.imageState == ImageLoading
 }
 
-func (m *Model) scheduleSpritePrefetchIfIdle() tea.Cmd {
-	// Foreground ±1 speculative prewarm removed; background warmer handles this (phase 8).
-	return nil
-}
-
 func (m *Model) syncWarmerBusy() {
 	busy := m.foregroundColdBusy()
 	if m.nativeWarmer != nil {

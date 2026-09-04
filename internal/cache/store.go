@@ -39,8 +39,6 @@ type Store struct {
 	loadedErr  error
 
 	speciesIndexWrites atomic.Uint32
-
-	imgManifest *imageManifestState
 }
 
 func NewStore(root string, clock Clock) *Store {

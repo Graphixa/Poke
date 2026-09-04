@@ -55,7 +55,7 @@ func BenchmarkRenderers(b *testing.B) {
 		}
 		b.Run(fmt.Sprintf("chafa/%dx%d", w, h), func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				if _, err := chafaR.Render(context.Background(), img, opts); err != nil {
 					b.Fatal(err)
 				}
@@ -63,7 +63,7 @@ func BenchmarkRenderers(b *testing.B) {
 		})
 		b.Run(fmt.Sprintf("halfblock/%dx%d", w, h), func(b *testing.B) {
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				if _, err := halfR.Render(context.Background(), img, opts); err != nil {
 					b.Fatal(err)
 				}
@@ -72,7 +72,7 @@ func BenchmarkRenderers(b *testing.B) {
 		if nativeR.Available() {
 			b.Run(fmt.Sprintf("termimg/%dx%d", w, h), func(b *testing.B) {
 				b.ReportAllocs()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					if _, err := nativeR.Render(context.Background(), img, opts); err != nil {
 						b.Fatal(err)
 					}

@@ -12,7 +12,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-// Stage is a dataset-bootstrap phase. Values match cache.Stage wire strings.
+// Stage is a dataset-bootstrap phase. Values match cache.DatasetStage wire strings.
 type Stage string
 
 const (
@@ -23,7 +23,7 @@ const (
 	StageDataset   Stage = "dataset"
 )
 
-// Progress is the bootstrap TUI's view of dataset work (not cache.Progress).
+// Progress is the bootstrap TUI's view of dataset work (not cache.DatasetProgress).
 type Progress struct {
 	Stage   Stage
 	Done    int
@@ -31,7 +31,7 @@ type Progress struct {
 	Message string
 }
 
-// ProgressFunc receives bootstrap progress. App adapts cache.Progress into this.
+// ProgressFunc receives bootstrap progress. App adapts cache.DatasetProgress into this.
 type ProgressFunc func(Progress)
 
 // Deps are injected bootstrap capabilities (app layer wires the cache service).

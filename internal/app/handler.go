@@ -139,16 +139,16 @@ func (h *Handler) ensureIndex(ctx context.Context) ([]domain.SpeciesSummary, err
 	if err != nil {
 		return nil, err
 	}
-	progress := func(p cache.Progress) {
+	progress := func(p cache.DatasetProgress) {
 		if h.Stderr == nil {
 			return
 		}
 		switch p.Stage {
-		case cache.StageIndex:
+		case cache.DatasetStageIndex:
 			if p.Message != "" {
 				fmt.Fprintf(h.Stderr, "%s\n", p.Message)
 			}
-		case cache.StageEnrich:
+		case cache.DatasetStageEnrich:
 			if p.Total > 0 && (p.Done == p.Total || p.Done%25 == 0) {
 				fmt.Fprintf(h.Stderr, "Enriching types %d/%d\n", p.Done, p.Total)
 			}

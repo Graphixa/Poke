@@ -85,14 +85,14 @@ type estimateDoneMsg struct {
 	bytes int64
 }
 
-// Progress is setup-wizard download/index progress (not cache.Progress).
+// Progress is setup-wizard download/index progress (not cache.DatasetProgress).
 type Progress struct {
 	Done    int
 	Total   int
 	Message string
 }
 
-// ProgressFunc receives setup progress. App adapts cache.Progress into this.
+// ProgressFunc receives setup progress. App adapts cache/warmer progress into this.
 type ProgressFunc func(Progress)
 
 type progressMsg struct {
@@ -298,18 +298,6 @@ func (m Model) loadIndexForArtwork() (tea.Model, tea.Cmd) {
 		index, err := deps.EnsureIndex(context.Background(), nil)
 		return indexDoneMsg{index: index, err: err}
 	}
-}
-
-func (m Model) beginIndex() (tea.Model, tea.Cmd) {
-	m.step = StepIndex
-	m.status = "Fetching species index"
-	m.errMsg = ""
-	m.done, m.total, m.percent = 0, 0, 0
-	deps := m.deps
-	return m, tea.Batch(m.prog.SetPercent(0), func() tea.Msg {
-		index, err := deps.EnsureIndex(context.Background(), nil)
-		return indexDoneMsg{index: index, err: err}
-	})
 }
 
 func (m Model) beginEstimate() (tea.Model, tea.Cmd) {

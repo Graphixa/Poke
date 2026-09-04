@@ -41,9 +41,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
-	case spritePrefetchMsg:
-		return m.applySpritePrefetch(msg)
-
 	case tea.WindowSizeMsg:
 		prevShow := m.layout().ShowSprite
 		prevSide := m.currentSpriteSide()
@@ -360,15 +357,6 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) hasSelectedCore() bool {
-	sel, ok := m.selected()
-	if !ok {
-		return false
-	}
-	r := m.resources[sel.ID]
-	return r != nil && r.HasCore
-}
-
 func (m *Model) isSelectedID(id int) bool {
 	sel, ok := m.selected()
 	return ok && sel.ID == id
@@ -378,7 +366,7 @@ func (m *Model) effectiveWarmFooterRight() string {
 	if !m.nativeWarmActive {
 		return ""
 	}
-	return formatWarmFooterRight(WarmStageNative, m.nativeWarmDone, m.nativeWarmTotal, m.nativeWarmCells)
+	return formatWarmFooterRight(WarmStageNative, m.nativeWarmDone, m.nativeWarmTotal)
 }
 
 func (m *Model) syncSelectionLoads() tea.Cmd {
@@ -396,8 +384,8 @@ func (m *Model) syncSelectionLoads() tea.Cmd {
 	return m.ensureSelectionLoads()
 }
 
-// warmerNeighborRadius aligns background prioritize windows with TUI prefetch.
-const warmerNeighborRadius = spritePrefetchRadius
+// warmerNeighborRadius is the P1 window around the cursor for background warmers.
+const warmerNeighborRadius = 1
 
 func (m *Model) notifyWarmer() {
 	sel, ok := m.selected()
@@ -508,13 +496,6 @@ func (m *Model) cancelSprite() {
 	m.spriteReqID++
 	m.imageLoading = false
 	m.spriteLoadSpecies = 0
-}
-
-// selectionSpriteOwns reports whether the selection encode path owns speciesID.
-func (m Model) selectionSpriteOwns(speciesID int) bool {
-	return m.isSelectedID(speciesID) &&
-		m.foregroundColdBusy() &&
-		m.spriteLoadSpecies == speciesID
 }
 
 func (m *Model) clearStaleFlag(speciesID int, clear func(*resourceCache)) {
@@ -688,144 +669,6 @@ func (m *Model) refreshSpriteAfterWarm(speciesID int, stage WarmStage) tea.Cmd {
 	return m.queueOrStartFgRender(pokemon, m.currentSpriteCells(), true)
 }
 
-// scheduleSpritePrefetch warms engine/disk render caches for nearby list rows.
-// Rendered output is not retained on resource entries.
-func (m *Model) scheduleSpritePrefetch() tea.Cmd {
-	if m.sprites == nil || !m.layout().ShowSprite || len(m.filtered) == 0 {
-		return nil
-	}
-	cells := m.currentSpriteCells()
-	if cells < 1 {
-		return nil
-	}
-	m.pruneSpriteResources()
-	lo := m.cursor - spritePrefetchRadius
-	if lo < 0 {
-		lo = 0
-	}
-	hi := m.cursor + spritePrefetchRadius
-	if hi >= len(m.filtered) {
-		hi = len(m.filtered) - 1
-	}
-
-	m.cancelPrefetch()
-	ctx, cancel := context.WithCancel(m.ctx)
-	m.prefetchCancel = cancel
-	m.prefetchGen++
-	gen := m.prefetchGen
-
-	var cmds []tea.Cmd
-	for dist := 1; dist <= spritePrefetchRadius && len(cmds) < spritePrefetchBurst; dist++ {
-		for _, idx := range []int{m.cursor - dist, m.cursor + dist} {
-			if idx < lo || idx > hi || idx == m.cursor {
-				continue
-			}
-			sum := m.filtered[idx]
-			r := m.ensureResource(sum.ID)
-			pokemon := r.Pokemon
-			if pokemon.ID == 0 {
-				pokemon = domain.Pokemon{ID: sum.ID, Slug: sum.Slug, DisplayName: sum.DisplayName}
-			}
-			if _, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit {
-				continue
-			}
-			sprite.NoteNeighbour()
-			cmds = append(cmds, loadSpritePrefetchCmd(ctx, m.sprites, m.pokemonSrc, gen, sum.ID, cells, pokemon))
-			if len(cmds) >= spritePrefetchBurst {
-				break
-			}
-		}
-	}
-	if len(cmds) == 0 {
-		return nil
-	}
-	return tea.Batch(cmds...)
-}
-
-func (m *Model) cancelPrefetch() {
-	if m.prefetchCancel != nil {
-		m.prefetchCancel()
-		m.prefetchCancel = nil
-	}
-}
-
-// pruneSpriteResources drops dossier entries outside the prefetch window.
-func (m *Model) pruneSpriteResources() {
-	if len(m.filtered) == 0 || m.resources == nil {
-		return
-	}
-	keep := make(map[int]struct{}, spritePrefetchRadius*2+2)
-	lo := m.cursor - spritePrefetchRadius*2
-	if lo < 0 {
-		lo = 0
-	}
-	hi := m.cursor + spritePrefetchRadius*2
-	if hi >= len(m.filtered) {
-		hi = len(m.filtered) - 1
-	}
-	for i := lo; i <= hi; i++ {
-		keep[m.filtered[i].ID] = struct{}{}
-	}
-	if sel, ok := m.selected(); ok {
-		keep[sel.ID] = struct{}{}
-	}
-	for id, r := range m.resources {
-		if _, ok := keep[id]; ok {
-			continue
-		}
-		if r == nil || (!r.HasCore && !r.HasEvolution && !r.HasEncounters && !r.HasMoves && !r.loadingCore && !r.loadingExtras) {
-			delete(m.resources, id)
-		}
-	}
-}
-
-func (m Model) applySpritePrefetch(msg spritePrefetchMsg) (tea.Model, tea.Cmd) {
-	if m.foregroundColdBusy() {
-		return m, nil
-	}
-	if msg.gen != 0 && msg.gen != m.prefetchGen {
-		return m, nil
-	}
-	if msg.cells != m.currentSpriteCells() {
-		return m, nil
-	}
-	if m.selectionSpriteOwns(msg.speciesID) {
-		return m, m.scheduleSpritePrefetchIfIdle()
-	}
-	if !m.inPrefetchWindow(msg.speciesID) {
-		return m, m.scheduleSpritePrefetchIfIdle()
-	}
-	// Warm engine/disk cache only — do not retain rendered output on resources.
-	if msg.pokemon.ID != 0 {
-		r := m.ensureResource(msg.speciesID)
-		if r.Pokemon.ID == 0 || r.Pokemon.Sprites.FrontDefault == "" {
-			r.Pokemon = msg.pokemon
-		}
-	}
-	return m, m.scheduleSpritePrefetchIfIdle()
-}
-
-// inPrefetchWindow reports whether speciesID is within the keep radius of the cursor.
-func (m Model) inPrefetchWindow(speciesID int) bool {
-	if len(m.filtered) == 0 {
-		return false
-	}
-	lo := m.cursor - spritePrefetchRadius*2
-	if lo < 0 {
-		lo = 0
-	}
-	hi := m.cursor + spritePrefetchRadius*2
-	if hi >= len(m.filtered) {
-		hi = len(m.filtered) - 1
-	}
-	for i := lo; i <= hi; i++ {
-		if m.filtered[i].ID == speciesID {
-			return true
-		}
-	}
-	return m.isSelectedID(speciesID)
-}
-
 func (m *Model) scrollDialog(delta int) {
 	m.syncDialogViewport()
 	if delta > 0 {
@@ -833,8 +676,4 @@ func (m *Model) scrollDialog(delta int) {
 	} else if delta < 0 {
 		m.dialogVP.ScrollUp(-delta)
 	}
-}
-
-func (m Model) selectedSummary() (domain.SpeciesSummary, bool) {
-	return m.selected()
 }

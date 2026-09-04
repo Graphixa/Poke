@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
@@ -25,26 +24,6 @@ import (
 
 type tuiDetails struct {
 	*DetailService
-}
-
-func (t tuiDetails) WarmCore(ctx context.Context, speciesID int) error {
-	return t.DetailService.WarmCore(ctx, speciesID)
-}
-
-func (t tuiDetails) LoadDossierCore(ctx context.Context, speciesID int, slug string) (domain.Dossier, bool, error) {
-	return t.DetailService.LoadDossierCore(ctx, speciesID, slug)
-}
-
-func (t tuiDetails) LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
-	return t.DetailService.LoadDossierExtras(ctx, speciesID, slug, core)
-}
-
-func (t tuiDetails) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
-	return t.DetailService.LoadDossier(ctx, speciesID)
-}
-
-func (t tuiDetails) PokemonForSprite(ctx context.Context, speciesID int) (domain.Pokemon, error) {
-	return t.DetailService.PokemonForSprite(ctx, speciesID)
 }
 
 type tuiSprites struct {
@@ -88,20 +67,16 @@ func (t tuiSprites) PersistFrame(ctx context.Context, cacheKey, frame string) er
 // sendWarmProgress is non-blocking for in-progress ticks so warmers cannot
 // stall the TUI. A Done>=Total tick must not be dropped: one stale buffered
 // message is discarded so completion can replace it.
-func sendWarmProgress(ch chan tui.WarmProgress, p cache.Progress) {
+func sendWarmProgress(ch chan tui.WarmProgress, msg tui.WarmProgress) {
 	if ch == nil {
 		return
-	}
-	msg := tui.WarmProgress{
-		Done: p.Done, Total: p.Total, Message: p.Message,
-		SpeciesID: p.SpeciesID, Stage: tui.WarmStage(p.Stage), Cells: p.Cells,
 	}
 	select {
 	case ch <- msg:
 		return
 	default:
 	}
-	if p.Total <= 0 || p.Done < p.Total {
+	if msg.Total <= 0 || msg.Done < msg.Total {
 		return
 	}
 	select {
@@ -241,8 +216,11 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
 			Index:    index,
-			Progress: func(p cache.Progress) {
-				sendWarmProgress(progressCh, p)
+			Progress: func(p warm.Progress) {
+				sendWarmProgress(progressCh, tui.WarmProgress{
+					Done: p.Done, Total: p.Total, Message: p.Message,
+					SpeciesID: p.SpeciesID, Stage: tui.WarmStageSpritesRender,
+				})
 			},
 		})
 		queueUIReady(func() { spriteWarmer.Start(runCtx) })
@@ -255,8 +233,23 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 
 	var nativeWarmer *nativewarm.Service
 
-	forwardWarm := func(p cache.Progress) {
-		sendWarmProgress(progressCh, p)
+	forwardNative := func(p nativewarm.Progress) {
+		sendWarmProgress(progressCh, tui.WarmProgress{
+			Done: p.Done, Total: p.Total, Message: p.Message,
+			Stage: tui.WarmStageNative, Cells: p.Cells,
+		})
+	}
+	forwardAsset := func(p assetwarm.Progress) {
+		sendWarmProgress(progressCh, tui.WarmProgress{
+			Done: p.Done, Total: p.Total, Message: p.Message,
+			SpeciesID: p.SpeciesID, Stage: tui.WarmStageArtwork,
+		})
+	}
+	forwardDossier := func(p dossierwarm.Progress) {
+		sendWarmProgress(progressCh, tui.WarmProgress{
+			Done: p.Done, Total: p.Total, Message: p.Message,
+			SpeciesID: p.SpeciesID, Stage: tui.WarmStageDossier,
+		})
 	}
 
 	nativeImageBrowse := caps.NativeImage && !opts.DisableSprite
@@ -266,7 +259,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
 			Index:    index,
-			Progress: forwardWarm,
+			Progress: forwardNative,
 		})
 		defer nativeWarmer.Stop()
 		opts.NativeWarmer = nativeWarmer
@@ -277,12 +270,11 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		useProgress = true
 		artworkWarmer = assetwarm.New(assetwarm.Config{
 			Mode:     assetwarm.ModeArtwork,
-			Stage:    cache.StageArtwork,
 			Workers:  assetwarm.ArtworkWorkers(workers),
 			Loader:   warmPokemonLoader{details},
 			Resolver: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
 			Index:    index,
-			Progress: forwardWarm,
+			Progress: forwardAsset,
 		})
 		queueUIReady(func() { artworkWarmer.Start(runCtx) })
 		defer artworkWarmer.Stop()
@@ -297,7 +289,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 			Workers:  2,
 			Loader:   tuiDetails{details},
 			Index:    index,
-			Progress: forwardWarm,
+			Progress: forwardDossier,
 		}
 		if dossierMode == dossierwarm.ModeWindow {
 			dwCfg.CoreLoader = tuiDetails{details}

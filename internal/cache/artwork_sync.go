@@ -18,13 +18,20 @@ type ArtworkSyncResult struct {
 	Changed   []int // species IDs whose PNG bytes changed
 }
 
+// ArtworkSyncProgress reports a selective artwork sync pass.
+type ArtworkSyncProgress struct {
+	Done    int
+	Total   int
+	Message string
+}
+
 type spriteDownloader interface {
 	GetSprite(ctx context.Context, spriteURL string) (io.ReadCloser, error)
 }
 
 // SyncArtwork downloads official artwork when missing or CDN URL changed.
 // When URL matches and PNG exists, the file is left unchanged (fast path).
-func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary, progress ProgressFunc) (ArtworkSyncResult, error) {
+func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary, progress func(ArtworkSyncProgress)) (ArtworkSyncResult, error) {
 	if s.api == nil {
 		return ArtworkSyncResult{}, fmt.Errorf("cache: artwork sync requires API client")
 	}
@@ -41,7 +48,7 @@ func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary
 		cdnURL := sprite.CDNArtworkURL(sum.ID)
 		if cdnURL == "" {
 			result.Failed++
-			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
+			reportArtworkSync(progress, i+1, total)
 			continue
 		}
 		hasPNG := s.store.HasNamedSprite(sum.ID, sum.Slug, SpriteKindArtwork)
@@ -52,20 +59,20 @@ func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary
 		}
 		if !needDownload {
 			result.Unchanged++
-			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
+			reportArtworkSync(progress, i+1, total)
 			continue
 		}
 		data, err := downloadSprite(ctx, dl, cdnURL)
 		if err != nil || len(data) == 0 || sprite.ValidatePNG(data) != nil {
 			result.Failed++
-			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
+			reportArtworkSync(progress, i+1, total)
 			continue
 		}
 		hash := sha256HexBytes(data)
 		changed := !hasPNG || metaErr != nil || meta.SHA256 != hash
 		if err := s.StoreNamedSpriteWithURL(ctx, sum.ID, sum.Slug, SpriteKindArtwork, cdnURL, hash, data); err != nil {
 			result.Failed++
-			reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
+			reportArtworkSync(progress, i+1, total)
 			continue
 		}
 		if changed {
@@ -81,21 +88,19 @@ func (s *Service) SyncArtwork(ctx context.Context, index []domain.SpeciesSummary
 		} else {
 			result.Unchanged++
 		}
-		reportArtworkSync(progress, i+1, total, sum.ID, StageArtwork)
+		reportArtworkSync(progress, i+1, total)
 	}
 	return result, nil
 }
 
-func reportArtworkSync(progress ProgressFunc, done, total, speciesID int, stage Stage) {
+func reportArtworkSync(progress func(ArtworkSyncProgress), done, total int) {
 	if progress == nil {
 		return
 	}
-	progress(Progress{
-		Stage:     stage,
-		Done:      done,
-		Total:     total,
-		Message:   "Downloading artwork",
-		SpeciesID: speciesID,
+	progress(ArtworkSyncProgress{
+		Done:    done,
+		Total:   total,
+		Message: "Downloading artwork",
 	})
 }
 

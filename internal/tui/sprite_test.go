@@ -372,8 +372,8 @@ func TestSelectionChangeBlanksImagePane(t *testing.T) {
 	fresh := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), id, cells, "ART", false)
 	updated, _ = m.Update(fresh)
 	m = updated.(tui.Model)
-	if !m.HasSpriteANSI() {
-		t.Fatal("expected art")
+	if !m.HasSpriteANSI() || m.ImageANSILenForTest() != len("ART") {
+		t.Fatal("expected current selection art on image pane")
 	}
 	updated, _ = m.Update(key("down"))
 	m = updated.(tui.Model)
@@ -576,57 +576,6 @@ func TestSearchSelectionStartsSpriteLoadImmediately(t *testing.T) {
 		t.Fatal("search selection must start sprite load immediately")
 	}
 	close(sprites.block)
-}
-
-func TestPrefetchDoesNotRetainRenderedImage(t *testing.T) {
-	details := &fakeDetails{}
-	sprites := &fakeSprites{ansi: "NEIGHBOR"}
-	m := tui.NewModel(tui.Options{
-		Index:   fixtureIndex(),
-		Details: details,
-		Sprites: sprites,
-	})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
-	m = updated.(tui.Model)
-
-	id, _ := m.SelectedID()
-	cells := m.CurrentSpriteCells()
-	fresh := tui.SpriteMsgForTest(m.SpriteReqID(), m.SelectionGen(), id, cells, "CURRENT", false)
-	updated, _ = m.Update(fresh)
-	m = updated.(tui.Model)
-	if !m.HasSpriteANSI() || m.ImageANSILenForTest() != len("CURRENT") {
-		t.Fatal("expected current selection art on image pane")
-	}
-
-	cmd := m.ScheduleSpritePrefetchForTest()
-	if cmd != nil {
-		var apply func(tea.Cmd)
-		apply = func(c tea.Cmd) {
-			if c == nil {
-				return
-			}
-			msg := c()
-			switch v := msg.(type) {
-			case tea.BatchMsg:
-				for _, inner := range v {
-					apply(inner)
-				}
-			default:
-				updated, _ = m.Update(msg)
-				m = updated.(tui.Model)
-			}
-		}
-		apply(cmd)
-	}
-	if m.ImageANSILenForTest() != len("CURRENT") {
-		t.Fatalf("prefetch must not replace selection image, len=%d", m.ImageANSILenForTest())
-	}
-
-	updated, _ = m.Update(key("down"))
-	m = updated.(tui.Model)
-	if m.HasSpriteANSI() {
-		t.Fatal("selection change must blank image pane")
-	}
 }
 
 func TestForegroundLatestSelectionWins(t *testing.T) {

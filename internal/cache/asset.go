@@ -121,9 +121,6 @@ func (s *Store) StoreContentAsset(pokemonID int, source, url, hash string, data 
 	if err := writeAtomic(s.artworkMappingPath(pokemonID, source), raw, 0o600); err != nil {
 		return err
 	}
-	if hashChanged {
-		_ = s.invalidateImageCachePokemon(pokemonID)
-	}
 	debuglog.Cachef("artwork.download.complete id=%d source=%s hash=%s", pokemonID, source, hash)
 	return nil
 }

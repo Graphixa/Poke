@@ -72,8 +72,8 @@ type NativeWarmer interface {
 	SetForegroundBusy(busy bool)
 }
 
-// WarmStage is a browse warm-progress phase. Values match cache.Stage wire
-// strings so app can map without renaming user-visible behaviour.
+// WarmStage is a browse warm-progress phase. Values match historical wire
+// strings so app can map warmer progress without renaming user-visible behaviour.
 type WarmStage string
 
 const (
@@ -141,8 +141,6 @@ type Model struct {
 	dossierCancel       context.CancelFunc
 	dossierLoadCtx      context.Context
 	dossierLoadSpecies  int
-	prefetchCancel      context.CancelFunc
-	prefetchGen         int
 	nativePaintPending  bool
 	nativeOverlayDirty  bool
 	nativeNeedsFollowUp bool
@@ -299,14 +297,6 @@ func (m *Model) selected() (domain.SpeciesSummary, bool) {
 		return domain.SpeciesSummary{}, false
 	}
 	return m.filtered[m.cursor], true
-}
-
-func (m *Model) currentResource() *resourceCache {
-	sel, ok := m.selected()
-	if !ok {
-		return nil
-	}
-	return m.resources[sel.ID]
 }
 
 func (m *Model) refilter() {

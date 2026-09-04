@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -121,26 +120,6 @@ func (s *Store) CountNativeSpeciesForCells(cells int, protocol string) (int, err
 	return len(seen), nil
 }
 
-func speciesIDFromNativeFilename(name string) int {
-	key, ok := nativeKeyFromFilename(name)
-	if !ok {
-		return 0
-	}
-	if !strings.HasPrefix(key, "named-") {
-		return 0
-	}
-	rest := key[len("named-"):]
-	i := strings.IndexByte(rest, '-')
-	if i <= 0 {
-		return 0
-	}
-	id, err := strconv.Atoi(rest[:i])
-	if err != nil || id < 1 {
-		return 0
-	}
-	return id
-}
-
 func (s *Store) readNativeDirEntries() ([]os.DirEntry, error) {
 	dir := filepath.Join(s.root, "native")
 	entries, err := os.ReadDir(dir)
@@ -152,17 +131,6 @@ func (s *Store) readNativeDirEntries() ([]os.DirEntry, error) {
 	}
 	nativeDirectoryScanCount.Add(1)
 	return entries, nil
-}
-
-func cellsForNativeFrameDims(fw, fh int) int {
-	for _, cells := range sprite.FrameSteps() {
-		w, h := sprite.FrameSizeFor(cells)
-		pxW, pxH := sprite.PixelSize(w, h)
-		if fw == pxW && fh == pxH {
-			return cells
-		}
-	}
-	return 0
 }
 
 func (s *Service) EnsureNativeManifest(protocol string) error {

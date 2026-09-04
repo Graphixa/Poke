@@ -69,8 +69,7 @@ func BenchmarkOpportunisticNativeWarm(b *testing.B) {
 		index[i] = domain.SpeciesSummary{ID: id, Slug: "mon", DisplayName: "Mon"}
 	}
 	renderer := &slowNativeRenderer{delay: time.Millisecond}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		renderer.render = 0
 		renderer.cached = nil

@@ -2,23 +2,18 @@ package cache
 
 import "testing"
 
-func TestStageWireValues(t *testing.T) {
+func TestDatasetStageWireValues(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		got  Stage
+		got  DatasetStage
 		want string
 	}{
-		{StageIndex, "index"},
-		{StageEnrich, "enrich"},
-		{StageRecords, "records"},
-		{StageEvolution, "evolution"},
-		{StageMoves, "moves"},
-		{StageDataset, "dataset"},
-		{StageArtwork, "artwork"},
-		{StageNative, "native"},
-		{StageSpritesRender, "sprites_render"},
-		{StageDossier, "dossier"},
-		{StageSprites, "sprites"},
+		{DatasetStageIndex, "index"},
+		{DatasetStageEnrich, "enrich"},
+		{DatasetStageRecords, "records"},
+		{DatasetStageEvolution, "evolution"},
+		{DatasetStageMoves, "moves"},
+		{DatasetStageDataset, "dataset"},
 	}
 	for _, tc := range cases {
 		if string(tc.got) != tc.want {

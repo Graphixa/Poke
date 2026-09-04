@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/warm"
@@ -109,7 +108,7 @@ func TestPrioritySelectedBeforeBackground(t *testing.T) {
 }
 
 func TestProgressReports(t *testing.T) {
-	var last cache.Progress
+	var last warm.Progress
 	var mu sync.Mutex
 	loader := &fakeLoader{}
 	rend := &fakeRenderer{}
@@ -121,7 +120,7 @@ func TestProgressReports(t *testing.T) {
 		Loader:   loader,
 		Renderer: rend,
 		Index:    index,
-		Progress: func(p cache.Progress) {
+		Progress: func(p warm.Progress) {
 			mu.Lock()
 			last = p
 			mu.Unlock()
@@ -135,10 +134,10 @@ func TestProgressReports(t *testing.T) {
 		done, total := svc.Snapshot()
 		if done >= 2 && total == 2 {
 			mu.Lock()
-			stage := last.Stage
+			msg := last.Message
 			mu.Unlock()
-			if stage != "sprites_render" {
-				t.Fatalf("stage=%q", stage)
+			if msg != "Warming sprites" {
+				t.Fatalf("message=%q", msg)
 			}
 			svc.Stop()
 			return

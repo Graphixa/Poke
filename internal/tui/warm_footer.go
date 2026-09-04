@@ -10,7 +10,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-func formatWarmFooterRight(stage WarmStage, done, total, cells int) string {
+func formatWarmFooterRight(stage WarmStage, done, total int) string {
 	if total <= 0 || done >= total {
 		return ""
 	}
@@ -43,23 +43,6 @@ func formatNativeImageCacheFooter(done, total int) string {
 		trackSty.Render(strings.Repeat("░", barW-filled))
 	count := countSty.Render(fmt.Sprintf("%d/%d", done, total))
 	line := labelSty.Render("Image Cache") + " " + bar + " " + count
-	return fitWarmFooterRight(line)
-}
-
-func formatWarmBar(labelText string, done, total int) string {
-	if total <= 0 || done >= total {
-		return ""
-	}
-	labelSty, fillSty, trackSty, countSty := warmBarStyles()
-	const barW = 10
-	filled := done * barW / total
-	if filled > barW {
-		filled = barW
-	}
-	bar := fillSty.Render(strings.Repeat("█", filled)) +
-		trackSty.Render(strings.Repeat("░", barW-filled))
-	count := countSty.Render(fmt.Sprintf("%d/%d", done, total))
-	line := labelSty.Render(labelText) + " " + bar + " " + count
 	return fitWarmFooterRight(line)
 }
 

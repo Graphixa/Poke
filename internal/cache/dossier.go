@@ -52,7 +52,7 @@ func (s *Service) DossierCore(ctx context.Context, speciesID int, slug string) (
 // DossierExtras fills evolution, encounters, and level-up moves for a core dossier.
 func (s *Service) DossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
 	v, err := s.group.Do(fmt.Sprintf("dossier-extras:%d", speciesID), func() (any, error) {
-		return s.getDossierExtras(ctx, speciesID, slug, core)
+		return s.getDossierExtras(ctx, slug, core)
 	})
 	if err != nil {
 		return domain.Dossier{}, err
@@ -68,7 +68,7 @@ func (s *Service) getDossier(ctx context.Context, speciesID int, slug string) (d
 	if core.Complete {
 		return core.Dossier, nil
 	}
-	return s.getDossierExtras(ctx, speciesID, slug, core.Dossier)
+	return s.getDossierExtras(ctx, slug, core.Dossier)
 }
 
 func (s *Service) getDossierCore(ctx context.Context, speciesID int, slug string) (DossierCoreResult, error) {
@@ -87,9 +87,9 @@ func (s *Service) getDossierCore(ctx context.Context, speciesID int, slug string
 	return DossierCoreResult{Dossier: d, Complete: false}, nil
 }
 
-func (s *Service) getDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
+func (s *Service) getDossierExtras(ctx context.Context, slug string, core domain.Dossier) (domain.Dossier, error) {
 	_ = slug
-	complete, err := s.dossierComplete(ctx, core)
+	complete, err := s.dossierComplete(core)
 	if err != nil {
 		return domain.Dossier{}, err
 	}
@@ -99,7 +99,7 @@ func (s *Service) getDossierExtras(ctx context.Context, speciesID int, slug stri
 	return s.assembleExtras(ctx, core)
 }
 
-func (s *Service) dossierComplete(ctx context.Context, d domain.Dossier) (bool, error) {
+func (s *Service) dossierComplete(d domain.Dossier) (bool, error) {
 	evoDone := d.Evolution != nil || d.Species.EvolutionChainID == 0
 	encDone := d.Encounters != nil
 	if !evoDone || !encDone {
@@ -233,7 +233,7 @@ func (s *Service) assembleExtras(ctx context.Context, d domain.Dossier) (domain.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		rows, err := s.levelUpMovesForPokemon(ctx, pokemonID)
+		rows, err := s.levelUpMovesForPokemon(pokemonID)
 		if err == nil {
 			moves = rows
 			movesOK = true
@@ -253,7 +253,7 @@ func (s *Service) assembleExtras(ctx context.Context, d domain.Dossier) (domain.
 	return d, nil
 }
 
-func (s *Service) levelUpMovesForPokemon(ctx context.Context, pokemonID int) ([]domain.LevelUpMove, error) {
+func (s *Service) levelUpMovesForPokemon(pokemonID int) ([]domain.LevelUpMove, error) {
 	if pokemonID != 0 {
 		if rows, err := s.store.LevelUpMoves(pokemonID); err == nil {
 			return rows, nil

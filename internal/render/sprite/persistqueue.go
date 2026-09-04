@@ -60,7 +60,7 @@ func (q *persistQueue) waitCapacity(ctx context.Context) error {
 		q.mu.Lock()
 		closed := q.closed
 		ch := q.ch
-		full := ch != nil && len(ch) >= nativePersistQueueCap
+		full := len(ch) >= nativePersistQueueCap
 		q.mu.Unlock()
 		if closed {
 			return context.Canceled

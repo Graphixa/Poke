@@ -46,7 +46,7 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 			Loader:   loader,
 			Resolver: resolver,
 			Index:    index,
-			Progress: func(p cache.Progress) {
+			Progress: func(p assetwarm.Progress) {
 				if progress != nil {
 					progress(setup.Progress{Done: p.Done, Total: p.Total, Message: p.Message})
 				}
@@ -95,11 +95,11 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 	return result.Config, result.StartBackgroundArtwork, nil
 }
 
-func adaptSetupProgress(progress setup.ProgressFunc) cache.ProgressFunc {
+func adaptSetupProgress(progress setup.ProgressFunc) cache.DatasetProgressFunc {
 	if progress == nil {
 		return nil
 	}
-	return func(p cache.Progress) {
+	return func(p cache.DatasetProgress) {
 		progress(setup.Progress{Done: p.Done, Total: p.Total, Message: p.Message})
 	}
 }

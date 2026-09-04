@@ -18,7 +18,7 @@ const datasetWorkerDefault = 8
 // BootstrapDataset fetches the TUI metadata graph into a staging snapshot and
 // activates it only when complete. A failed run leaves the previous active
 // snapshot untouched. Uses the cached species index when present.
-func (s *Service) BootstrapDataset(ctx context.Context, progress ProgressFunc) error {
+func (s *Service) BootstrapDataset(ctx context.Context, progress DatasetProgressFunc) error {
 	_, err := s.group.Do("dataset-bootstrap", func() (any, error) {
 		return nil, s.bootstrapDataset(ctx, progress)
 	})
@@ -26,14 +26,14 @@ func (s *Service) BootstrapDataset(ctx context.Context, progress ProgressFunc) e
 }
 
 // BootstrapDatasetFromIndex builds a snapshot from an already-loaded index.
-func (s *Service) BootstrapDatasetFromIndex(ctx context.Context, summaries []domain.SpeciesSummary, progress ProgressFunc) error {
+func (s *Service) BootstrapDatasetFromIndex(ctx context.Context, summaries []domain.SpeciesSummary, progress DatasetProgressFunc) error {
 	_, err := s.group.Do("dataset-bootstrap", func() (any, error) {
 		return nil, s.bootstrapDatasetFromIndex(ctx, summaries, progress)
 	})
 	return err
 }
 
-func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) error {
+func (s *Service) bootstrapDataset(ctx context.Context, progress DatasetProgressFunc) error {
 	ctx = WithInteractivePriority(ctx)
 	debuglog.Cachef("dataset.bootstrap.start")
 
@@ -42,7 +42,7 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 		if err := s.store.EnsureRoot(); err != nil {
 			return err
 		}
-		report(progress, Progress{Stage: StageIndex, Message: "Fetching species index"})
+		report(progress, DatasetProgress{Stage: DatasetStageIndex, Message: "Fetching species index"})
 		summaries, err = s.api.ListSpecies(ctx)
 		if err != nil {
 			return err
@@ -52,14 +52,14 @@ func (s *Service) bootstrapDataset(ctx context.Context, progress ProgressFunc) e
 		if err := s.store.StoreSpeciesIndex(ctx, summaries, now); err != nil {
 			return err
 		}
-		report(progress, Progress{Stage: StageIndex, Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
+		report(progress, DatasetProgress{Stage: DatasetStageIndex, Done: 1, Total: 1, Message: fmt.Sprintf("Indexed %d species", len(summaries))})
 	} else {
 		summaries, _ = typeseed.Apply(summaries)
 	}
 	return s.bootstrapDatasetFromIndex(ctx, summaries, progress)
 }
 
-func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []domain.SpeciesSummary, progress ProgressFunc) error {
+func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []domain.SpeciesSummary, progress DatasetProgressFunc) error {
 	ctx = WithInteractivePriority(ctx)
 	if len(summaries) == 0 {
 		return ErrEmpty
@@ -128,9 +128,9 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 	var done int
 	for res := range results {
 		done++
-		report(progress, Progress{
-			Stage: StageRecords, Done: done, Total: total,
-			Message: res.sum.DisplayName, SpeciesID: res.sum.ID,
+		report(progress, DatasetProgress{
+			Stage: DatasetStageRecords, Done: done, Total: total,
+			Message: res.sum.DisplayName,
 		})
 		if err := ctx.Err(); err != nil {
 			rep.add("pokemon", res.sum.ID, err, true)
@@ -210,13 +210,13 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 	if !staging.Complete {
 		return fmt.Errorf("cache: dataset %s incomplete (%s)", id, rep.summary())
 	}
-	report(progress, Progress{Stage: StageDataset, Done: 1, Total: 1, Message: "Activating dataset"})
+	report(progress, DatasetProgress{Stage: DatasetStageDataset, Done: 1, Total: 1, Message: "Activating dataset"})
 	if err := s.store.ActivateDataset(id); err != nil {
 		return err
 	}
 	s.localOnly.Store(true)
 	debuglog.Cachef("dataset.bootstrap.complete id=%s count=%d", id, staging.PokemonCount)
-	report(progress, Progress{Stage: StageDataset, Done: 1, Total: 1, Message: fmt.Sprintf("Dataset %s active", id)})
+	report(progress, DatasetProgress{Stage: DatasetStageDataset, Done: 1, Total: 1, Message: fmt.Sprintf("Dataset %s active", id)})
 	return nil
 }
 
@@ -327,7 +327,7 @@ type moveFetchResult struct {
 	err  error
 }
 
-func (s *Service) parallelEvolutionFetch(ctx context.Context, ids []int, progress ProgressFunc, rep *DatasetBootstrapReport, builder *dataset.Builder) error {
+func (s *Service) parallelEvolutionFetch(ctx context.Context, ids []int, progress DatasetProgressFunc, rep *DatasetBootstrapReport, builder *dataset.Builder) error {
 	total := len(ids)
 	if total == 0 {
 		return nil
@@ -372,7 +372,7 @@ func (s *Service) parallelEvolutionFetch(ctx context.Context, ids []int, progres
 	done := 0
 	for res := range results {
 		done++
-		report(progress, Progress{Stage: StageEvolution, Done: done, Total: total})
+		report(progress, DatasetProgress{Stage: DatasetStageEvolution, Done: done, Total: total})
 		if res.err != nil {
 			rep.add("evolution", res.id, res.err, true)
 			continue
@@ -383,7 +383,7 @@ func (s *Service) parallelEvolutionFetch(ctx context.Context, ids []int, progres
 	return ctx.Err()
 }
 
-func (s *Service) parallelMoveFetch(ctx context.Context, ids []int, progress ProgressFunc, rep *DatasetBootstrapReport, builder *dataset.Builder) error {
+func (s *Service) parallelMoveFetch(ctx context.Context, ids []int, progress DatasetProgressFunc, rep *DatasetBootstrapReport, builder *dataset.Builder) error {
 	total := len(ids)
 	if total == 0 {
 		return nil
@@ -428,7 +428,7 @@ func (s *Service) parallelMoveFetch(ctx context.Context, ids []int, progress Pro
 	done := 0
 	for res := range results {
 		done++
-		report(progress, Progress{Stage: StageMoves, Done: done, Total: total})
+		report(progress, DatasetProgress{Stage: DatasetStageMoves, Done: done, Total: total})
 		if res.err != nil {
 			rep.add("move", res.id, res.err, true)
 			continue

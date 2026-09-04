@@ -19,7 +19,7 @@ import (
 // prints throttled progress lines.
 func (h *Handler) runDatasetBootstrap(ctx context.Context, svc *Services) error {
 	debuglog.StartupMark("startup.bootstrap_begin")
-	run := func(ctx context.Context, progress cache.ProgressFunc) error {
+	run := func(ctx context.Context, progress cache.DatasetProgressFunc) error {
 		return svc.Cache.BootstrapDataset(ctx, progress)
 	}
 	if isTerminal(h.Stderr) {
@@ -35,9 +35,9 @@ func (h *Handler) runDatasetBootstrap(ctx context.Context, svc *Services) error 
 	return run(ctx, throttledCLIProgress(h.Stderr))
 }
 
-func adaptBootstrapRun(run func(context.Context, cache.ProgressFunc) error) func(context.Context, bootstrap.ProgressFunc) error {
+func adaptBootstrapRun(run func(context.Context, cache.DatasetProgressFunc) error) func(context.Context, bootstrap.ProgressFunc) error {
 	return func(ctx context.Context, progress bootstrap.ProgressFunc) error {
-		return run(ctx, func(p cache.Progress) {
+		return run(ctx, func(p cache.DatasetProgress) {
 			if progress == nil {
 				return
 			}
@@ -52,7 +52,7 @@ func adaptBootstrapRun(run func(context.Context, cache.ProgressFunc) error) func
 }
 
 // cacheDatasetProgress returns TUI progress on a terminal stderr, otherwise throttled lines.
-func cacheDatasetProgress(ctx context.Context, w io.Writer, run func(context.Context, cache.ProgressFunc) error) error {
+func cacheDatasetProgress(ctx context.Context, w io.Writer, run func(context.Context, cache.DatasetProgressFunc) error) error {
 	if isTerminal(w) {
 		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptBootstrapRun(run)})
 		if err != nil {
@@ -79,10 +79,10 @@ type throttledProgress struct {
 	mu        sync.Mutex
 	lastWrite time.Time
 	lastPct   int
-	lastStage cache.Stage
+	lastStage cache.DatasetStage
 }
 
-func throttledCLIProgress(w io.Writer) cache.ProgressFunc {
+func throttledCLIProgress(w io.Writer) cache.DatasetProgressFunc {
 	if w == nil {
 		return nil
 	}
@@ -90,7 +90,7 @@ func throttledCLIProgress(w io.Writer) cache.ProgressFunc {
 	return t.report
 }
 
-func (t *throttledProgress) report(p cache.Progress) {
+func (t *throttledProgress) report(p cache.DatasetProgress) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -106,7 +106,7 @@ func (t *throttledProgress) report(p cache.Progress) {
 	pct := p.Done * 100 / p.Total
 	stage := p.Stage
 	if stage == "" {
-		stage = cache.StageDataset
+		stage = cache.DatasetStageDataset
 	}
 	if p.Done != p.Total && pct/5 == t.lastPct/5 && stage == t.lastStage && now.Sub(t.lastWrite) < 2*time.Second {
 		return
@@ -123,30 +123,30 @@ func (t *throttledProgress) report(p cache.Progress) {
 	}
 }
 
-func formatBootstrapProgress(p cache.Progress) string {
+func formatBootstrapProgress(p cache.DatasetProgress) string {
 	stage := p.Stage
 	if stage == "" {
-		stage = cache.StageDataset
+		stage = cache.DatasetStageDataset
 	}
 	pct := 0
 	if p.Total > 0 {
 		pct = p.Done * 100 / p.Total
 	}
 	switch stage {
-	case cache.StageIndex:
+	case cache.DatasetStageIndex:
 		if p.Done == p.Total && p.Total > 0 {
 			return p.Message
 		}
 		return "Fetching species index"
-	case cache.StageEnrich:
+	case cache.DatasetStageEnrich:
 		return fmt.Sprintf("Enriching types %d%% (%d/%d)", pct, p.Done, p.Total)
-	case cache.StageRecords:
+	case cache.DatasetStageRecords:
 		return fmt.Sprintf("Building dataset %d%% (%d/%d records)", pct, p.Done, p.Total)
-	case cache.StageEvolution:
+	case cache.DatasetStageEvolution:
 		return fmt.Sprintf("Fetching evolution chains %d%% (%d/%d)", pct, p.Done, p.Total)
-	case cache.StageMoves:
+	case cache.DatasetStageMoves:
 		return fmt.Sprintf("Fetching moves %d%% (%d/%d)", pct, p.Done, p.Total)
-	case cache.StageDataset:
+	case cache.DatasetStageDataset:
 		if p.Message != "" {
 			return p.Message
 		}

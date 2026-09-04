@@ -108,10 +108,10 @@ func (m Model) dialogContentLines() []string {
 	if r == nil || (!r.HasCore && r.loadingCore) {
 		return []string{"Loading…"}
 	}
-	if r != nil && r.CoreErr != nil && !r.HasCore {
+	if r.CoreErr != nil && !r.HasCore {
 		return []string{usererr.Message(r.CoreErr)}
 	}
-	if r == nil || !r.HasCore {
+	if !r.HasCore {
 		return []string{"Loading…"}
 	}
 

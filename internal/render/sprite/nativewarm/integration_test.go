@@ -134,7 +134,7 @@ func slugForID(id int) string {
 	return fmt.Sprintf("mon%d", id)
 }
 
-func (e *integrationEnv) warmer(progress cache.ProgressFunc) *nativewarm.Service {
+func (e *integrationEnv) warmer(progress func(nativewarm.Progress)) *nativewarm.Service {
 	return nativewarm.New(nativewarm.Config{
 		Loader:   integrationLoader{e.index},
 		Renderer: e.engine,

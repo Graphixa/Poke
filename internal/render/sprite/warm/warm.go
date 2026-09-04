@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
@@ -34,8 +33,13 @@ type Renderer interface {
 	WarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
 }
 
-// ProgressFunc receives warm progress updates. Must be safe for concurrent calls.
-type ProgressFunc func(cache.Progress)
+// Progress reports chafa artefact warm work. App classifies this into TUI/CLI.
+type Progress struct {
+	Done      int
+	Total     int
+	Message   string
+	SpeciesID int
+}
 
 // Mode controls warm scope.
 type Mode string
@@ -54,7 +58,8 @@ type Config struct {
 	Loader   PokemonLoader
 	Renderer Renderer
 	Index    []domain.SpeciesSummary
-	Progress ProgressFunc
+	// Progress must be safe for concurrent calls.
+	Progress func(Progress)
 }
 
 // Service owns the priority warm queue.
@@ -387,8 +392,7 @@ func (s *Service) report(speciesID int) {
 	}
 	done := int(s.doneN.Load())
 	total := int(s.totalN.Load())
-	s.cfg.Progress(cache.Progress{
-		Stage:     cache.StageSpritesRender,
+	s.cfg.Progress(Progress{
 		Done:      done,
 		Total:     total,
 		Message:   "Warming sprites",

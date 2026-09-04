@@ -64,8 +64,8 @@ func TestBootstrapReportsAllStages(t *testing.T) {
 		},
 	}
 	svc := cache.NewService(store, api, testConfig(), clock)
-	seen := map[cache.Stage]bool{}
-	progress := func(p cache.Progress) {
+	seen := map[cache.DatasetStage]bool{}
+	progress := func(p cache.DatasetProgress) {
 		if p.Stage != "" {
 			seen[p.Stage] = true
 		}
@@ -73,7 +73,7 @@ func TestBootstrapReportsAllStages(t *testing.T) {
 	if err := svc.BootstrapDataset(context.Background(), progress); err != nil {
 		t.Fatal(err)
 	}
-	for _, stage := range []cache.Stage{cache.StageRecords, cache.StageEvolution, cache.StageMoves, cache.StageDataset} {
+	for _, stage := range []cache.DatasetStage{cache.DatasetStageRecords, cache.DatasetStageEvolution, cache.DatasetStageMoves, cache.DatasetStageDataset} {
 		if !seen[stage] {
 			t.Fatalf("missing progress stage %q seen=%v", stage, seen)
 		}

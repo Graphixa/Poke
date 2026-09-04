@@ -179,13 +179,13 @@ func BenchmarkSixelStages(b *testing.B) {
 
 	b.Run(fmt.Sprintf("PrepareEncodeSrc/%dx%d", pxW, pxH), func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = sprite.PrepareEncodeSrc(img, pxW, pxH, sprite.SourceArtwork, bg, 16, 1)
 		}
 	})
 	b.Run(fmt.Sprintf("SixelEncode/%dx%d", pxW, pxH), func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			var buf bytes.Buffer
 			enc := sixel.NewEncoder(&buf)
 			enc.Colors = 256
@@ -196,7 +196,7 @@ func BenchmarkSixelStages(b *testing.B) {
 	})
 	b.Run(fmt.Sprintf("SixelEncode_64colors/%dx%d", pxW, pxH), func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			var buf bytes.Buffer
 			enc := sixel.NewEncoder(&buf)
 			enc.Colors = 64
@@ -207,7 +207,7 @@ func BenchmarkSixelStages(b *testing.B) {
 	})
 	b.Run(fmt.Sprintf("SixelEncode_16colors/%dx%d", pxW, pxH), func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			var buf bytes.Buffer
 			enc := sixel.NewEncoder(&buf)
 			enc.Colors = 16
