@@ -30,6 +30,21 @@ type fakeNativeRenderer struct {
 	blockPersist chan struct{}
 }
 
+type blockingNativeRenderer struct {
+	fakeNativeRenderer
+	entered chan struct{}
+	release chan struct{}
+	starts  atomic.Int32
+	once    sync.Once
+}
+
+func (b *blockingNativeRenderer) NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult {
+	b.starts.Add(1)
+	b.once.Do(func() { close(b.entered) })
+	<-b.release
+	return b.fakeNativeRenderer.NativeWarmRender(ctx, pokemon, cells)
+}
+
 func (f *fakeNativeRenderer) cacheKey(id, cells int) string {
 	return fmt.Sprintf("k:%d:%d", id, cells)
 }
@@ -229,8 +244,8 @@ func TestForegroundBusyPausesBackground(t *testing.T) {
 	rend := &fakeNativeRenderer{}
 	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
 	ctx := context.Background()
-	svc.EnsureStarted(ctx, 32)
 	svc.SetForegroundBusy(true)
+	svc.EnsureStarted(ctx, 32)
 	svc.SetNeighborsFromList(index, 2, 1)
 	time.Sleep(200 * time.Millisecond)
 	if rend.renders() != 0 {
@@ -239,6 +254,43 @@ func TestForegroundBusyPausesBackground(t *testing.T) {
 	svc.SetForegroundBusy(false)
 	waitPersists(t, rend, 1)
 	svc.Stop()
+}
+
+func TestForegroundBusyLetsInFlightBackgroundFinishThenPauses(t *testing.T) {
+	index := indexN(5)
+	rend := &blockingNativeRenderer{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	svc := nativewarm.New(nativewarm.Config{Loader: fakeLoader{}, Renderer: rend, Index: index})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 32)
+	svc.SetNeighborsFromList(index, 2, 1)
+
+	select {
+	case <-rend.entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("background render did not start")
+	}
+	svc.SetForegroundBusy(true)
+	close(rend.release)
+	waitPersists(t, &rend.fakeNativeRenderer, 1)
+	time.Sleep(200 * time.Millisecond)
+	if got := rend.starts.Load(); got != 1 {
+		t.Fatalf("render starts=%d want 1 while foreground busy", got)
+	}
+
+	svc.SetForegroundBusy(false)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rend.starts.Load() >= 2 {
+			svc.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	svc.Stop()
+	t.Fatalf("render starts=%d want >=2 after foreground completes", rend.starts.Load())
 }
 
 func TestCacheHitSkipsRender(t *testing.T) {

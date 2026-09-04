@@ -27,6 +27,12 @@ func TestArchitectureForbiddenImports(t *testing.T) {
 		modulePath + "/internal/render/sprite/assetwarm":  true,
 		modulePath + "/internal/render/sprite/warm":       true,
 	}
+	tuiForbiddenWarmers := map[string]bool{
+		modulePath + "/internal/render/sprite/nativewarm": true,
+		modulePath + "/internal/render/sprite/assetwarm":  true,
+		modulePath + "/internal/render/sprite/warm":       true,
+		modulePath + "/internal/cache/dossierwarm":        true,
+	}
 
 	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -49,6 +55,8 @@ func TestArchitectureForbiddenImports(t *testing.T) {
 		}
 		for _, imp := range imps {
 			switch {
+			case isTUIPackage(pkg, tuiPrefix) && tuiForbiddenWarmers[imp]:
+				t.Errorf("%s imports %s; TUI receives warming capabilities through interfaces", rel(root, path), imp)
 			case isTUIPackage(pkg, tuiPrefix) && (imp == cachePkg || strings.HasPrefix(imp, cachePkg+"/")):
 				t.Errorf("%s imports %s; TUI must not depend on cache", rel(root, path), imp)
 			case renderingWarmers[pkg] && (imp == cachePkg || strings.HasPrefix(imp, cachePkg+"/")):
