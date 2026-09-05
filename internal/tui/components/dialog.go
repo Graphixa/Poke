@@ -84,7 +84,7 @@ func OverlayDialog(background, title string, section int, sectionLabels, bodyLin
 	card := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.BorderColor()).
-		Padding(0, 1).
+		Padding(1, 0).
 		Width(dialogW).
 		Height(dialogH).
 		Render(inner)
@@ -117,28 +117,40 @@ func dialogInsets(termW, termH int) (int, int) {
 
 func renderDialogInner(section int, labels, bodyLines []string, bodyOff, innerW, dialogH int) string {
 	railW := dialogRailWidth(labels)
-	// Stack below this point so the Moves page keeps its 56-column table.
-	stacked := innerW-railW-1 < dialogMinBodyWide
-	footer := dialogFooter(innerW)
+	// The rendered rows own their horizontal padding. This keeps it visible
+	// after the card is joined and clipped instead of relying on style width.
+	wrapRow := func(row string) string {
+		return " " + textwidth.PadRight(textwidth.Truncate(row, innerW), innerW) + " "
+	}
+	// Reserve one cell on either side of the divider.
+	stacked := innerW-railW-3 < dialogMinBodyWide
 	if stacked {
-		bodyH := maxInt(4, dialogH-5)
+		bodyH := maxInt(1, dialogH-6)
 		pager := dialogSectionPager(section, labels, innerW)
 		divider := lipgloss.NewStyle().
 			Foreground(style.BorderColor()).
 			Render(strings.Repeat("─", maxInt(1, innerW)))
 		body := clipLines(bodyLines, bodyOff, bodyH, innerW)
-		return pager + "\n" + divider + "\n" + body + "\n" + footer
+		lines := []string{wrapRow(pager), wrapRow(divider)}
+		for _, line := range strings.Split(body, "\n") {
+			lines = append(lines, wrapRow(line))
+		}
+		return strings.Join(lines, "\n")
 	}
 
-	bodyH := maxInt(4, dialogH-3)
+	bodyH := maxInt(1, dialogH-4)
 	rail := dialogSectionRail(section, labels, railW, bodyH)
-	bodyW := innerW - railW - 1
+	bodyW := innerW - railW - 3
 	body := clipLines(bodyLines, bodyOff, bodyH, bodyW)
 	separator := lipgloss.NewStyle().
 		Foreground(style.BorderColor()).
 		Render(strings.Repeat("│\n", bodyH-1) + "│")
-	content := lipgloss.JoinHorizontal(lipgloss.Top, rail, separator, body)
-	return content + "\n" + footer
+	content := lipgloss.JoinHorizontal(lipgloss.Top, rail, " ", separator, " ", body)
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = " " + line + " "
+	}
+	return strings.Join(lines, "\n")
 }
 
 func dialogRailWidth(labels []string) int {
@@ -187,14 +199,6 @@ func dialogSectionPager(active int, labels []string, width int) string {
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, boldSty().Render(pager))
 }
 
-func dialogFooter(width int) string {
-	hint := "Tab section · ↑↓ scroll · Esc close"
-	if textwidth.Width(hint) > width {
-		hint = "Tab · ↑↓ · Esc close"
-	}
-	return mutedSty().Render(textwidth.Truncate(hint, width))
-}
-
 func stampDialogTitle(card, title string, width int) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
@@ -217,7 +221,8 @@ func stampDialogTitle(card, title string, width int) string {
 		label = textwidth.Truncate(label, maxLabel)
 	}
 	border := lipgloss.NewStyle().Foreground(style.BorderColor())
-	titleSt := boldSty()
+	// Match RenderCombinedFrame: primary, bold title text on the themed border.
+	titleSt := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
 	prefix := border.Render("╭─") + titleSt.Render(label) + border.Render("─")
 	remain := tw - lipgloss.Width(prefix) - 1
 	if remain < 0 {

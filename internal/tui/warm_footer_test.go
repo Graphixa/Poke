@@ -12,11 +12,11 @@ import (
 )
 
 func TestFooterSplitFixedWidthRight(t *testing.T) {
-	left := components.FooterSplit(false, 80, "")
+	left := components.FooterSplit(false, 80, "", "")
 	if len(left) < 40 {
 		t.Fatalf("footer too short: %q", left)
 	}
-	withBar := components.FooterSplit(false, 80, "Artwork ██████░░░░ 5/10")
+	withBar := components.FooterSplit(false, 80, "", "Artwork ██████░░░░ 5/10")
 	if withBar == left {
 		t.Fatal("expected different footer with artwork progress")
 	}

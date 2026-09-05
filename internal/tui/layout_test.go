@@ -157,10 +157,16 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		DialogLabels:  []string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
 		DialogLines:   []string{"Height  0.6 m"},
 	})
-	for _, want := range []string{"Pokedex", "Charmander", "#004", "> Summary", "Height", "Esc close", "Enter/i"} {
+	for _, want := range []string{"Pokedex", "Charmander", "#004", "> Summary", "Height", "Tab section", "Esc close"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "Enter/i") {
+		t.Fatalf("dialog must replace the browse footer:\n%s", out)
+	}
+	if strings.Count(out, "Esc close") != 1 {
+		t.Fatalf("dialog must render one command footer:\n%s", out)
 	}
 	if strings.Contains(stripANSI(out), "[ Summary ]") {
 		t.Fatal("dialog must use the vertical rail, not the horizontal switcher")
@@ -194,7 +200,7 @@ func TestBrowseSpriteNoSwitcher(t *testing.T) {
 
 func TestDialogInsetLeavesBrowseVisible(t *testing.T) {
 	background := strings.TrimSuffix(strings.Repeat(strings.Repeat("b", 120)+"\n", 40), "\n")
-	out := stripANSI(components.OverlayDialog(
+	rendered := components.OverlayDialog(
 		background,
 		"Charmander #004",
 		0,
@@ -203,13 +209,51 @@ func TestDialogInsetLeavesBrowseVisible(t *testing.T) {
 		0,
 		120,
 		40,
-	))
+	)
+	out := stripANSI(rendered)
 	lines := strings.Split(out, "\n")
 	if len(lines) < 4 || !strings.Contains(lines[2], "bbbbbbb╭") {
 		t.Fatalf("expected 7-column and 2-row browse peek around card:\n%s", out)
 	}
 	if !strings.Contains(out, "> Summary") || !strings.Contains(out, "  Stats") {
 		t.Fatalf("expected vertical section rail:\n%s", out)
+	}
+
+	const left, top, cardW, cardH = 7, 2, 106, 36
+	assertBlankDialogRow(t, lines[top+1], left, cardW)
+	assertBlankDialogRow(t, lines[top+cardH-2], left, cardW)
+	firstContent := []rune(lines[top+2])
+	split := -1
+	for i := left + 1; i < left+cardW-1; i++ {
+		if firstContent[i] == '│' {
+			split = i
+			break
+		}
+	}
+	if split < 0 {
+		t.Fatalf("dialog content row lacks rail divider: %q", lines[top+2])
+	}
+	if firstContent[left+1] != ' ' || firstContent[split-1] != ' ' || firstContent[split+1] != ' ' {
+		t.Fatalf("dialog content row lacks explicit side/divider padding: %q", lines[top+2])
+	}
+	for _, line := range lines[top+2 : top+cardH-2] {
+		cells := []rune(line)
+		if cells[left] != '│' || cells[left+1] != ' ' || cells[left+cardW-2] != ' ' || cells[left+cardW-1] != '│' {
+			t.Fatalf("dialog content row lacks one-column inner padding: %q", line)
+		}
+	}
+}
+
+func assertBlankDialogRow(t *testing.T, line string, left, cardW int) {
+	t.Helper()
+	cells := []rune(line)
+	if len(cells) < left+cardW || cells[left] != '│' || cells[left+cardW-1] != '│' {
+		t.Fatalf("malformed dialog padding row: %q", line)
+	}
+	for _, cell := range cells[left+1 : left+cardW-1] {
+		if cell != ' ' {
+			t.Fatalf("expected blank dialog padding row: %q", line)
+		}
 	}
 }
 

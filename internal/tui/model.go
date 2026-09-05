@@ -473,14 +473,16 @@ func (m *Model) dialogPageSize() int {
 		dialogH = min(m.height, 12)
 	}
 	innerW := max(20, dialogW-4)
-	// The renderer stacks when a 16-column rail would leave under 56 body columns.
-	stacked := innerW-16-1 < 56
-	h := dialogH - 3
+	// The renderer stacks when a 16-column rail plus divider padding would
+	// leave under 56 body columns.
+	stacked := innerW-16-3 < 56
+	// The card reserves one row of inner padding above and below its content.
+	h := dialogH - 4
 	if stacked {
-		h = dialogH - 5
+		h = dialogH - 6
 	}
-	if h < 4 {
-		h = 4
+	if h < 1 {
+		h = 1
 	}
 	return h
 }

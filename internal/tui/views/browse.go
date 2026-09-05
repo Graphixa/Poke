@@ -105,7 +105,8 @@ type BrowseData struct {
 	ImageState    int // 0 blank, 1 loading, 2 ready, 3 unavailable
 	SpriteSpinner string
 
-	WarmHint string
+	WarmHint   string
+	FooterHint string
 
 	Frame *FrameRenderer
 }
@@ -130,6 +131,10 @@ func Browse(d BrowseData) string {
 		return components.TooSmall(d.Width, d.Height)
 	}
 
+	if d.ShowDialog {
+		d.FooterHint = "Tab section • ↑↓ scroll • Esc close"
+		d.WarmHint = ""
+	}
 	base := renderBrowseBase(d, fr)
 	if d.ShowDialog {
 		title := "Details"
@@ -142,7 +147,7 @@ func Browse(d BrowseData) string {
 }
 
 func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
-	footer := components.FooterSplit(d.VerboseFooter, d.Width, d.WarmHint)
+	footer := components.FooterSplit(d.VerboseFooter, d.Width, d.FooterHint, d.WarmHint)
 	footerH := 1
 	margin := 0
 	title := "Pokedex"

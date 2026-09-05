@@ -175,14 +175,14 @@ func Header(name string, id int, width int) string {
 
 // Footer renders the compact hint line (wireframe wording).
 func Footer(verbose bool, width int, warmHint string) string {
-	return FooterSplit(verbose, width, warmHint)
+	return FooterSplit(verbose, width, "", warmHint)
 }
 
 // FooterRightWidth is the fixed character width of the browse footer status segment.
 const FooterRightWidth = 42
 
-// FooterSplit renders help keys on the left and a fixed-width status on the right.
-func FooterSplit(verbose bool, width int, rightStatus string) string {
+// FooterSplit renders active-view keys on the left and a fixed-width status on the right.
+func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	footerRightWidth := FooterRightWidth
 	right := strings.TrimSpace(rightStatus)
 	right = textwidth.Truncate(right, footerRightWidth)
@@ -196,7 +196,9 @@ func FooterSplit(verbose bool, width int, rightStatus string) string {
 		right = ""
 	}
 	var leftText string
-	if verbose {
+	if hint != "" {
+		leftText = " " + hint
+	} else if verbose {
 		leftText = " Type to filter • ↑↓ move • Enter/i details • Esc clear • q quit"
 	} else {
 		leftText = " type • ↑↓ • Enter/i • Esc • q"

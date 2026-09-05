@@ -79,6 +79,9 @@ func (m Model) browseData() views.BrowseData {
 		DialogLines:   m.dialogContentLines(),
 		DialogOff:     m.dialogVP.YOffset(),
 	}
+	if m.showDialog {
+		data.FooterHint = "Tab section • ↑↓ scroll • Esc close"
+	}
 
 	if sel, ok := m.selected(); ok {
 		data.HasSelected = true
@@ -97,7 +100,7 @@ func (m Model) browseData() views.BrowseData {
 			}
 		}
 	}
-	if m.warmRight != "" && m.showsWarmHintInView() {
+	if !m.showDialog && m.warmRight != "" && m.showsWarmHintInView() {
 		data.WarmHint = m.warmRight
 	}
 	data.ImageState = int(m.imageState)
