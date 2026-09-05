@@ -5,10 +5,17 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/lipgloss/v2"
+
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
+	tuistyle "github.com/Graphixa/Pokedex/internal/tui/style"
 	"github.com/Graphixa/Pokedex/internal/usererr"
 )
+
+func primaryText(s string) string {
+	return lipgloss.NewStyle().Foreground(tuistyle.PrimaryColor()).Render(s)
+}
 
 func (m Model) browseViewLines() []string {
 	// Browse is sprite-only; text detail lives in the Enter dialog.
@@ -25,7 +32,7 @@ func formatStatsBars(p domain.Pokemon) []string {
 		if filled < 0 {
 			filled = 0
 		}
-		return fmt.Sprintf("%-8s %s  %3d", label, strings.Repeat("█", filled)+strings.Repeat("░", 12-filled), v)
+		return primaryText(fmt.Sprintf("%-8s", label)) + fmt.Sprintf(" %s  %3d", strings.Repeat("█", filled)+strings.Repeat("░", 12-filled), v)
 	}
 	return []string{
 		bar("HP", p.Stats.HP),
@@ -35,7 +42,7 @@ func formatStatsBars(p domain.Pokemon) []string {
 		bar("Sp.Def", p.Stats.SpecialDefense),
 		bar("Speed", p.Stats.Speed),
 		"─────────────────────",
-		fmt.Sprintf("%-8s              %3d", "Total", p.Stats.Total()),
+		primaryText(fmt.Sprintf("%-8s", "Total")) + fmt.Sprintf("              %3d", p.Stats.Total()),
 	}
 }
 
@@ -168,10 +175,11 @@ func formatAbilityDialogLines(p domain.Pokemon) []string {
 	var lines []string
 	for _, a := range p.Abilities {
 		name := output.TitleFromSlug(a.Name)
+		slot := primaryText(fmt.Sprintf("Slot %d", a.Slot))
 		if a.IsHidden {
-			lines = append(lines, fmt.Sprintf("Slot %d  %s  (hidden)", a.Slot, name))
+			lines = append(lines, fmt.Sprintf("%s  %s  (hidden)", slot, name))
 		} else {
-			lines = append(lines, fmt.Sprintf("Slot %d  %s", a.Slot, name))
+			lines = append(lines, fmt.Sprintf("%s  %s", slot, name))
 		}
 	}
 	return lines
@@ -237,7 +245,7 @@ func formatEvolutionLines(tree domain.EvolutionTree) []string {
 	} else {
 		lines = append(lines, "Stage: Basic")
 	}
-	lines = append(lines, "Final evolution: "+finalName)
+	lines = append(lines, "Final evolution: "+primaryText(finalName))
 	lines = append(lines, "Trigger source: evolution-chain")
 	_ = rootName
 	return lines
@@ -262,7 +270,7 @@ func writeEvoNode(lines *[]string, node domain.EvolutionNode, isRoot bool) {
 		name = output.TitleFromSlug(node.SpeciesSlug)
 	}
 	if isRoot && len(node.Children) == 0 {
-		*lines = append(*lines, name+" (no evolutions)")
+		*lines = append(*lines, primaryText(name)+" (no evolutions)")
 		return
 	}
 	for _, branch := range node.Children {
@@ -274,7 +282,7 @@ func writeEvoNode(lines *[]string, node domain.EvolutionNode, isRoot bool) {
 		if target == "" {
 			target = output.TitleFromSlug(branch.Target.SpeciesSlug)
 		}
-		*lines = append(*lines, fmt.Sprintf("%s ── %s ──► %s", name, label, target))
+		*lines = append(*lines, fmt.Sprintf("%s ── %s ──► %s", primaryText(name), label, primaryText(target)))
 		writeEvoNode(lines, branch.Target, false)
 	}
 }
@@ -351,7 +359,7 @@ func formatEncounterLines(rows []domain.Encounter) []string {
 	sort.Strings(versions)
 	var lines []string
 	for _, v := range versions {
-		lines = append(lines, output.TitleFromSlug(v))
+		lines = append(lines, primaryText(output.TitleFromSlug(v)))
 		for _, e := range grouped[v] {
 			level := fmt.Sprintf("Lv %d", e.MinimumLevel)
 			if e.MaximumLevel != e.MinimumLevel {
@@ -376,7 +384,8 @@ func formatMoveLines(rows []LevelUpMove) []string {
 	if len(rows) == 0 {
 		return []string{"No level-up moves available."}
 	}
-	lines := []string{fmt.Sprintf("%-5s %-16s %-10s %-8s %5s %5s", "Lvl", "Move", "Type", "Cat", "Pow", "Acc")}
+	header := fmt.Sprintf("%-5s %-16s %-10s %-8s %5s %5s", "Lvl", "Move", "Type", "Cat", "Pow", "Acc")
+	lines := []string{primaryText(header)}
 	for _, row := range rows {
 		pow := "—"
 		if row.Move.Power != nil {
@@ -431,7 +440,7 @@ func formatFlavourLines(s domain.Species) []string {
 		if ver == "" {
 			ver = "unknown"
 		}
-		lines = append(lines, output.TitleFromSlug(ver))
+		lines = append(lines, primaryText(output.TitleFromSlug(ver)))
 		lines = append(lines, wrapWords(e.text, 56)...)
 		lines = append(lines, "")
 	}
