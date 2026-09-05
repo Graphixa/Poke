@@ -48,6 +48,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.SetWidth(msg.Width)
 		m.ensureListVisible()
+		if m.showDialog {
+			m.syncDialogViewport()
+		}
 		layoutCmd := m.handleSpriteLayoutChange(prevShow, prevSide)
 		m.notifyWarmer()
 		return m, m.noteFirstLayout(layoutCmd)

@@ -157,10 +157,13 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		DialogLabels:  []string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
 		DialogLines:   []string{"Height  0.6 m"},
 	})
-	for _, want := range []string{"Charmander", "#004", "[ Summary ]", "Height", "Esc close"} {
+	for _, want := range []string{"Pokedex", "Charmander", "#004", "> Summary", "Height", "Esc close", "Enter/i"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
+	}
+	if strings.Contains(stripANSI(out), "[ Summary ]") {
+		t.Fatal("dialog must use the vertical rail, not the horizontal switcher")
 	}
 }
 
@@ -189,28 +192,43 @@ func TestBrowseSpriteNoSwitcher(t *testing.T) {
 	}
 }
 
-func TestDialogUsesFullOverlayWidth(t *testing.T) {
-	long := strings.Repeat("flavour ", 20)
-	out := views.Browse(views.BrowseData{
-		Width: 120, Height: 40,
-		HasSelected: true,
-		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
-		ShowSprite:  true, VerboseFooter: true,
-		BrowseView: 0,
-		ViewLabels: []string{"Sprite"},
-		BodySize:   sprite.MinFrameSize,
-		LeftWidth:  70, RightWidth: 49,
-		ShowDialog:    true,
-		DialogSection: 0,
-		DialogLabels:  []string{"Summary"},
-		DialogLines:   []string{long},
-	})
-	plain := stripANSI(out)
-	if !strings.Contains(plain, "flavour") {
-		t.Fatal("dialog body missing")
+func TestDialogInsetLeavesBrowseVisible(t *testing.T) {
+	background := strings.TrimSuffix(strings.Repeat(strings.Repeat("b", 120)+"\n", 40), "\n")
+	out := stripANSI(components.OverlayDialog(
+		background,
+		"Charmander #004",
+		0,
+		[]string{"Summary", "Stats", "Evolution", "Moves"},
+		[]string{"Height  0.6 m"},
+		0,
+		120,
+		40,
+	))
+	lines := strings.Split(out, "\n")
+	if len(lines) < 4 || !strings.Contains(lines[2], "bbbbbbb╭") {
+		t.Fatalf("expected 7-column and 2-row browse peek around card:\n%s", out)
 	}
-	if strings.Count(plain, "flavour") < 3 {
-		t.Fatalf("expected wrapped dialog text, got:\n%s", plain)
+	if !strings.Contains(out, "> Summary") || !strings.Contains(out, "  Stats") {
+		t.Fatalf("expected vertical section rail:\n%s", out)
+	}
+}
+
+func TestDialogNarrowUsesStackedPager(t *testing.T) {
+	out := stripANSI(components.OverlayDialog(
+		"",
+		"Charmander #004",
+		3,
+		[]string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
+		[]string{"Lvl Move Type Cat Pow Acc"},
+		0,
+		80,
+		30,
+	))
+	if !strings.Contains(out, "‹  4/11  Moves  ›") {
+		t.Fatalf("expected stacked pager at narrow width:\n%s", out)
+	}
+	if strings.Contains(out, "> Moves") {
+		t.Fatalf("narrow dialog must not render the rail:\n%s", out)
 	}
 }
 

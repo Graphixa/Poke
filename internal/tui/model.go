@@ -448,15 +448,39 @@ func (m *Model) ensureResource(id int) *resourceCache {
 func (m *Model) syncDialogViewport() {
 	lines := m.dialogContentLines()
 	m.dialogVP.SetContentLines(lines)
-	if m.dialogVP.Height() < 1 {
-		m.dialogVP.SetHeight(m.dialogPageSize())
-	}
+	m.dialogVP.SetHeight(m.dialogPageSize())
 }
 
 func (m *Model) dialogPageSize() int {
-	h := m.height - 8
-	if h < 6 {
-		h = 6
+	padX, padY := 7, 2
+	switch {
+	case m.width < 80:
+		padX = 2
+	case m.width < 90:
+		padX = 4
+	case m.width < 100:
+		padX = 6
+	}
+	if m.height < 18 {
+		padY = 1
+	}
+	dialogW := m.width - 2*padX
+	dialogH := m.height - 2*padY
+	if dialogW < 40 {
+		dialogW = min(m.width, 40)
+	}
+	if dialogH < 12 {
+		dialogH = min(m.height, 12)
+	}
+	innerW := max(20, dialogW-4)
+	// The renderer stacks when a 16-column rail would leave under 56 body columns.
+	stacked := innerW-16-1 < 56
+	h := dialogH - 3
+	if stacked {
+		h = dialogH - 5
+	}
+	if h < 4 {
+		h = 4
 	}
 	return h
 }

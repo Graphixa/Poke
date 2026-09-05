@@ -253,6 +253,27 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 	if details.loadCalls.Load() != 1 {
 		t.Fatalf("dossier loads = %d", details.loadCalls.Load())
 	}
+	m = apply(t, m, key("tab"))
+	if m.ActiveDialogSection() != tui.DialogStats {
+		t.Fatalf("tab section = %v want Stats", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("shift+tab"), key("shift+tab"))
+	if m.ActiveDialogSection() != tui.DialogMeta {
+		t.Fatalf("shift-tab wrap section = %v want Meta", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("tab"))
+	if m.ActiveDialogSection() != tui.DialogSummary {
+		t.Fatalf("tab wrap section = %v want Summary", m.ActiveDialogSection())
+	}
+
+	// A short dialog makes Summary scrollable; arrows move only its body.
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 8}, key("down"))
+	if m.DialogOffset() == 0 {
+		t.Fatal("down should scroll the dialog body")
+	}
+	if m.ActiveDialogSection() != tui.DialogSummary {
+		t.Fatal("body scrolling must not move the section rail")
+	}
 	m = apply(t, m, key("pgdown"), key("home"))
 	if m.DialogOffset() != 0 {
 		t.Fatalf("home offset = %d", m.DialogOffset())

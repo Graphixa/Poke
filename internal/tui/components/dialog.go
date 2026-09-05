@@ -50,11 +50,12 @@ func SpriteSizeCue(width, height int) string {
 }
 
 const (
-	dialogPadX = 3
-	dialogPadY = 1
+	dialogWidePadX    = 7
+	dialogWidePadY    = 2
+	dialogMinBodyWide = 56
 )
 
-// OverlayDialog composites a near-fullscreen detail dialog over a dimmed background.
+// OverlayDialog composites an inset detail dialog over a dimmed background.
 func OverlayDialog(background, title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int) string {
 	if termW < 20 {
 		termW = 20
@@ -62,7 +63,7 @@ func OverlayDialog(background, title string, section int, sectionLabels, bodyLin
 	if termH < 10 {
 		termH = 10
 	}
-	padX, padY := dialogPadX, dialogPadY
+	padX, padY := dialogInsets(termW, termH)
 	dialogW := termW - 2*padX
 	dialogH := termH - 2*padY
 	if dialogW < 40 {
@@ -78,25 +79,7 @@ func OverlayDialog(background, title string, section int, sectionLabels, bodyLin
 	if innerW < 20 {
 		innerW = 20
 	}
-	switcher := DialogSectionSwitcher(section, sectionLabels, innerW)
-	divider := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", maxInt(1, innerW)))
-	footer := mutedSty().Render("Tab section · ↑↓ scroll · Esc close")
-
-	headerH := 4 // title row + switcher + divider + footer spacing accounted below
-	bodyH := dialogH - headerH - 3
-	if bodyH < 4 {
-		bodyH = 4
-	}
-	body := clipLines(bodyLines, bodyOff, bodyH, innerW)
-
-	var inner strings.Builder
-	inner.WriteString(switcher)
-	inner.WriteByte('\n')
-	inner.WriteString(divider)
-	inner.WriteByte('\n')
-	inner.WriteString(body)
-	inner.WriteByte('\n')
-	inner.WriteString(footer)
+	inner := renderDialogInner(section, sectionLabels, bodyLines, bodyOff, innerW, dialogH)
 
 	card := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -104,7 +87,7 @@ func OverlayDialog(background, title string, section int, sectionLabels, bodyLin
 		Padding(0, 1).
 		Width(dialogW).
 		Height(dialogH).
-		Render(inner.String())
+		Render(inner)
 
 	// Integrate title on top border when possible.
 	card = stampDialogTitle(card, title, dialogW)
@@ -113,6 +96,103 @@ func OverlayDialog(background, title string, section int, sectionLabels, bodyLin
 	bgLayer := lipgloss.NewLayer(dimmed)
 	dlgLayer := lipgloss.NewLayer(card).X(padX).Y(padY).Z(1)
 	return lipgloss.NewCompositor(bgLayer, dlgLayer).Render()
+}
+
+func dialogInsets(termW, termH int) (int, int) {
+	padX := dialogWidePadX
+	switch {
+	case termW < 80:
+		padX = 2
+	case termW < 90:
+		padX = 4
+	case termW < 100:
+		padX = 6
+	}
+	padY := dialogWidePadY
+	if termH < 18 {
+		padY = 1
+	}
+	return padX, padY
+}
+
+func renderDialogInner(section int, labels, bodyLines []string, bodyOff, innerW, dialogH int) string {
+	railW := dialogRailWidth(labels)
+	// Stack below this point so the Moves page keeps its 56-column table.
+	stacked := innerW-railW-1 < dialogMinBodyWide
+	footer := dialogFooter(innerW)
+	if stacked {
+		bodyH := maxInt(4, dialogH-5)
+		pager := dialogSectionPager(section, labels, innerW)
+		divider := lipgloss.NewStyle().
+			Foreground(style.BorderColor()).
+			Render(strings.Repeat("─", maxInt(1, innerW)))
+		body := clipLines(bodyLines, bodyOff, bodyH, innerW)
+		return pager + "\n" + divider + "\n" + body + "\n" + footer
+	}
+
+	bodyH := maxInt(4, dialogH-3)
+	rail := dialogSectionRail(section, labels, railW, bodyH)
+	bodyW := innerW - railW - 1
+	body := clipLines(bodyLines, bodyOff, bodyH, bodyW)
+	separator := lipgloss.NewStyle().
+		Foreground(style.BorderColor()).
+		Render(strings.Repeat("│\n", bodyH-1) + "│")
+	content := lipgloss.JoinHorizontal(lipgloss.Top, rail, separator, body)
+	return content + "\n" + footer
+}
+
+func dialogRailWidth(labels []string) int {
+	width := 16
+	for _, label := range labels {
+		if w := textwidth.Width(label) + 4; w > width {
+			width = w
+		}
+	}
+	if width > 22 {
+		width = 22
+	}
+	return width
+}
+
+func dialogSectionRail(active int, labels []string, width, height int) string {
+	lines := make([]string, 0, height)
+	for i, label := range labels {
+		prefix := "  "
+		sty := lipgloss.NewStyle().Foreground(style.SecondaryColor())
+		if i == active {
+			prefix = "> "
+			sty = lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
+		}
+		line := textwidth.PadRight(textwidth.Truncate(prefix+label, width), width)
+		lines = append(lines, sty.Render(line))
+	}
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func dialogSectionPager(active int, labels []string, width int) string {
+	if len(labels) == 0 {
+		return strings.Repeat(" ", width)
+	}
+	if active < 0 || active >= len(labels) {
+		active = 0
+	}
+	pager := fmt.Sprintf("‹  %d/%d  %s  ›", active+1, len(labels), labels[active])
+	pager = textwidth.Truncate(pager, width)
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, boldSty().Render(pager))
+}
+
+func dialogFooter(width int) string {
+	hint := "Tab section · ↑↓ scroll · Esc close"
+	if textwidth.Width(hint) > width {
+		hint = "Tab · ↑↓ · Esc close"
+	}
+	return mutedSty().Render(textwidth.Truncate(hint, width))
 }
 
 func stampDialogTitle(card, title string, width int) string {
