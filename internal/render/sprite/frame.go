@@ -98,8 +98,8 @@ const MinListWidth = 32
 // MinRightHeaderWidth is enough for name / types · genus without the sprite.
 const MinRightHeaderWidth = 36
 
-// RightPanelSharePercent is the preferred share of terminal width for the
-// detail/sprite pane (~42%). The list keeps the remaining ~58%.
+// RightPanelSharePercent is a fallback share for the sprite pane when list
+// sizing is not available.
 const RightPanelSharePercent = 42
 
 // BrowseChromeRows is terminal rows outside the sprite body: footer (1) +

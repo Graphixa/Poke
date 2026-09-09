@@ -10,11 +10,12 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/tui"
 	"github.com/Graphixa/Pokedex/internal/tui/components"
+	"github.com/Graphixa/Pokedex/internal/tui/style"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
 func TestLayoutBreakpoints(t *testing.T) {
-	// List ~58% / detail ~42%; aspect-corrected pad; chrome=8.
+	// List ~25–30% without types; sprite pane takes the rest. Chrome=8.
 	cases := []struct {
 		w, h       int
 		sprite     bool
@@ -28,8 +29,8 @@ func TestLayoutBreakpoints(t *testing.T) {
 		{120, 22, false, true, false, false, 0}, // min bucket 24 does not fit body at h=22
 		{120, 21, false, false, false, false, 0},
 		{71, 26, true, false, false, false, 24},
-		{70, 40, true, false, false, false, 24},
-		{88, 40, true, true, false, false, 24},
+		{70, 40, true, false, false, false, 32},
+		{88, 40, true, true, false, false, 40},
 		{51, 40, false, false, true, false, 0},
 		{80, 17, false, false, true, false, 0},
 		{39, 20, false, false, true, true, 0},
@@ -57,30 +58,23 @@ func TestListFirstColumns(t *testing.T) {
 	if !f.ShowSprite {
 		t.Fatal("expected sprite")
 	}
-	// Detail ~42%, list ~58%.
-	if f.RightWidth >= f.LeftWidth {
-		t.Fatalf("list-first failed: left=%d right=%d", f.LeftWidth, f.RightWidth)
-	}
-	if f.LeftWidth < sprite.MinListWidth {
-		t.Fatalf("list too narrow: %d", f.LeftWidth)
-	}
-	share := f.RightWidth * 100 / 120
-	if share < 38 || share > 46 {
-		t.Fatalf("right share %d%% (w=%d) want ~42%%", share, f.RightWidth)
-	}
-	listShare := f.LeftWidth * 100 / 120
-	if listShare < 54 || listShare > 62 {
-		t.Fatalf("list share %d%% (w=%d) want ~58%%", listShare, f.LeftWidth)
-	}
 	if f.LeftWidth+f.RightWidth+1 != 120 {
 		t.Fatalf("widths must fill frame: left=%d right=%d", f.LeftWidth, f.RightWidth)
 	}
+	listShare := f.LeftWidth * 100 / 120
+	if listShare < 24 || listShare > 32 {
+		t.Fatalf("name-only list share %d%% (w=%d) want ~25–30%%", listShare, f.LeftWidth)
+	}
+	if f.LeftWidth >= f.RightWidth {
+		t.Fatalf("name-only list should be narrower than sprite pane: left=%d right=%d", f.LeftWidth, f.RightWidth)
+	}
 
-	m = apply(t, m, tea.WindowSizeMsg{Width: 180, Height: 40})
+	m = tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}, ListTypes: true})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	f = m.LayoutFlags()
-	want := (180 * sprite.RightPanelSharePercent) / 100
-	if f.RightWidth < want-2 || f.RightWidth > want+2 {
-		t.Fatalf("wide right=%d want ~%d (42%%)", f.RightWidth, want)
+	listShare = f.LeftWidth * 100 / 120
+	if listShare < 45 || listShare > 55 {
+		t.Fatalf("typed list share %d%% (w=%d) want ~50%%", listShare, f.LeftWidth)
 	}
 }
 
@@ -139,6 +133,78 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 	}
 	if strings.Contains(out, "[ Sprite ]") {
 		t.Fatal("browse must not show text-view switcher")
+	}
+}
+
+func TestBrowseListRowsShowColoredTypes(t *testing.T) {
+	rows := []components.ListRow{
+		{Summary: domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}}, Selected: true},
+		{Summary: domain.SpeciesSummary{ID: 10, DisplayName: "Caterpie", Types: []string{"bug"}}},
+	}
+	out := views.Browse(views.BrowseData{
+		Width: 44, Height: 5,
+		OnePane: true, ShowListPane: true,
+		Rows: rows, ListTypes: true,
+	})
+	plain := stripANSI(out)
+	lines := strings.Split(plain, "\n")
+	if !strings.Contains(lines[1], "> Bulbasaur") || !strings.Contains(lines[1], "#001") || !strings.Contains(lines[1], "Grass/Poison") {
+		t.Fatalf("selected list row = %q", lines[1])
+	}
+	nameAt := strings.Index(lines[1], "Bulbasaur")
+	dexAt := strings.Index(lines[1], "#001")
+	if nameAt < 0 || dexAt < 0 || dexAt-nameAt-len("Bulbasaur") > 6 {
+		t.Fatalf("dex should sit next to the name, row=%q", lines[1])
+	}
+	if !strings.Contains(lines[2], "Caterpie") || !strings.Contains(lines[2], "#010") || !strings.Contains(lines[2], "Bug") {
+		t.Fatalf("second list row = %q", lines[2])
+	}
+	for _, want := range []string{
+		style.TypeLabel("grass"),
+		style.TypeLabel("poison"),
+		style.TypeLabel("bug"),
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing coloured type label %q in:\n%q", want, out)
+		}
+	}
+}
+
+func TestBrowseListRowsHideTypesByDefault(t *testing.T) {
+	rows := []components.ListRow{
+		{Summary: domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}}, Selected: true},
+		{Summary: domain.SpeciesSummary{ID: 10, DisplayName: "Caterpie", Types: []string{"bug"}}},
+	}
+	out := views.Browse(views.BrowseData{
+		Width: 44, Height: 5,
+		OnePane: true, ShowListPane: true,
+		Rows: rows,
+	})
+	plain := stripANSI(out)
+	for _, want := range []string{"Bulbasaur", "#001", "Caterpie", "#010"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("missing %q in list:\n%s", want, plain)
+		}
+	}
+	nameAt := strings.Index(plain, "Bulbasaur")
+	dexAt := strings.Index(plain, "#001")
+	if nameAt < 0 || dexAt < 0 || dexAt-nameAt-len("Bulbasaur") > 6 {
+		t.Fatalf("dex should sit next to the name:\n%s", plain)
+	}
+	for _, unwanted := range []string{"Grass", "Poison", "Bug"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("list unexpectedly contains type %q:\n%s", unwanted, plain)
+		}
+	}
+}
+
+func TestBrowseListVeryNarrowPrioritizesSelectedName(t *testing.T) {
+	out := components.List([]components.ListRow{{
+		Summary:  domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}},
+		Selected: true,
+	}}, 12, 1, false, 0, nil)
+	if got, want := stripANSI(out), "> Bulbasaur "; got != want {
+		t.Fatalf("narrow list row = %q, want %q", got, want)
 	}
 }
 

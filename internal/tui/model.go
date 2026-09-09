@@ -15,6 +15,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/coldsched"
 	"github.com/Graphixa/Pokedex/internal/search"
+	"github.com/Graphixa/Pokedex/internal/textwidth"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
@@ -29,6 +30,8 @@ type Options struct {
 	Context  context.Context
 	// DisableSprite forces the sprite panel off regardless of terminal size.
 	DisableSprite bool
+	// ListTypes includes coloured type labels in browse list rows.
+	ListTypes bool
 	// DossierWarmer pre-assembles dossier core or full dossiers in the background.
 	DossierWarmer DossierWarmer
 	// Warmer is an optional priority sprite prewarm service.
@@ -109,9 +112,10 @@ type Model struct {
 	help   help.Model
 	search textinput.Model
 
-	filtered []domain.SpeciesSummary
-	cursor   int
-	listOff  int
+	filtered  []domain.SpeciesSummary
+	cursor    int
+	listOff   int
+	listTypes bool
 
 	browseView    BrowseView
 	dialogSection DialogSection
@@ -207,6 +211,7 @@ func NewModel(opts Options) Model {
 		warmEvents:    opts.WarmEvents,
 		onUIReady:     opts.OnUIReady,
 		pokemonSrc:    opts.Pokemon,
+		listTypes:     opts.ListTypes,
 	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)
@@ -285,7 +290,20 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m *Model) layout() LayoutFlags {
-	return layoutFor(m.width, m.height, m.layoutTh)
+	return layoutFor(m.width, m.height, m.layoutTh, m.listColumn())
+}
+
+func (m *Model) listColumn() listColumnSpec {
+	spec := listColumnSpec{ShowTypes: m.listTypes}
+	if m.index == nil {
+		return spec
+	}
+	for _, s := range m.index.All() {
+		if w := textwidth.Width(s.DisplayName); w > spec.MaxNameWidth {
+			spec.MaxNameWidth = w
+		}
+	}
+	return spec
 }
 
 func (m *Model) queryValue() string {

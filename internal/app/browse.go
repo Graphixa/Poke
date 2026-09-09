@@ -201,6 +201,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		Prefill:       req.Prefill,
 		Context:       runCtx,
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
+		ListTypes:     svc.Config.ListTypesEnabled(),
 	}
 
 	// Chafa artefact warm only helps chafa-only terminals. Native (Sixel/Kitty/

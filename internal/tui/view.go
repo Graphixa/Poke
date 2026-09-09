@@ -60,6 +60,8 @@ func (m Model) browseData() views.BrowseData {
 		Rows:          rows,
 		ListOff:       m.listOff,
 		ListRows:      m.listVisibleRows(),
+		ListTypes:     m.listTypes,
+		ListNameCol:   nameColumnWidth(m.listColumn().MaxNameWidth),
 		ShowSprite:    lay.ShowSprite,
 		VerboseFooter: lay.VerboseFooter,
 		OnePane:       lay.OnePane,

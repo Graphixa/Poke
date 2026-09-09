@@ -52,7 +52,7 @@ type ListRow struct {
 }
 
 // List renders the filtered species list. Empty lists show a plain-text cue.
-func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int) string) string {
+func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbreviateTypes func([]string, int) string) string {
 	if height < 1 {
 		height = 1
 	}
@@ -68,6 +68,17 @@ func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int)
 		}
 		return strings.Join(lines, "\n")
 	}
+	if nameCol < 1 {
+		for _, row := range rows {
+			if w := textwidth.Width(row.Summary.DisplayName); w > nameCol {
+				nameCol = w
+			}
+		}
+		nameCol += 3
+		if nameCol < 8 {
+			nameCol = 8
+		}
+	}
 	lines := make([]string, 0, height)
 	for i := 0; i < height; i++ {
 		if i >= len(rows) {
@@ -79,26 +90,36 @@ func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int)
 		if row.Selected {
 			marker = "> "
 		}
-		nameWidth := width/2 - 1
-		if nameWidth < 8 {
-			nameWidth = 8
+		available := width - len(marker)
+		const dexWidth = 5 // space and #NNN
+		if available < 8+dexWidth {
+			name := textwidth.Truncate(row.Summary.DisplayName, available)
+			lines = append(lines, textwidth.PadRight(marker+name, width))
+			continue
 		}
-		typeBudget := width - nameWidth - 8 - len(marker)
-		if typeBudget < 4 {
-			typeBudget = 4
+		col := nameCol
+		if col > available-dexWidth {
+			col = available - dexWidth
 		}
-		types := ""
-		if abbreviateTypes != nil {
-			types = abbreviateTypes(row.Summary.Types, typeBudget)
-		} else {
-			types = style.TypeSummary(row.Summary.Types)
+		if col < 1 {
+			col = 1
 		}
-		line := fmt.Sprintf("%s%s %s  %s",
-			marker,
-			textwidth.PadRight(textwidth.Truncate(row.Summary.DisplayName, nameWidth), nameWidth),
-			output.FormatDex(row.Summary.ID),
-			types,
-		)
+		line := marker + textwidth.PadRight(textwidth.Truncate(row.Summary.DisplayName, col), col) + " " + output.FormatDex(row.Summary.ID)
+		if showTypes {
+			used := textwidth.Width(line)
+			typeBudget := width - used - 2
+			if typeBudget >= 4 {
+				types := ""
+				if abbreviateTypes != nil {
+					types = abbreviateTypes(row.Summary.Types, typeBudget)
+				} else {
+					types = textwidth.Truncate(style.TypeSummary(row.Summary.Types), typeBudget)
+				}
+				if types != "" {
+					line += "  " + types
+				}
+			}
+		}
 		lines = append(lines, textwidth.PadRight(textwidth.Truncate(line, width), width))
 	}
 	return strings.Join(lines, "\n")

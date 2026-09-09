@@ -15,7 +15,79 @@ const (
 	minTwoPaneHeight = 18
 	minUsableWidth   = 40
 	minUsableHeight  = 12
+
+	listNamePad         = 3 // extra cells after the longest species name
+	listMarkerCols      = 2
+	listGapNameDex      = 1
+	listDexCols         = 4 // #NNN
+	listGapDexTypes     = 2
+	listTypeReserve     = 14 // Grass/Poison-sized dual type
+	listInnerTrail      = 2
+	listShareMinNoTypes = 25
+	listShareMaxNoTypes = 30
+	listShareWithTypes  = 50
 )
+
+// listColumnSpec sizes the browse list pane from content, not leftover sprite space.
+type listColumnSpec struct {
+	ShowTypes    bool
+	MaxNameWidth int
+}
+
+func nameColumnWidth(maxName int) int {
+	if maxName < 8 {
+		maxName = 8
+	}
+	return maxName + listNamePad
+}
+
+func listContentInner(showTypes bool, maxName int) int {
+	inner := listMarkerCols + nameColumnWidth(maxName) + listGapNameDex + listDexCols + listInnerTrail
+	if showTypes {
+		inner += listGapDexTypes + listTypeReserve
+	}
+	return inner
+}
+
+func listPaneWidth(termW int, spec listColumnSpec) int {
+	if termW < 20 {
+		return termW / 2
+	}
+	left := listContentInner(spec.ShowTypes, spec.MaxNameWidth) + 1 // combined-frame left border
+	if spec.ShowTypes {
+		if target := termW * listShareWithTypes / 100; left < target {
+			left = target
+		}
+	} else {
+		lo := termW * listShareMinNoTypes / 100
+		hi := termW * listShareMaxNoTypes / 100
+		if hi < lo {
+			hi = lo
+		}
+		if left < lo {
+			left = lo
+		} else if left > hi {
+			left = hi
+			if need := listContentInner(false, spec.MaxNameWidth) + 1; left < need {
+				left = need
+			}
+		}
+	}
+	maxLeft := termW - sprite.MinRightHeaderWidth - 1
+	if maxLeft < 12 {
+		maxLeft = termW / 2
+	}
+	if left > maxLeft {
+		left = maxLeft
+	}
+	if left < 16 {
+		left = 16
+	}
+	if left >= termW {
+		left = termW / 2
+	}
+	return left
+}
 
 // layoutThresholds holds size gates; zero fields mean defaults.
 type layoutThresholds struct {
@@ -32,12 +104,12 @@ type LayoutFlags struct {
 	// SpriteSize is the chosen longest-side step when the sprite panel is shown.
 	SpriteSize int
 	// LeftWidth / RightWidth are panel column widths for the combined frame
-	// (list-first: right sized to the sprite, left gets the remainder).
+	// (list sized from names/types; right gets the remainder for the sprite).
 	LeftWidth  int
 	RightWidth int
 }
 
-func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
+func layoutFor(width, height int, th layoutThresholds, list listColumnSpec) LayoutFlags {
 	f := LayoutFlags{Width: width, Height: height}
 	if width <= 0 || height <= 0 {
 		// Unknown size: do not pretend a sprite panel exists. Init is a value
@@ -48,24 +120,23 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	f.TooSmall = width < minUsableWidth || height < minUsableHeight
 	f.OnePane = width < minTwoPaneWidth || height < minTwoPaneHeight
 
-	// Detail pane ~42% / list ~58%. Pick the largest sprite that fits the
-	// pane width and the real body height (not an overstated chrome budget).
-	maxRight := width - sprite.MinListWidth - 1
-	if maxRight < sprite.MinRightHeaderWidth {
-		maxRight = width / 2
-	}
-	targetRight := (width * sprite.RightPanelSharePercent) / 100
-	if targetRight < sprite.MinRightHeaderWidth {
-		targetRight = sprite.MinRightHeaderWidth
-	}
-	if targetRight > maxRight {
-		targetRight = maxRight
-	}
 	bodyH := height - spriteChromeRows
 	if bodyH < 1 {
 		bodyH = 1
 	}
-	frame := sprite.LargestFrameFitting(targetRight-2, bodyH)
+	if !f.OnePane && !f.TooSmall {
+		f.LeftWidth = listPaneWidth(width, list)
+		f.RightWidth = width - f.LeftWidth - 1
+		if f.RightWidth < 12 {
+			f.RightWidth = width / 2
+			f.LeftWidth = width - f.RightWidth - 1
+		}
+	}
+	maxOuterW := f.RightWidth - 2
+	if maxRight := width - 16 - 1; f.RightWidth == 0 {
+		maxOuterW = maxRight - 2
+	}
+	frame := sprite.LargestFrameFitting(maxOuterW, bodyH)
 	// Fit-based gate: if a padded frame fits the body, show it. Stale config
 	// min width/height must not hide a sprite that has room on screen.
 	f.ShowSprite = !th.DisableSprite && !f.OnePane && !f.TooSmall &&
@@ -73,11 +144,9 @@ func layoutFor(width, height int, th layoutThresholds) LayoutFlags {
 	if f.ShowSprite {
 		f.SpriteSize = frame
 	}
-	f.RightWidth = sprite.RightPanelWidth(width, f.SpriteSize)
-	f.LeftWidth = width - f.RightWidth - 1
-	if f.LeftWidth < sprite.MinListWidth && width > sprite.MinListWidth+20 {
-		f.LeftWidth = sprite.MinListWidth
-		f.RightWidth = width - f.LeftWidth - 1
+	if f.LeftWidth == 0 && !f.OnePane {
+		f.RightWidth = sprite.RightPanelWidth(width, f.SpriteSize)
+		f.LeftWidth = width - f.RightWidth - 1
 	}
 
 	f.VerboseFooter = !f.TooSmall && width >= minFooterWidth && height >= minFooterHeight
@@ -100,6 +169,9 @@ func (f LayoutFlags) rightWidth() int {
 	}
 	if f.Width <= 0 {
 		return 48
+	}
+	if f.LeftWidth > 0 {
+		return f.Width - f.LeftWidth - 1
 	}
 	return sprite.RightPanelWidth(f.Width, f.SpriteSize)
 }

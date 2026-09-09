@@ -95,6 +95,7 @@ type Render struct {
 
 type TUI struct {
 	ShowSprite bool `yaml:"show_sprite"`
+	ListTypes  bool `yaml:"list_types"`
 }
 
 // Theme selects the TUI colour palette (FontGet-compatible YAML themes).
@@ -126,7 +127,10 @@ func Default() Config {
 			SpriteHD:      "auto",
 			SixelColors:   DefaultSixelColors,
 		},
-		TUI:   TUI{ShowSprite: true},
+		TUI: TUI{
+			ShowSprite: true,
+			ListTypes:  false,
+		},
 		Theme: Theme{Name: "catppuccin"},
 		Network: Network{
 			Timeout:        Duration{10 * time.Second},
@@ -251,6 +255,11 @@ func (c Config) EffectiveSixelColors() int {
 	default:
 		return DefaultSixelColors
 	}
+}
+
+// ListTypesEnabled reports whether browse list rows include coloured type labels.
+func (c Config) ListTypesEnabled() bool {
+	return c.TUI.ListTypes
 }
 
 // EffectiveSpritePrewarm returns all_pixel | window | off.
@@ -406,7 +415,7 @@ func Initialize(path string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, fmt.Errorf("create config directory: %w", err)
 	}
-	data, err := yaml.Marshal(Default())
+	data, err := marshalYAML(Default())
 	if err != nil {
 		return false, fmt.Errorf("encode default config: %w", err)
 	}
@@ -448,7 +457,7 @@ func Save(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
-	data, err := yaml.Marshal(cfg)
+	data, err := marshalYAML(cfg)
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
@@ -470,6 +479,16 @@ func Save(path string, cfg Config) error {
 		return fmt.Errorf("install config: %w", err)
 	}
 	return nil
+}
+
+func marshalYAML(cfg Config) ([]byte, error) {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	const key = "    list_types:"
+	const commentedKey = "    # Show coloured type labels in browse list rows.\n" + key
+	return []byte(strings.Replace(string(data), key, commentedKey, 1)), nil
 }
 
 // SetThemeName updates only the theme name and persists the full config.

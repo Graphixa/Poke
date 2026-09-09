@@ -62,11 +62,13 @@ func init() {
 type BrowseData struct {
 	Width, Height int
 
-	Query      string
-	SearchView string
-	Rows       []components.ListRow
-	ListOff    int
-	ListRows   int
+	Query       string
+	SearchView  string
+	Rows        []components.ListRow
+	ListOff     int
+	ListRows    int
+	ListTypes   bool
+	ListNameCol int // padded name column; 0 derives from visible rows
 
 	Selected    domain.SpeciesSummary
 	HasSelected bool
@@ -159,7 +161,7 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 			search := renderSearch(d, d.Width)
 			listH := bodyH - 1
 			visible := visibleRows(d.Rows, d.ListOff, listH)
-			body = search + "\n" + components.List(visible, d.Width, listH, abbreviate)
+			body = search + "\n" + components.List(visible, d.Width, listH, d.ListTypes, d.ListNameCol, abbreviate)
 		} else {
 			body = renderRight(d, d.Width, bodyH)
 		}
@@ -209,7 +211,7 @@ func renderLeft(d BrowseData, width, height int) string {
 		listH = 3
 	}
 	visible := visibleRows(d.Rows, d.ListOff, listH)
-	list := components.List(visible, width, listH, abbreviate)
+	list := components.List(visible, width, listH, d.ListTypes, d.ListNameCol, abbreviate)
 	col := lipgloss.JoinVertical(lipgloss.Left, search, sep, list)
 	colLines := strings.Split(col, "\n")
 	if len(colLines) > height {
@@ -627,23 +629,29 @@ func visibleRows(rows []components.ListRow, off, count int) []components.ListRow
 }
 
 func abbreviate(types []string, maxW int) string {
+	if len(types) == 0 {
+		return style.TypeSummary(types)
+	}
 	joined := output.JoinTypes(types)
 	if maxW <= 0 || len(joined) <= maxW {
-		return joined
+		return style.TypeSummary(types)
 	}
 	if len(types) < 2 {
-		return truncate(joined, maxW)
+		return style.TypeLabelText(types[0], truncate(joined, maxW))
 	}
 	first := output.TitleFromSlug(types[0])
 	second := output.TitleFromSlug(types[1])
 	if len([]rune(second)) > 4 {
 		second = string([]rune(second)[:4])
 	}
-	out := first + "/" + second
-	if len(out) > maxW {
-		return truncate(out, maxW)
+	if len(first)+1+len(second) <= maxW {
+		return style.TypeLabelText(types[0], first) + "/" + style.TypeLabelText(types[1], second)
 	}
-	return out
+	if len(first)+1 >= maxW {
+		return style.TypeLabelText(types[0], truncate(first, maxW))
+	}
+	second = truncate(second, maxW-len(first)-1)
+	return style.TypeLabelText(types[0], first) + "/" + style.TypeLabelText(types[1], second)
 }
 
 func truncate(s string, n int) string {
