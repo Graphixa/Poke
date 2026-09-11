@@ -189,6 +189,13 @@ func title(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
+// BaseColor returns the theme base colour for lipgloss backgrounds.
+func BaseColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Base)
+}
+
 // BaseRGBA returns the theme base colour as an opaque RGBA for sprite letterboxing.
 func BaseRGBA() color.RGBA {
 	mu.RLock()

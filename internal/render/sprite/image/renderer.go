@@ -194,10 +194,9 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		return sprite.Frame{Text: out, Backend: "image", Native: true}, nil
 	}
 
-	// Square official artwork: skip full-res content crop (termimg scales next).
-	if b := src.Bounds(); b.Dx() != b.Dy() {
-		src = sprite.CropToContentSquare(src, threshold, 1)
-	}
+	// Content crop + ScaleFit into the cell box (single scale path — do not
+	// PrepareEncodeSrc then ScaleFill, which double-scales and fights WT).
+	src = sprite.CropToContentSquare(src, threshold, 0)
 
 	var (
 		out string

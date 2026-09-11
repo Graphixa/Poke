@@ -63,8 +63,9 @@ func TestCropToContentSquarePadsToOneToOne(t *testing.T) {
 	}
 }
 
-func TestPrepareEncodeSrcSquareSkipsCropProducesTarget(t *testing.T) {
-	// Square with transparent margin — ContentBounds would shrink; fast path keeps canvas.
+func TestPrepareEncodeSrcCropsSquareArtwork(t *testing.T) {
+	// Square canvas with a centred subject — crop must fill the target, not
+	// keep the transparent margin (that made browse sprites look tiny).
 	img := image.NewRGBA(image.Rect(0, 0, 64, 64))
 	for y := 16; y < 48; y++ {
 		for x := 16; x < 48; x++ {
@@ -76,10 +77,70 @@ func TestPrepareEncodeSrcSquareSkipsCropProducesTarget(t *testing.T) {
 	if out.Bounds().Dx() != 32 || out.Bounds().Dy() != 32 {
 		t.Fatalf("got %v want 32x32", out.Bounds())
 	}
-	// Corner was transparent on full canvas → bg after Prepare.
 	r, g, b, a := out.At(0, 0).RGBA()
-	if a>>8 != 255 || b>>8 != 255 || r>>8 != 0 || g>>8 != 0 {
-		t.Fatalf("expected blue bg at corner, got rgba=%d,%d,%d,%d", r>>8, g>>8, b>>8, a>>8)
+	if a>>8 != 255 || r>>8 != 255 || g>>8 != 0 || b>>8 != 0 {
+		t.Fatalf("expected subject at corner after crop, got rgba=%d,%d,%d,%d", r>>8, g>>8, b>>8, a>>8)
+	}
+}
+
+func TestPrepareEncodeSrcArtworkFitsSquareTarget(t *testing.T) {
+	// Square opaque subject into square target: fit fills corners (no letterbox).
+	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
+	for y := 0; y < 32; y++ {
+		for x := 0; x < 32; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 255, G: 80, B: 40, A: 255})
+		}
+	}
+	bg := color.RGBA{0, 0, 255, 255}
+	out := sprite.PrepareEncodeSrc(img, 240, 240, sprite.SourceArtwork, bg, 16, 0)
+	if out.Bounds().Dx() != 240 || out.Bounds().Dy() != 240 {
+		t.Fatalf("got %v want 240x240", out.Bounds())
+	}
+	r, g, b, a := out.At(0, 0).RGBA()
+	if a>>8 != 255 || r>>8 != 255 || b>>8 == 255 {
+		t.Fatalf("expected subject at corner after fit, got rgba=%d,%d,%d,%d", r>>8, g>>8, b>>8, a>>8)
+	}
+}
+
+func TestPrepareEncodeSrcArtworkLetterboxesWide(t *testing.T) {
+	// Wide opaque strip into a square target: fit letterboxes (no cover-crop).
+	img := image.NewRGBA(image.Rect(0, 0, 40, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 40; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 255, G: 80, B: 40, A: 255})
+		}
+	}
+	bg := color.RGBA{0, 0, 255, 255}
+	out := sprite.PrepareEncodeSrc(img, 16, 16, sprite.SourceArtwork, bg, 16, 0)
+	if out.Bounds().Dx() != 16 || out.Bounds().Dy() != 16 {
+		t.Fatalf("got %v want 16x16", out.Bounds())
+	}
+	r, g, b, a := out.At(8, 0).RGBA()
+	if a>>8 != 255 || b>>8 != 255 || r>>8 != 0 {
+		t.Fatalf("expected letterbox bg on the short axis, got rgba=%d,%d,%d,%d", r>>8, g>>8, b>>8, a>>8)
+	}
+}
+
+func TestPrepareEncodeSrcPixelStillFits(t *testing.T) {
+	// Pixel sprites keep fit/letterbox (no squash).
+	img := image.NewRGBA(image.Rect(0, 0, 20, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 20; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 255, G: 80, B: 40, A: 255})
+		}
+	}
+	bg := color.RGBA{0, 0, 255, 255}
+	out := sprite.PrepareEncodeSrc(img, 16, 16, sprite.SourcePixel, bg, 16, 0)
+	if out.Bounds().Dx() != 16 || out.Bounds().Dy() != 16 {
+		t.Fatalf("got %v want 16x16", out.Bounds())
+	}
+	r, g, b, a := out.At(8, 0).RGBA()
+	if a>>8 != 255 || b>>8 != 255 || r>>8 != 0 {
+		t.Fatalf("expected letterbox bg on the short axis, got rgba=%d,%d,%d,%d", r>>8, g>>8, b>>8, a>>8)
+	}
+	r, g, b, a = out.At(8, 8).RGBA()
+	if a>>8 != 255 || r>>8 != 255 {
+		t.Fatalf("expected subject in the centre, got rgba=%d,%d,%d,%d", r>>8, g>>8, b>>8, a>>8)
 	}
 }
 

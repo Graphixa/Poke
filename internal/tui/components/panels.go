@@ -90,37 +90,59 @@ func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbrev
 		if row.Selected {
 			marker = "> "
 		}
+		dex := output.FormatDex(row.Summary.ID)
+		rightW := textwidth.Width(dex) + 1 // one column of padding after right-aligned ID
 		available := width - len(marker)
-		const dexWidth = 5 // space and #NNN
-		if available < 8+dexWidth {
+		if available < 8+rightW {
 			name := textwidth.Truncate(row.Summary.DisplayName, available)
 			lines = append(lines, textwidth.PadRight(marker+name, width))
 			continue
 		}
 		col := nameCol
-		if col > available-dexWidth {
-			col = available - dexWidth
+		if col > available-rightW-1 {
+			col = available - rightW - 1
 		}
 		if col < 1 {
 			col = 1
 		}
-		line := marker + textwidth.PadRight(textwidth.Truncate(row.Summary.DisplayName, col), col) + " " + output.FormatDex(row.Summary.ID)
-		if showTypes {
-			used := textwidth.Width(line)
-			typeBudget := width - used - 2
-			if typeBudget >= 4 {
-				types := ""
-				if abbreviateTypes != nil {
-					types = abbreviateTypes(row.Summary.Types, typeBudget)
-				} else {
-					types = textwidth.Truncate(style.TypeSummary(row.Summary.Types), typeBudget)
+		namePart := marker + textwidth.PadRight(textwidth.Truncate(row.Summary.DisplayName, col), col)
+		midW := width - textwidth.Width(namePart) - rightW
+		if midW < 0 {
+			midW = 0
+		}
+		mid := strings.Repeat(" ", midW)
+		if showTypes && midW >= 4 {
+			typeBudget := midW
+			types := ""
+			if abbreviateTypes != nil {
+				types = abbreviateTypes(row.Summary.Types, typeBudget)
+			} else {
+				types = textwidth.Truncate(style.TypeSummary(row.Summary.Types), typeBudget)
+			}
+			tw := textwidth.Width(types)
+			if tw > midW {
+				types = textwidth.Truncate(types, midW)
+				tw = textwidth.Width(types)
+			}
+			if types != "" {
+				leftGap := (midW - tw) / 2
+				if leftGap < 0 {
+					leftGap = 0
 				}
-				if types != "" {
-					line += "  " + types
+				rightGap := midW - tw - leftGap
+				if rightGap < 0 {
+					rightGap = 0
 				}
+				mid = strings.Repeat(" ", leftGap) + types + strings.Repeat(" ", rightGap)
 			}
 		}
-		lines = append(lines, textwidth.PadRight(textwidth.Truncate(line, width), width))
+		line := namePart + mid + dex + " "
+		if textwidth.Width(line) < width {
+			line = textwidth.PadRight(line, width)
+		} else if textwidth.Width(line) > width {
+			line = textwidth.Truncate(line, width)
+		}
+		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -176,11 +198,13 @@ func SpritePanel(ansi string, width, height int, native bool) string {
 }
 
 // nativeSpritePanel reserves a WxH cell box without measuring or clipping the
-// graphics sequence (MaxWidth would corrupt DCS/Kitty payloads).
+// graphics sequence (MaxWidth would corrupt DCS/Kitty payloads). Spaces use the
+// theme base background so a cell flush is not terminal-default black.
 func nativeSpritePanel(seq string, width, height int) string {
+	blank := lipgloss.NewStyle().Background(style.BaseColor()).Render(strings.Repeat(" ", width))
 	lines := make([]string, height)
 	for i := range lines {
-		lines[i] = strings.Repeat(" ", width)
+		lines[i] = blank
 	}
 	if seq != "" {
 		lines[0] = seq + lines[0]
@@ -220,9 +244,9 @@ func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	if hint != "" {
 		leftText = " " + hint
 	} else if verbose {
-		leftText = " Type to filter • ↑↓ move • Enter/i details • Esc clear • q quit"
+		leftText = " Type to filter • ↑↓ move • v view • Enter/i details • Esc clear • q quit"
 	} else {
-		leftText = " type • ↑↓ • Enter/i • Esc • q"
+		leftText = " type • ↑↓ • v view • Enter/i • Esc • q"
 	}
 	left := textwidth.PadRight(textwidth.Truncate(leftText, leftW), leftW)
 	return footerSty().Render(left + right)
@@ -253,7 +277,7 @@ func HelpOverlay(body string, width, height int) string {
 		body = strings.Join([]string{
 			"Browse help",
 			"",
-			"Type to filter • ↑/↓ move",
+			"Type to filter • ↑/↓ move • v view",
 			"Enter/i details • Esc clear • q quit",
 			"",
 			"Press Esc or ? to close",

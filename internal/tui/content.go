@@ -9,6 +9,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
+	"github.com/Graphixa/Pokedex/internal/tui/components"
 	tuistyle "github.com/Graphixa/Pokedex/internal/tui/style"
 	"github.com/Graphixa/Pokedex/internal/usererr"
 )
@@ -23,27 +24,7 @@ func (m Model) browseViewLines() []string {
 }
 
 func formatStatsBars(p domain.Pokemon) []string {
-	bar := func(label string, v int) string {
-		const maxStat = 255
-		filled := v * 12 / maxStat
-		if filled > 12 {
-			filled = 12
-		}
-		if filled < 0 {
-			filled = 0
-		}
-		return primaryText(fmt.Sprintf("%-8s", label)) + fmt.Sprintf(" %s  %3d", strings.Repeat("█", filled)+strings.Repeat("░", 12-filled), v)
-	}
-	return []string{
-		bar("HP", p.Stats.HP),
-		bar("Attack", p.Stats.Attack),
-		bar("Defense", p.Stats.Defense),
-		bar("Sp.Atk", p.Stats.SpecialAttack),
-		bar("Sp.Def", p.Stats.SpecialDefense),
-		bar("Speed", p.Stats.Speed),
-		"─────────────────────",
-		primaryText(fmt.Sprintf("%-8s", "Total")) + fmt.Sprintf("              %3d", p.Stats.Total()),
-	}
+	return components.StatsBars(p.Stats)
 }
 
 func formatBrowseSummaryLines(p domain.Pokemon, s domain.Species) []string {

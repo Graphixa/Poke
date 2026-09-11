@@ -1,14 +1,13 @@
 package tui
 
-import "github.com/Graphixa/Pokedex/internal/render/sprite"
+import (
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Pokedex/internal/tui/views"
+)
 
-// Default responsive breakpoints. Sprite mins are overridden by config when set
-// on the model (see layoutThresholds). Zero config falls back to frame-derived
-// MinTerminalWidth/Height so sprites show on normal terminal sizes.
+// Default responsive breakpoints. Browse sprite visibility uses glance/hero
+// PreferredBucket helpers (16 / 40); MinTerminal* remain classic-24 helpers.
 const (
-	// Rows reserved outside the sprite body — must match sprite.BrowseChromeRows
-	// (footer + frame borders + header/gap + divider/switcher).
-	spriteChromeRows = sprite.BrowseChromeRows
 	minFooterWidth   = 76
 	minFooterHeight  = 22
 	minTwoPaneWidth  = 52
@@ -16,16 +15,18 @@ const (
 	minUsableWidth   = 40
 	minUsableHeight  = 12
 
-	listNamePad         = 3 // extra cells after the longest species name
+	listNamePad         = 0 // name column is the longest species name
 	listMarkerCols      = 2
 	listGapNameDex      = 1
-	listDexCols         = 4 // #NNN
-	listGapDexTypes     = 2
+	listDexCols         = 5  // #NNNN
 	listTypeReserve     = 14 // Grass/Poison-sized dual type
-	listInnerTrail      = 2
+	listRightPad        = 1  // one cell between dex and the pane edge
 	listShareMinNoTypes = 25
 	listShareMaxNoTypes = 30
 	listShareWithTypes  = 50
+
+	browseFooterRows      = 1
+	browseFrameBorderRows = 2
 )
 
 // listColumnSpec sizes the browse list pane from content, not leftover sprite space.
@@ -42,9 +43,9 @@ func nameColumnWidth(maxName int) int {
 }
 
 func listContentInner(showTypes bool, maxName int) int {
-	inner := listMarkerCols + nameColumnWidth(maxName) + listGapNameDex + listDexCols + listInnerTrail
+	inner := listMarkerCols + nameColumnWidth(maxName) + listGapNameDex + listDexCols + listRightPad
 	if showTypes {
-		inner += listGapDexTypes + listTypeReserve
+		inner += listTypeReserve
 	}
 	return inner
 }
@@ -109,44 +110,54 @@ type LayoutFlags struct {
 	RightWidth int
 }
 
-func layoutFor(width, height int, th layoutThresholds, list listColumnSpec) LayoutFlags {
+func layoutFor(width, height int, th layoutThresholds, list listColumnSpec, browseView BrowseView) LayoutFlags {
 	f := LayoutFlags{Width: width, Height: height}
 	if width <= 0 || height <= 0 {
-		// Unknown size: do not pretend a sprite panel exists. Init is a value
-		// receiver so it cannot start a load; a fake MaxFrameSize here made the
-		// first WindowSize look like a no-op and left the first species blank.
 		return f
 	}
 	f.TooSmall = width < minUsableWidth || height < minUsableHeight
 	f.OnePane = width < minTwoPaneWidth || height < minTwoPaneHeight
 
-	bodyH := height - spriteChromeRows
-	if bodyH < 1 {
-		bodyH = 1
+	panelH := height - browseFooterRows
+	innerH := panelH - browseFrameBorderRows
+	if innerH < 1 {
+		innerH = 1
 	}
+
+	rightPanel := views.GlanceRightPanelWidth()
+	if browseView == BrowseArt {
+		rightPanel = views.HeroRightPanelWidth()
+	}
+	minList := 16
 	if !f.OnePane && !f.TooSmall {
-		f.LeftWidth = listPaneWidth(width, list)
-		f.RightWidth = width - f.LeftWidth - 1
-		if f.RightWidth < 12 {
-			f.RightWidth = width / 2
+		if width-1-rightPanel >= minList {
+			f.RightWidth = rightPanel
 			f.LeftWidth = width - f.RightWidth - 1
+		} else {
+			// Terminal too narrow for fixed tile: fall back to list-first split.
+			f.LeftWidth = listPaneWidth(width, list)
+			f.RightWidth = width - f.LeftWidth - 1
+			if f.RightWidth < 12 {
+				f.RightWidth = width / 2
+				f.LeftWidth = width - f.RightWidth - 1
+			}
 		}
 	}
-	maxOuterW := f.RightWidth - 2
-	if maxRight := width - 16 - 1; f.RightWidth == 0 {
-		maxOuterW = maxRight - 2
+
+	rightInnerW := f.RightWidth - 1
+	if rightInnerW < 1 {
+		rightInnerW = width / 2
 	}
-	frame := sprite.LargestFrameFitting(maxOuterW, bodyH)
-	// Fit-based gate: if a padded frame fits the body, show it. Stale config
-	// min width/height must not hide a sprite that has room on screen.
+	var bucket int
+	if browseView == BrowseArt {
+		bucket = views.PreferredHeroBucket(rightInnerW, innerH)
+	} else {
+		bucket = views.PreferredBucket(rightInnerW, innerH)
+	}
 	f.ShowSprite = !th.DisableSprite && !f.OnePane && !f.TooSmall &&
-		frame >= sprite.MinFrameSize
+		bucket >= sprite.SmallestFrameBucket()
 	if f.ShowSprite {
-		f.SpriteSize = frame
-	}
-	if f.LeftWidth == 0 && !f.OnePane {
-		f.RightWidth = sprite.RightPanelWidth(width, f.SpriteSize)
-		f.LeftWidth = width - f.RightWidth - 1
+		f.SpriteSize = bucket
 	}
 
 	f.VerboseFooter = !f.TooSmall && width >= minFooterWidth && height >= minFooterHeight

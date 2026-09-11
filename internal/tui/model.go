@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
-	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -32,6 +31,8 @@ type Options struct {
 	DisableSprite bool
 	// ListTypes includes coloured type labels in browse list rows.
 	ListTypes bool
+	// BrowseStats maps species ID → base stats from browse.json (optional).
+	BrowseStats map[int]domain.Stats
 	// DossierWarmer pre-assembles dossier core or full dossiers in the background.
 	DossierWarmer DossierWarmer
 	// Warmer is an optional priority sprite prewarm service.
@@ -50,6 +51,7 @@ type Options struct {
 type SpriteWarmer interface {
 	Prioritize(speciesID int)
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+	SetBuckets(buckets []int)
 	SetCells(cells int)
 	Snapshot() (done, total int)
 	NoteActivity()
@@ -69,6 +71,7 @@ type NativeWarmer interface {
 	EnsureStarted(ctx context.Context, cells int)
 	Prioritize(speciesID int)
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+	SetBuckets(buckets []int)
 	SetCells(cells int)
 	Snapshot() (done, total int)
 	NoteActivity()
@@ -117,6 +120,8 @@ type Model struct {
 	listOff   int
 	listTypes bool
 
+	browseStats map[int]domain.Stats
+
 	browseView    BrowseView
 	dialogSection DialogSection
 	dialogVP      viewport.Model
@@ -127,7 +132,6 @@ type Model struct {
 	lruIDs       []int
 
 	imageState       ImageState
-	imageSpinner     bool
 	imageANSI        string
 	imageNative      bool
 	imageKind        string
@@ -135,22 +139,20 @@ type Model struct {
 	imageSpeciesID   int
 	imagePlaceholder bool
 	imageLoading     bool
-	spinner          spinner.Model
 
-	spriteCancel        context.CancelFunc
-	spriteReqID         int
-	spriteLoadSpecies   int
-	coldSched           *coldsched.Scheduler
-	coldFrameCh         chan coldFrameMsg
-	dossierCancel       context.CancelFunc
-	dossierLoadCtx      context.Context
-	dossierLoadSpecies  int
-	nativePaintPending  bool
-	nativeOverlayDirty  bool
-	nativeNeedsFollowUp bool
-	nativePaintSpecies  int
-	nativePaintCells    int
-	nativePaintANSI     string
+	spriteCancel       context.CancelFunc
+	spriteReqID        int
+	spriteLoadSpecies  int
+	coldSched          *coldsched.Scheduler
+	coldFrameCh        chan coldFrameMsg
+	dossierCancel      context.CancelFunc
+	dossierLoadCtx     context.Context
+	dossierLoadSpecies int
+	nativePaintPending bool
+	nativeOverlayDirty bool
+	nativePaintSpecies int
+	nativePaintCells   int
+	nativePaintANSI    string
 
 	warmer           SpriteWarmer
 	dossierWarmer    DossierWarmer
@@ -194,11 +196,10 @@ func NewModel(opts Options) Model {
 		layoutTh: layoutThresholds{
 			DisableSprite: opts.DisableSprite,
 		},
-		resources:     make(map[int]*resourceCache),
-		lruIDs:        nil,
-		imageState:    ImageBlank,
-		spinner:       spinner.New(),
-		browseView:    BrowseSprite,
+		resources:  make(map[int]*resourceCache),
+		lruIDs:     nil,
+		imageState: ImageBlank,
+		browseView: BrowseGlance,
 		dialogSection: DialogSummary,
 		keys:          defaultKeyMap(),
 		help:          newHelpModel(),
@@ -212,6 +213,7 @@ func NewModel(opts Options) Model {
 		onUIReady:     opts.OnUIReady,
 		pokemonSrc:    opts.Pokemon,
 		listTypes:     opts.ListTypes,
+		browseStats:   opts.BrowseStats,
 	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)
@@ -290,7 +292,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m *Model) layout() LayoutFlags {
-	return layoutFor(m.width, m.height, m.layoutTh, m.listColumn())
+	return layoutFor(m.width, m.height, m.layoutTh, m.listColumn(), m.browseView)
 }
 
 func (m *Model) listColumn() listColumnSpec {
@@ -412,7 +414,6 @@ func (m *Model) moveCursor(delta int) {
 	if m.cursor >= len(m.filtered) {
 		m.cursor = len(m.filtered) - 1
 	}
-	m.browseView = BrowseSprite
 	m.dialogVP.GotoTop()
 	m.ensureListVisible()
 }
@@ -434,18 +435,17 @@ func (m *Model) bumpSelection() {
 	end := debuglog.Trace(debuglog.Render, "selection.changed")
 	defer end()
 	m.selectionGen++
-	m.browseView = BrowseSprite
 	m.showDialog = false
 	m.dialogVP.GotoTop()
 	m.setImageBlank()
 	m.cancelSprite()
 	m.cancelDossier()
 	m.nativePaintPending = false
-	m.nativeNeedsFollowUp = false
-	if m.sprites != nil {
-		m.sprites.ClearNative()
-	}
-	// Dirty overlay so scheduleNativeOverlay wipes previous species graphics.
+	// Drop prior paint tracking — art pops in when the new frame is ready.
+	// Cell flush + themed reservation clear any on-screen sixel.
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	m.nativePaintCells = 0
 	m.markNativeOverlayDirtyFollowUp()
 }
 

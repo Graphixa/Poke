@@ -1,16 +1,17 @@
 package tui
 
-// BrowseView is reserved for future sprite-variant cycling on the browse pane.
-// v1 keeps a single sprite hero (no text views on browse).
+// BrowseView selects the browse right-pane layout (Glance vs large Art).
 type BrowseView int
 
 const (
-	BrowseSprite BrowseView = iota
+	BrowseGlance BrowseView = iota
+	BrowseArt
 	browseViewCount
 )
 
 var browseViewLabels = [...]string{
-	BrowseSprite: "Sprite",
+	BrowseGlance: "Glance",
+	BrowseArt:    "Art",
 }
 
 func (v BrowseView) Label() string {

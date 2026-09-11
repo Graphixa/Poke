@@ -70,7 +70,9 @@ func EncodeFromCells(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderO
 	if source == "" {
 		source = sprite.SourceArtwork
 	}
-	prepared := sprite.PrepareEncodeSrc(src, pxW, pxH, source, bg, threshold, 1)
+	// Crop pad 0: browse art cards are tight (1 cell inset only). Extra pixel
+	// margin left the subject small inside the 24×12 reservation.
+	prepared := sprite.PrepareEncodeSrc(src, pxW, pxH, source, bg, threshold, 0)
 	return EncodeWithColors(prepared, colors)
 }
 

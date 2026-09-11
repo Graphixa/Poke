@@ -16,6 +16,7 @@ type keyMap struct {
 	Help      key.Binding
 	Info      key.Binding
 	Enter     key.Binding
+	ViewCycle key.Binding
 	Quit      key.Binding
 	ForceQuit key.Binding
 	// Unbound keys that must not reach the search field.
@@ -72,6 +73,10 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "details"),
 		),
+		ViewCycle: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "view"),
+		),
 		Quit: key.NewBinding(
 			key.WithKeys("q"),
 			key.WithHelp("q", "quit"),
@@ -91,7 +96,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter")),
 		k.Up,
-		k.TabNext,
+		k.ViewCycle,
 		k.Enter,
 		k.Clear,
 		k.Quit,
@@ -109,14 +114,15 @@ func (k keyMap) FullHelp() [][]key.Binding {
 			k.Down,
 		},
 		{
-			k.TabNext,
-			k.TabPrev,
+			k.ViewCycle,
 			k.Enter,
 			k.Info,
 			k.PageUp,
 			k.PageDown,
 		},
 		{
+			k.TabNext,
+			k.TabPrev,
 			k.Quit,
 			k.ForceQuit,
 			k.Help,

@@ -124,7 +124,7 @@ func TestSpriteStaleSuppressedAndResizeRace(t *testing.T) {
 	}
 
 	// Hide sprite panel: must clear art and not leave ghost state.
-	updated, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 17})
 	m = updated.(tui.Model)
 	if m.LayoutFlags().ShowSprite {
 		t.Fatal("expected sprite hidden below threshold")
@@ -205,6 +205,9 @@ func TestStaleDossierClearsLoadingSoReselectRetries(t *testing.T) {
 	})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
+	// WindowSize schedules core load; this test discards that cmd and starts a
+	// blocking load from Enter instead — clear the stuck loadingCore flag.
+	m.CancelDossierForTest()
 
 	updated, cmd := m.Update(key("enter"))
 	m = updated.(tui.Model)
@@ -383,9 +386,7 @@ func TestSelectionChangeBlanksImagePane(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
 		t.Fatalf("image state=%d want loading on cold miss", m.ImageStateForTest())
 	}
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("cold miss must show spinner immediately")
-	}
+	
 }
 
 func TestResourceCacheLRUPlateau(t *testing.T) {
@@ -445,9 +446,7 @@ func TestColdMissShowsSpinnerImmediately(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
 		t.Fatalf("image state=%d want loading immediately on cold miss", m.ImageStateForTest())
 	}
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("cold miss must show spinner")
-	}
+	
 	if !m.SelectedSpriteLoadingForTest() {
 		t.Fatal("cold miss must start encode")
 	}
@@ -468,9 +467,7 @@ func TestWarmCacheHitPaintsImmediatelyWithoutSpinner(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("image state=%d want ready on warm hit", m.ImageStateForTest())
 	}
-	if m.ImageSpinnerForTest() {
-		t.Fatal("warm hit must not show spinner")
-	}
+	
 	if !m.HasSpriteANSI() || m.ImageANSILenForTest() != len("WARM") {
 		t.Fatal("warm hit must paint cached frame immediately")
 	}
@@ -483,9 +480,7 @@ func TestWarmCacheHitPaintsImmediatelyWithoutSpinner(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("after move image state=%d want ready", m.ImageStateForTest())
 	}
-	if m.ImageSpinnerForTest() {
-		t.Fatal("warm navigation must not show spinner")
-	}
+	
 	if sprites.calls.Load() != 0 {
 		t.Fatalf("warm navigation must not cold-render, calls=%d", sprites.calls.Load())
 	}
@@ -518,9 +513,7 @@ func TestSelectionStartsSpriteLoadImmediately(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
 		t.Fatalf("image state=%d want loading", m.ImageStateForTest())
 	}
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("cold selection must show spinner immediately")
-	}
+	
 	close(sprites.block)
 }
 
@@ -693,9 +686,7 @@ func TestWarmSelectionBypassesUnrelatedColdRender(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("warm neighbor state=%d want ready", m.ImageStateForTest())
 	}
-	if m.ImageSpinnerForTest() {
-		t.Fatal("warm bypass must not show spinner")
-	}
+	
 	if m.ImageANSILenForTest() != len("WARM5") {
 		t.Fatal("warm frame must paint immediately")
 	}
@@ -804,7 +795,7 @@ func TestMixedWarmColdNavigation(t *testing.T) {
 	updated, _ = m.Update(key("down"))
 	m = updated.(tui.Model)
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
-		t.Fatal("6 must be cold spinner")
+		t.Fatal("6 must be cold loading")
 	}
 	updated, _ = m.Update(key("down"))
 	m = updated.(tui.Model)

@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	profileCellPxW = 8
-	profileCellPxH = 16
+	profileCellPxW = 10
+	profileCellPxH = 20
 )
 
 func loadArtwork(t testing.TB) (pngBytes []byte, img image.Image) {
@@ -82,7 +82,7 @@ func TestSixelPipelineProfile(t *testing.T) {
 
 	bg := color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
 	const iters = 40
-	sides := []int{20, 28, 40}
+	sides := []int{16, 24, 32, 40}
 
 	native := spriteimage.New()
 	t.Logf("native protocol: %q available=%v", native.ProtocolName(), native.Available())
@@ -107,7 +107,7 @@ func TestSixelPipelineProfile(t *testing.T) {
 		// Warm one pass so first-JIT noise is out of medians.
 		{
 			_, _, _ = image.Decode(bytes.NewReader(pngBytes))
-			prepared := sprite.PrepareEncodeSrc(img, pxW, pxH, sprite.SourceArtwork, bg, 16, 1)
+			prepared := sprite.PrepareEncodeSrc(img, pxW, pxH, sprite.SourceArtwork, bg, 16, 0)
 			var buf bytes.Buffer
 			enc := sixel.NewEncoder(&buf)
 			enc.Colors = 256
@@ -124,9 +124,9 @@ func TestSixelPipelineProfile(t *testing.T) {
 			}
 			decodeDs = append(decodeDs, time.Since(t0))
 
-			// PrepareEncodeSrc: square artwork skips ContentBounds; downsample then Prepare.
+			// PrepareEncodeSrc: crop-to-content then fit (same path as production; pad 0).
 			t0 = time.Now()
-			prepared := sprite.PrepareEncodeSrc(decoded, pxW, pxH, sprite.SourceArtwork, bg, 16, 1)
+			prepared := sprite.PrepareEncodeSrc(decoded, pxW, pxH, sprite.SourceArtwork, bg, 16, 0)
 			prepDs = append(prepDs, time.Since(t0))
 
 			t0 = time.Now()

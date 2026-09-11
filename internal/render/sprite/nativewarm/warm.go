@@ -1,5 +1,5 @@
-// Package nativewarm opportunistically pre-encodes native frames for the
-// active terminal bucket (24/32/40) while the user browses.
+// Package nativewarm opportunistically pre-encodes native frames for browse
+// warm buckets (default 16 then 40) while the user browses.
 package nativewarm
 
 import (
@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	maxPriorityHints = 4
+	maxPriorityHints = 8
 	auditYieldBatch  = 64
 )
 
@@ -33,7 +33,7 @@ type NativeRenderer interface {
 }
 
 // Progress reports native-cache warm work. Done counts persisted/readable
-// .sixel.gz frames for the active bucket. App classifies this into TUI/CLI.
+// .sixel.gz frames for the active phase bucket. App classifies this into TUI/CLI.
 type Progress struct {
 	Done    int
 	Total   int
@@ -52,12 +52,20 @@ type Config struct {
 	Progress func(Progress)
 }
 
-// Service owns a single-lane background native encoder for the active bucket.
+type priorityHint struct {
+	id    int
+	cells int
+}
+
+// Service owns a single-lane background native encoder with phased buckets.
 type Service struct {
 	cfg Config
 
 	mu          sync.Mutex
-	cells       int
+	buckets     []int
+	phase       int
+	cells       int // buckets[phase] — background scan target
+	focusCells  int // active browse view bucket for Prioritize
 	bucketGen   uint64
 	auditedGen  uint64
 	anchor      int // index into warmable index slice
@@ -65,7 +73,7 @@ type Service struct {
 	bwdOff      int
 	warmable    []domain.SpeciesSummary
 	indexByID   map[int]domain.SpeciesSummary
-	priority    []int
+	priority    []priorityHint
 	countedDone map[int]bool
 	retryAt     map[int]time.Time
 	failCount   map[int]int
@@ -105,7 +113,7 @@ func New(cfg Config) *Service {
 	return s
 }
 
-// Start launches the worker using cells as the initial bucket.
+// Start launches the worker using max frame as the initial single bucket.
 func (s *Service) Start(ctx context.Context) {
 	if s == nil {
 		return
@@ -144,23 +152,55 @@ func (s *Service) Stop() {
 	s.wg.Wait()
 }
 
-// SetCells switches the active bucket; future work targets the new size only.
+// SetBuckets configures the warm phase order (e.g. 16 then 40). Resets to
+// phase 0 when the list changes. Background scan finishes each bucket fully
+// before advancing; Prioritize still prefers the focus (SetCells) size first.
+func (s *Service) SetBuckets(buckets []int) {
+	if s == nil {
+		return
+	}
+	norm := normalizeBuckets(buckets)
+	if len(norm) == 0 {
+		return
+	}
+	s.mu.Lock()
+	if bucketsEqual(s.buckets, norm) {
+		s.mu.Unlock()
+		return
+	}
+	s.buckets = norm
+	s.phase = 0
+	s.focusCells = norm[0]
+	s.applyPhaseLocked(norm[0])
+	s.mu.Unlock()
+	s.signal()
+}
+
+// SetCells sets the focus bucket used by Prioritize (active browse view).
+// With a single-bucket / unset queue it also switches the background target
+// (legacy behaviour). With multiple SetBuckets phases it does not abandon the
+// current phase.
 func (s *Service) SetCells(cells int) {
 	if s == nil {
 		return
 	}
 	cells = sprite.ClampFrameSide(cells)
 	s.mu.Lock()
+	s.focusCells = cells
+	if len(s.buckets) > 1 {
+		s.mu.Unlock()
+		s.signal()
+		return
+	}
+	if len(s.buckets) == 0 {
+		s.buckets = []int{cells}
+		s.phase = 0
+	} else {
+		s.buckets[0] = cells
+		s.phase = 0
+	}
 	if s.cells != cells {
-		s.cells = cells
-		s.bucketGen++
-		s.fwdOff = 1
-		s.bwdOff = 1
-		s.priority = nil
-		s.countedDone = make(map[int]bool)
-		s.retryAt = make(map[int]time.Time)
-		s.failCount = make(map[int]int)
-		s.resetProgressLocked(cells)
+		s.applyPhaseLocked(cells)
 		s.mu.Unlock()
 		s.signal()
 		return
@@ -169,7 +209,45 @@ func (s *Service) SetCells(cells int) {
 	s.signal()
 }
 
-// ActiveCells returns the current warm bucket (for tests).
+func (s *Service) applyPhaseLocked(cells int) {
+	s.cells = cells
+	s.bucketGen++
+	s.fwdOff = 1
+	s.bwdOff = 1
+	s.priority = nil
+	s.countedDone = make(map[int]bool)
+	s.retryAt = make(map[int]time.Time)
+	s.failCount = make(map[int]int)
+	s.resetProgressLocked(cells)
+}
+
+func normalizeBuckets(buckets []int) []int {
+	seen := make(map[int]bool, len(buckets))
+	out := make([]int, 0, len(buckets))
+	for _, b := range buckets {
+		b = sprite.ClampFrameSide(b)
+		if b < sprite.SmallestFrameBucket() || seen[b] {
+			continue
+		}
+		seen[b] = true
+		out = append(out, b)
+	}
+	return out
+}
+
+func bucketsEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// ActiveCells returns the current background phase bucket (for tests).
 func (s *Service) ActiveCells() int {
 	if s == nil {
 		return 0
@@ -179,7 +257,17 @@ func (s *Service) ActiveCells() int {
 	return s.cells
 }
 
-// Prioritize bumps speciesID to the front of the warm queue.
+// FocusCells returns the prioritize focus bucket (for tests).
+func (s *Service) FocusCells() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.focusCells
+}
+
+// Prioritize bumps speciesID for the focus bucket first, then other warm buckets.
 func (s *Service) Prioritize(speciesID int) {
 	if s == nil || speciesID < 1 {
 		return
@@ -189,7 +277,19 @@ func (s *Service) Prioritize(speciesID int) {
 	if !s.shouldWarm(speciesID) {
 		return
 	}
-	s.enqueuePriorityLocked(speciesID)
+	focus := s.focusCells
+	if focus < sprite.SmallestFrameBucket() {
+		focus = s.cells
+	}
+	s.enqueuePriorityLocked(speciesID, focus)
+	for _, b := range s.buckets {
+		if b != focus {
+			s.enqueuePriorityLocked(speciesID, b)
+		}
+	}
+	if len(s.buckets) == 0 && s.cells != focus && s.cells >= sprite.SmallestFrameBucket() {
+		s.enqueuePriorityLocked(speciesID, s.cells)
+	}
 	s.signal()
 }
 
@@ -242,7 +342,7 @@ func (s *Service) SetAnchorFromSpeciesID(speciesID int) {
 	s.signal()
 }
 
-// Snapshot returns persisted/readable coverage for the active render spec.
+// Snapshot returns persisted/readable coverage for the active phase bucket.
 func (s *Service) Snapshot() (done, total int) {
 	if s == nil {
 		return 0, 0
@@ -286,18 +386,21 @@ func specKey(cells int) string {
 	return sprite.NativeCacheSpecKey(cells)
 }
 
-func (s *Service) enqueuePriorityLocked(speciesID int) {
-	for i, id := range s.priority {
-		if id == speciesID {
+func (s *Service) enqueuePriorityLocked(speciesID, cells int) {
+	if cells < sprite.SmallestFrameBucket() {
+		return
+	}
+	for i, h := range s.priority {
+		if h.id == speciesID && h.cells == cells {
 			copy(s.priority[1:i+1], s.priority[0:i])
-			s.priority[0] = speciesID
+			s.priority[0] = priorityHint{id: speciesID, cells: cells}
 			return
 		}
 	}
 	if len(s.priority) >= maxPriorityHints {
 		s.priority = s.priority[:len(s.priority)-1]
 	}
-	s.priority = append([]int{speciesID}, s.priority...)
+	s.priority = append([]priorityHint{{id: speciesID, cells: cells}}, s.priority...)
 }
 
 func (s *Service) signal() {
@@ -319,19 +422,52 @@ func (s *Service) markDoneLocked(speciesID int) {
 	}
 }
 
+func (s *Service) maybeAdvancePhaseLocked() bool {
+	if s.progress.done < s.progress.total || s.progress.total == 0 {
+		return false
+	}
+	if s.phase+1 >= len(s.buckets) {
+		return false
+	}
+	s.phase++
+	s.applyPhaseLocked(s.buckets[s.phase])
+	return true
+}
+
 // markPersistedSpecies records that speciesID has a persisted/readable frame
-// for the active bucket. Done increments only after disk verification or a
-// successful PersistNativeFrame in this session.
-func (s *Service) markPersistedSpecies(speciesID int, bucketGen uint64) {
+// for the given cells. Phase Done increments only when cells match the active
+// background phase. On phase completion, emits Done>=Total for the finished
+// bucket before advancing — never an interim 0/N for the next phase (that
+// stuck the TUI footer when the next bucket was already on disk).
+func (s *Service) markPersistedSpecies(speciesID int, bucketGen uint64, cells int) {
 	s.mu.Lock()
 	if s.bucketGen != bucketGen {
 		s.mu.Unlock()
 		return
 	}
-	s.markDoneLocked(speciesID)
-	delete(s.retryAt, speciesID)
-	delete(s.failCount, speciesID)
+	var phaseComplete *Progress
+	if cells == s.cells {
+		s.markDoneLocked(speciesID)
+		delete(s.retryAt, speciesID)
+		delete(s.failCount, speciesID)
+		if s.progress.done >= s.progress.total && s.progress.total > 0 {
+			p := Progress{
+				Done:    s.progress.done,
+				Total:   s.progress.total,
+				Message: "Building image cache",
+				Cells:   s.cells,
+			}
+			_ = s.maybeAdvancePhaseLocked()
+			phaseComplete = &p
+		}
+	}
 	s.mu.Unlock()
+	if phaseComplete != nil {
+		if s.cfg.Progress != nil {
+			s.cfg.Progress(*phaseComplete)
+		}
+		return
+	}
 	s.emitProgress()
 }
 
@@ -365,7 +501,7 @@ func (s *Service) maybeAuditDisk(ctx context.Context) bool {
 	total := len(warmable)
 	s.mu.Unlock()
 
-	if s.cfg.Renderer == nil || cells < sprite.MinFrameSize || total == 0 {
+	if s.cfg.Renderer == nil || cells < sprite.SmallestFrameBucket() || total == 0 {
 		s.mu.Lock()
 		if s.bucketGen == gen {
 			s.auditedGen = gen
@@ -399,11 +535,28 @@ func (s *Service) maybeAuditDisk(ctx context.Context) bool {
 	s.progress.done = done
 	s.auditedGen = gen
 	complete := done >= s.progress.total
-	s.mu.Unlock()
-
-	if !complete {
-		s.emitProgress()
+	if complete {
+		finished := Progress{
+			Done:    done,
+			Total:   s.progress.total,
+			Message: "Building image cache",
+			Cells:   cells,
+		}
+		advanced := s.maybeAdvancePhaseLocked()
+		s.mu.Unlock()
+		if advanced {
+			// Close out the finished phase for the footer, then audit the next
+			// bucket (may suppress emit if that phase is already complete).
+			if s.cfg.Progress != nil {
+				s.cfg.Progress(finished)
+			}
+			return false
+		}
+		// Last phase already fully on disk: no emit (fast-path silence).
+		return true
 	}
+	s.mu.Unlock()
+	s.emitProgress()
 	return true
 }
 
@@ -428,14 +581,14 @@ func (s *Service) worker(ctx context.Context) {
 			}
 			continue
 		}
-		id, ok := s.popNext()
+		id, cells, ok := s.popNext()
 		if !ok {
 			if anchorID, onlyAnchor := s.uncountedAnchorOnly(); onlyAnchor {
-				s.warmOne(ctx, anchorID)
+				s.warmOne(ctx, anchorID, s.phaseCells())
 				continue
 			}
 			if id, retry := s.popUncountedRetry(); retry {
-				s.warmOne(ctx, id)
+				s.warmOne(ctx, id, s.phaseCells())
 				continue
 			}
 			if !s.wait(ctx) {
@@ -443,8 +596,14 @@ func (s *Service) worker(ctx context.Context) {
 			}
 			continue
 		}
-		s.warmOne(ctx, id)
+		s.warmOne(ctx, id, cells)
 	}
+}
+
+func (s *Service) phaseCells() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cells
 }
 
 func (s *Service) wait(ctx context.Context) bool {
@@ -458,18 +617,24 @@ func (s *Service) wait(ctx context.Context) bool {
 	}
 }
 
-func (s *Service) popNext() (int, bool) {
+func (s *Service) popNext() (id, cells int, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.warmable) == 0 {
-		return 0, false
+		return 0, 0, false
 	}
 	for len(s.priority) > 0 {
-		id := s.priority[0]
+		h := s.priority[0]
 		s.priority = s.priority[1:]
-		if s.shouldWarm(id) && !s.countedDone[id] && s.canRetryLocked(id) {
-			return id, true
+		if !s.shouldWarm(h.id) {
+			continue
 		}
+		// Phase-progress jobs skip already-counted species; off-phase priority
+		// always runs (e.g. hero size while scanning glance).
+		if h.cells == s.cells && (s.countedDone[h.id] || !s.canRetryLocked(h.id)) {
+			continue
+		}
+		return h.id, h.cells, true
 	}
 	anchor := s.anchor
 	if anchor < 0 {
@@ -478,12 +643,13 @@ func (s *Service) popNext() (int, bool) {
 	if anchor >= len(s.warmable) {
 		anchor = len(s.warmable) - 1
 	}
+	phaseCells := s.cells
 	for {
 		if idx := anchor + s.fwdOff; idx < len(s.warmable) {
 			s.fwdOff++
 			id := s.warmable[idx].ID
 			if !s.countedDone[id] && s.canRetryLocked(id) {
-				return id, true
+				return id, phaseCells, true
 			}
 			continue
 		}
@@ -491,15 +657,15 @@ func (s *Service) popNext() (int, bool) {
 			s.bwdOff++
 			id := s.warmable[idx].ID
 			if !s.countedDone[id] && s.canRetryLocked(id) {
-				return id, true
+				return id, phaseCells, true
 			}
 			continue
 		}
 		anchorID := s.warmable[anchor].ID
 		if !s.countedDone[anchorID] && s.canRetryLocked(anchorID) {
-			return anchorID, true
+			return anchorID, phaseCells, true
 		}
-		return 0, false
+		return 0, 0, false
 	}
 }
 
@@ -560,12 +726,14 @@ func (s *Service) noteFailure(speciesID int) {
 	s.retryAt[speciesID] = time.Now().Add(wait)
 }
 
-func (s *Service) warmOne(ctx context.Context, speciesID int) {
+func (s *Service) warmOne(ctx context.Context, speciesID, cells int) {
 	s.mu.Lock()
-	cells := s.cells
 	bucketGen := s.bucketGen
+	if cells < sprite.SmallestFrameBucket() {
+		cells = s.cells
+	}
 	s.mu.Unlock()
-	if cells < sprite.MinFrameSize {
+	if cells < sprite.SmallestFrameBucket() {
 		return
 	}
 	if s.cfg.Renderer != nil {
@@ -593,7 +761,7 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 		return
 	}
 	if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
-		s.markPersistedSpecies(speciesID, bucketGen)
+		s.markPersistedSpecies(speciesID, bucketGen, cells)
 		return
 	}
 	res := s.cfg.Renderer.NativeWarmRender(ctx, poke, cells)
@@ -616,7 +784,7 @@ func (s *Service) warmOne(ctx context.Context, speciesID int) {
 		return
 	}
 	if s.cfg.Renderer.HasNativeFile(ctx, poke, cells) {
-		s.markPersistedSpecies(speciesID, bucketGen)
+		s.markPersistedSpecies(speciesID, bucketGen, cells)
 		return
 	}
 	debuglog.Renderf("nativewarm persist species=%d unverified on disk", speciesID)

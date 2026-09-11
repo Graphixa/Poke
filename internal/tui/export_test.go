@@ -113,7 +113,7 @@ func (m Model) NativePaintANSIForTest() string { return m.nativePaintANSI }
 // NativeOverlayDirtyForTest reports whether a native re-paint is requested.
 func (m Model) NativeOverlayDirtyForTest() bool { return m.nativeOverlayDirty }
 
-// NativeOverlayFollowUpForTest builds the single delayed re-paint message.
+// NativeOverlayFollowUpForTest builds the deferred paint/clear message.
 func NativeOverlayFollowUpForTest() nativeOverlayMsg {
 	return nativeOverlayMsg{followUp: true}
 }
@@ -181,14 +181,15 @@ func (m Model) HeaderLoading() bool {
 // EnsureDossierLoadForTest runs ensureDossierLoad (for dialog race tests).
 func (m *Model) EnsureDossierLoadForTest() tea.Cmd { return m.ensureDossierLoad() }
 
+// CancelDossierForTest clears an in-flight dossier load (for tests that discard cmds).
+func (m *Model) CancelDossierForTest() { m.cancelDossier() }
+
 // EnsureSelectionLoadsForTest runs the selected-species sprite load only.
 func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.beginSpriteLoad() }
 
 func (m Model) ResourceCountForTest() int { return len(m.resources) }
 
 func (m Model) ImageStateForTest() int { return int(m.imageState) }
-
-func (m Model) ImageSpinnerForTest() bool { return m.imageSpinner }
 
 func (m Model) ImageSpeciesIDForTest() int { return m.imageSpeciesID }
 

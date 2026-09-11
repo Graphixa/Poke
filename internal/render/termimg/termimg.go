@@ -48,17 +48,17 @@ func Init(p Protocol) {
 	})
 }
 
-// RenderKitty encodes src with the Kitty protocol.
+// RenderKitty encodes src with the Kitty protocol, fitting the cell box.
 func RenderKitty(src stdimage.Image, cellsW, cellsH int) (string, error) {
-	return renderNative(src, cellsW, cellsH, termimg.Kitty)
+	return renderNative(src, cellsW, cellsH, termimg.Kitty, termimg.ScaleFit)
 }
 
-// RenderITerm encodes src with the iTerm2 protocol.
+// RenderITerm encodes src with the iTerm2 protocol, fitting the cell box.
 func RenderITerm(src stdimage.Image, cellsW, cellsH int) (string, error) {
-	return renderNative(src, cellsW, cellsH, termimg.ITerm2)
+	return renderNative(src, cellsW, cellsH, termimg.ITerm2, termimg.ScaleFit)
 }
 
-func renderNative(src stdimage.Image, cellsW, cellsH int, proto termimg.Protocol) (string, error) {
+func renderNative(src stdimage.Image, cellsW, cellsH int, proto termimg.Protocol, scale termimg.ScaleMode) (string, error) {
 	if src == nil {
 		return "", fmt.Errorf("termimg: nil source")
 	}
@@ -71,7 +71,7 @@ func renderNative(src stdimage.Image, cellsW, cellsH int, proto termimg.Protocol
 	out, err := termimg.New(src).
 		Width(cellsW).
 		Height(cellsH).
-		Scale(termimg.ScaleFit).
+		Scale(scale).
 		Protocol(proto).
 		Render()
 	if err != nil {

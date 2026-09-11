@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
@@ -32,14 +31,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nativeOverlayMsg:
 		m, cmd := m.emitNativeOverlay(msg.followUp)
 		return m, tea.Batch(cmd, m.warmFooterPatchIfNeeded())
-
-	case spinner.TickMsg:
-		if m.imageState != ImageLoading {
-			return m, nil
-		}
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
 
 	case tea.WindowSizeMsg:
 		prevShow := m.layout().ShowSprite
@@ -79,9 +70,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.applyCore(msg.dossier, msg.complete)
 		if m.showDialog {
 			m.syncDialogViewport()
+		} else {
+			// Browse header/stats/About change wipes sixel via cell flush.
+			m.markNativeOverlayDirtyFollowUp()
 		}
 		var extrasCmd tea.Cmd
-		if !msg.complete && !r.extrasReady() {
+		// Extras only while the dossier overlay is open — browse highlight loads core alone.
+		if m.showDialog && !msg.complete && !r.extrasReady() {
 			extrasCmd = m.ensureDossierExtras(msg.slug)
 		}
 		return m, tea.Batch(extrasCmd, m.ensureSpriteLoad())
@@ -265,6 +260,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.updateSearch(msg)
 	}
 
+	if key.Matches(msg, m.keys.ViewCycle) {
+		return m.cycleBrowseView()
+	}
+
 	if key.Matches(msg, m.keys.Clear) {
 		m.clearQuery()
 		return m, m.syncSelectionLoads()
@@ -348,6 +347,15 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 	return m, m.ensureDossierLoad()
 }
 
+func (m Model) cycleBrowseView() (tea.Model, tea.Cmd) {
+	prevShow := m.layout().ShowSprite
+	prevSide := m.currentSpriteSide()
+	m.browseView = m.browseView.Next()
+	m.markNativeOverlayDirtyFollowUp()
+	m.notifyWarmer()
+	return m, m.handleSpriteLayoutChange(prevShow, prevSide)
+}
+
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	prev := m.search.Value()
 	var cmd tea.Cmd
@@ -401,7 +409,8 @@ func (m *Model) notifyWarmer() {
 	}
 	if m.warmer != nil {
 		cells := m.currentSpriteCells()
-		if cells >= sprite.MinFrameSize {
+		if cells >= sprite.SmallestFrameBucket() {
+			m.warmer.SetBuckets(sprite.BrowseWarmBuckets())
 			m.warmer.SetCells(cells)
 		}
 		m.warmer.Prioritize(sel.ID)
@@ -413,7 +422,8 @@ func (m *Model) notifyWarmer() {
 		m.artworkWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
 	}
 	if m.nativeWarmer != nil {
-		if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
+		if cells := m.currentSpriteCells(); cells >= sprite.SmallestFrameBucket() {
+			m.nativeWarmer.SetBuckets(sprite.BrowseWarmBuckets())
 			m.nativeWarmer.EnsureStarted(m.ctx, cells)
 		}
 		m.nativeWarmer.Prioritize(sel.ID)
@@ -423,7 +433,22 @@ func (m *Model) notifyWarmer() {
 }
 
 func (m *Model) ensureSelectionLoads() tea.Cmd {
-	return m.ensureSpriteLoad()
+	return tea.Batch(m.ensureDossierCore(), m.ensureSpriteLoad())
+}
+
+// ensureDossierCore loads pokemon+species for glance About / genus without extras.
+func (m *Model) ensureDossierCore() tea.Cmd {
+	sel, ok := m.selected()
+	if !ok || m.details == nil {
+		return nil
+	}
+	r := m.ensureResource(sel.ID)
+	if r.HasCore || r.loadingCore {
+		return nil
+	}
+	r.loadingCore = true
+	r.CoreErr = nil
+	return loadDossierCoreCmd(m.beginDossierLoad(sel.ID), m.details, m.selectionGen, sel.ID, sel.Slug)
 }
 
 func (m *Model) ensureDossierLoad() tea.Cmd {
@@ -520,7 +545,7 @@ func (m *Model) clearNativeDisplay() {
 
 func (m *Model) currentSpriteSide() int {
 	lay := m.layout()
-	if !lay.ShowSprite || lay.SpriteSize < sprite.MinFrameSize {
+	if !lay.ShowSprite || lay.SpriteSize < sprite.SmallestFrameBucket() {
 		return 0
 	}
 	return lay.SpriteSize
@@ -539,7 +564,7 @@ func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 	side := m.currentSpriteSide()
 	if !prevShow || prevSide != side {
 		m.resetSpriteLayoutState()
-		return m.ensureSpriteLoad()
+		return tea.Batch(m.ensureDossierCore(), m.ensureSpriteLoad())
 	}
 	return nil
 }
@@ -576,13 +601,6 @@ func (m *Model) noteFirstLayout(cmd tea.Cmd) tea.Cmd {
 func (m *Model) ensureSpriteLoad() tea.Cmd {
 	load := m.beginSpriteLoad()
 	m.syncWarmerBusy()
-	if load == nil {
-		return nil
-	}
-	if m.imageState == ImageLoading {
-		tick := m.spinner.Tick()
-		return tea.Batch(load, func() tea.Msg { return tick })
-	}
 	return load
 }
 
@@ -602,7 +620,6 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 	force := false
 	if m.imageSpeciesID == sel.ID && m.imageCells == cells && !m.imagePlaceholder && m.imageANSI != "" && !m.imageLoading {
 		m.imageState = ImageReady
-		m.imageSpinner = false
 		// Only treat official artwork as final. Pixel frames must upgrade when
 		// background artwork warm finishes for this species.
 		if m.imageKind == "artwork" {

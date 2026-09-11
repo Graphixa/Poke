@@ -203,6 +203,16 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
 		ListTypes:     svc.Config.ListTypesEnabled(),
 	}
+	if entries, err := svc.Cache.LoadBrowse(); err == nil && len(entries) > 0 {
+		stats := make(map[int]domain.Stats, len(entries))
+		for _, e := range entries {
+			stats[e.ID] = domain.Stats{
+				HP: e.HP, Attack: e.Attack, Defense: e.Defence,
+				SpecialAttack: e.SpAttack, SpecialDefense: e.SpDefence, Speed: e.Speed,
+			}
+		}
+		opts.BrowseStats = stats
+	}
 
 	// Chafa artefact warm only helps chafa-only terminals. Native (Sixel/Kitty/
 	// iTerm) browse uses foreground latest-selection-wins rendering plus
@@ -213,7 +223,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		useProgress = true
 		spriteWarmer = warm.New(warm.Config{
 			Mode:     prewarm,
-			Cells:    sprite.MaxFrameSize,
+			Cells:    sprite.BrowseWarmBuckets()[0],
 			Workers:  sprite.InteractiveWorkers,
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
@@ -225,6 +235,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 				})
 			},
 		})
+		spriteWarmer.SetBuckets(sprite.BrowseWarmBuckets())
 		queueUIReady(func() { spriteWarmer.Start(runCtx) })
 		defer spriteWarmer.Stop()
 		opts.Warmer = spriteWarmer

@@ -50,7 +50,7 @@ func (f *fakeNativeRenderer) cacheKey(id, cells int) string {
 }
 
 func (f *fakeNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Pokemon, cells int) bool {
-	if cells < sprite.MinFrameSize {
+	if cells < sprite.SmallestFrameBucket() {
 		return false
 	}
 	f.mu.Lock()
@@ -60,7 +60,7 @@ func (f *fakeNativeRenderer) HasNativeCache(_ context.Context, pokemon domain.Po
 }
 
 func (f *fakeNativeRenderer) HasNativeFile(_ context.Context, pokemon domain.Pokemon, cells int) bool {
-	if cells < sprite.MinFrameSize {
+	if cells < sprite.SmallestFrameBucket() {
 		return false
 	}
 	f.mu.Lock()
@@ -812,4 +812,102 @@ func TestSetCellsDoesNotAuditFullIndex(t *testing.T) {
 	if rend.calls.Load() != 0 {
 		t.Fatalf("SetCells invoked HasNativeFile %d times", rend.calls.Load())
 	}
+}
+
+func TestBucketsPhaseAdvancesAfterComplete(t *testing.T) {
+	index := indexN(3)
+	disk := map[fakeKey]bool{}
+	for _, sum := range index {
+		disk[fakeKey{sum.ID, 16}] = true
+	}
+	rend := &fakeNativeRenderer{disk: disk}
+	var rec progressRecorder
+	svc := nativewarm.New(nativewarm.Config{
+		Loader:   fakeLoader{},
+		Renderer: rend,
+		Index:    index,
+		Progress: rec.record,
+	})
+	svc.SetBuckets([]int{16, 40})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 16)
+	if svc.ActiveCells() != 16 {
+		t.Fatalf("phase0 ActiveCells=%d want 16", svc.ActiveCells())
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.ActiveCells() == 40 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := svc.ActiveCells(); got != 40 {
+		t.Fatalf("after small complete ActiveCells=%d want 40", got)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	var sawComplete16 bool
+	for time.Now().Before(deadline) {
+		_, _, _, _, all := rec.snapshot()
+		for _, p := range all {
+			if p.Cells == 16 && p.Done >= p.Total && p.Total == len(index) {
+				sawComplete16 = true
+			}
+		}
+		if sawComplete16 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !sawComplete16 {
+		t.Fatal("expected Done>=Total emit for completed glance phase")
+	}
+	// Phase 40 still needs work: a stage-2 0/N emit is allowed (progress bar reset).
+	svc.SetCells(40)
+	if svc.FocusCells() != 40 {
+		t.Fatalf("FocusCells=%d want 40", svc.FocusCells())
+	}
+	if svc.ActiveCells() != 40 {
+		t.Fatalf("multi-bucket SetCells must not abandon phase: ActiveCells=%d", svc.ActiveCells())
+	}
+	svc.Stop()
+}
+
+func TestBucketsBothWarmNoStickyZeroFooter(t *testing.T) {
+	index := indexN(3)
+	disk := map[fakeKey]bool{}
+	for _, sum := range index {
+		disk[fakeKey{sum.ID, 16}] = true
+		disk[fakeKey{sum.ID, 40}] = true
+	}
+	rend := &fakeNativeRenderer{disk: disk}
+	var rec progressRecorder
+	svc := nativewarm.New(nativewarm.Config{
+		Loader:   fakeLoader{},
+		Renderer: rend,
+		Index:    index,
+		Progress: rec.record,
+	})
+	svc.SetBuckets([]int{16, 40})
+	ctx := context.Background()
+	svc.EnsureStarted(ctx, 16)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.ActiveCells() == 40 {
+			done, total := svc.Snapshot()
+			if done == total && total == len(index) {
+				break
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if svc.ActiveCells() != 40 {
+		t.Fatalf("ActiveCells=%d want 40 after both phases warm", svc.ActiveCells())
+	}
+	_, _, _, _, all := rec.snapshot()
+	for _, p := range all {
+		if p.Cells == 40 && p.Done == 0 && p.Total == len(index) {
+			t.Fatalf("sticky 0/%d for already-warm hero phase would leave Image Cache hung: %+v", p.Total, p)
+		}
+	}
+	svc.Stop()
 }

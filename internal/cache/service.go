@@ -98,6 +98,14 @@ func (s *Service) HasActiveDataset() bool {
 	return s.store.HasActiveDataset()
 }
 
+// LoadBrowse returns browse.json rows from the active dataset when present.
+func (s *Service) LoadBrowse() ([]domain.BrowseEntry, error) {
+	if !s.store.HasActiveDataset() {
+		return nil, ErrNotFound
+	}
+	return s.store.LoadBrowse()
+}
+
 func (s *Service) Clear() error {
 	return s.store.Clear()
 }

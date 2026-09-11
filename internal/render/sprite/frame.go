@@ -8,9 +8,10 @@ package sprite
 //	width  = side
 //	height = side / CellAspectY
 //
-// Native sixel buckets are explicit sizes between MinFrameSize and MaxFrameSize.
+// Native sixel buckets are explicit sizes (16 glance … 40 hero).
 const (
-	// MinFrameSize is the smallest longest-side (cells) browse will show.
+	// MinFrameSize is the classic terminal-minimum longest side (helpers /
+	// MinTerminal*). Encode buckets may be smaller (see FrameBuckets / glance).
 	MinFrameSize = 24
 	// MaxFrameSize is the largest longest-side (cells) browse will show.
 	MaxFrameSize = 40
@@ -30,36 +31,47 @@ const (
 
 	// SixelCellPxW/H convert terminal cells to sixel pixel targets.
 	//
-	// These defaults (8×16) approximate common monospace cell geometry. They are
-	// not universal: actual cell pixels vary by terminal/font/DPI. Cache identity
-	// uses the resulting pixel dimensions, so a future improvement (e.g. CSI 16 t
-	// cell-size query) naturally creates distinct artefacts without migration.
+	// Defaults match this repo's Chafa path and typical Windows Terminal /
+	// Cascadia geometry (10×20, still 1:2). The old 8×16 fallback under-filled
+	// the 24×12 art reservation on WT (empty below/right of the graphic).
+	// Cache identity uses the resulting pixel dimensions, so a future CSI 16 t
+	// cell-size query naturally creates distinct artefacts without migration.
 	//
 	// TODO(terminal): query CSI 16 t / DECSRPP when production capability probing
 	// exposes reliable cell pixel dimensions; until then retain this fallback.
-	SixelCellPxW = 8
-	SixelCellPxH = 16
+	SixelCellPxW = 10
+	SixelCellPxH = 20
 )
 
-// FrameBuckets lists the only native sixel frame buckets (24 / 32 / 40).
-var FrameBuckets = [...]int{24, 32, 40}
+// FrameBuckets lists native sixel frame buckets (16 glance / 24 / 32 / 40 hero).
+var FrameBuckets = [...]int{16, 24, 32, 40}
+
+// SmallestFrameBucket is the smallest supported encode/layout bucket.
+func SmallestFrameBucket() int { return FrameBuckets[0] }
+
+// BrowseWarmBuckets is the default warm phase order: glance then hero.
+func BrowseWarmBuckets() []int {
+	return []int{FrameBuckets[0], MaxFrameSize}
+}
 
 // FrameSizeFor returns cell width×height for a longest-side step.
+// Side is snapped to a native bucket (16 / 24 / 32 / 40).
 func FrameSizeFor(side int) (w, h int) {
 	side = ClampFrameSide(side)
 	return side, side / CellAspectY
 }
 
 // ClampFrameSide snaps side down to the largest supported bucket that does not
-// exceed the requested side, clamped to [MinFrameSize, MaxFrameSize].
+// exceed the requested side. Values below the smallest bucket snap up to it.
 func ClampFrameSide(side int) int {
+	minBucket := FrameBuckets[0]
 	if side >= MaxFrameSize {
 		return MaxFrameSize
 	}
-	if side <= MinFrameSize {
-		return MinFrameSize
+	if side <= minBucket {
+		return minBucket
 	}
-	best := MinFrameSize
+	best := minBucket
 	for _, s := range FrameBuckets {
 		if s <= side {
 			best = s
@@ -102,10 +114,10 @@ const MinRightHeaderWidth = 36
 // sizing is not available.
 const RightPanelSharePercent = 42
 
-// BrowseChromeRows is terminal rows outside the sprite body: footer (1) +
-// combined-frame borders (2) + name/types header + gap (3) + divider +
-// switcher (2). Keep in sync with layout spriteChromeRows.
-const BrowseChromeRows = 8
+// BrowseChromeRows is terminal rows outside the minimum art *card* content:
+// footer, outer frame borders, and the name/types header. The pinned art card
+// itself includes its own borders and 1-cell pad (see views.ArtCardOuter).
+const BrowseChromeRows = 5
 
 // MinTerminalWidth is the smallest terminal width that can host the padded
 // *minimum* sprite frame beside a usable list column.
@@ -118,20 +130,34 @@ func MinTerminalWidth() int {
 	return needRight + MinListWidth + 1 // + sep
 }
 
-// MinTerminalHeight is the smallest terminal height that can host the padded
-// *minimum* sprite frame plus browse chrome.
+// MinTerminalHeight is the smallest terminal height that can host the
+// *minimum* pinned art card (24) plus browse chrome (header, frame, footer).
 func MinTerminalHeight() int {
-	_, outerH := OuterFor(MinFrameSize)
-	return outerH + BrowseChromeRows
+	_, cardH := FrameSizeFor(MinFrameSize)
+	cardH += 2 + 2 // card borders + 1-cell pad each side
+	return cardH + BrowseChromeRows
 }
 
-// LargestFrameFitting returns the largest step whose padded outer box fits in
-// the given cell budgets, or 0 if even the minimum does not fit.
+// LargestFrameFitting returns the largest bucket whose padded outer box fits
+// in the given cell budgets, or 0 if even the minimum does not fit.
 func LargestFrameFitting(maxOuterW, maxOuterH int) int {
 	best := 0
 	for _, side := range FrameSteps() {
 		ow, oh := OuterFor(side)
 		if ow <= maxOuterW && oh <= maxOuterH {
+			best = side
+		}
+	}
+	return best
+}
+
+// LargestArtFitting returns the largest FrameBuckets entry whose art box (not
+// OuterFor padding) fits in the given cell budgets, or 0 if none fit.
+func LargestArtFitting(maxArtW, maxArtH int) int {
+	best := 0
+	for _, side := range FrameSteps() {
+		w, h := FrameSizeFor(side)
+		if w <= maxArtW && h <= maxArtH {
 			best = side
 		}
 	}
@@ -163,7 +189,7 @@ func RightPanelWidth(termW, spriteSide int) int {
 	if r < MinRightHeaderWidth {
 		r = MinRightHeaderWidth
 	}
-	if spriteSide >= MinFrameSize {
+	if spriteSide >= SmallestFrameBucket() {
 		ow, _ := OuterFor(spriteSide)
 		if ow+2 > r {
 			r = ow + 2

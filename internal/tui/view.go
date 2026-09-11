@@ -48,8 +48,8 @@ func (m Model) browseData() views.BrowseData {
 	search.SetWidth(searchW)
 
 	bodySide := lay.SpriteSize
-	if bodySide < sprite.MinFrameSize {
-		bodySide = sprite.MinFrameSize
+	if bodySide < sprite.SmallestFrameBucket() {
+		bodySide = sprite.SmallestFrameBucket()
 	}
 
 	data := views.BrowseData{
@@ -90,9 +90,19 @@ func (m Model) browseData() views.BrowseData {
 		data.Selected = sel
 		data.HeaderTypes = style.TypeSummary(sel.Types)
 		data.HeaderGenus = ""
+		if st, ok := m.browseStats[sel.ID]; ok {
+			data.HasBrowseStats = true
+			data.Stats = st
+		}
 		if r := m.resources[sel.ID]; r != nil && r.HasCore {
+			data.HasCore = true
 			data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
 			data.HeaderGenus = r.Species.Genus
+			data.Stats = r.Pokemon.Stats
+			data.HasBrowseStats = true
+			data.AboutHeight = formatHeight(r.Pokemon.HeightDecimeter)
+			data.AboutWeight = formatWeight(r.Pokemon.WeightHectogram)
+			data.AboutBaseExp = r.Pokemon.BaseExperience
 		}
 		if m.imageSpeciesID == sel.ID && !m.imagePlaceholder && m.imageANSI != "" {
 			if m.imageNative {
@@ -106,9 +116,6 @@ func (m Model) browseData() views.BrowseData {
 		data.WarmHint = m.warmRight
 	}
 	data.ImageState = int(m.imageState)
-	if m.imageState == ImageLoading {
-		data.SpriteSpinner = m.spinnerView()
-	}
 	return data
 }
 
@@ -126,7 +133,13 @@ func (m Model) nativeSpriteActive() bool {
 		return false
 	}
 	lay := m.layout()
-	return lay.ShowSprite && lay.SpriteSize >= sprite.MinFrameSize
+	return lay.ShowSprite && lay.SpriteSize >= sprite.SmallestFrameBucket()
+}
+
+// nativeGraphicsOnScreen is true when a native frame for the current selection
+// is expected on the art box — footer progress must use tea.Raw, not View text.
+func (m Model) nativeGraphicsOnScreen() bool {
+	return m.nativeSpriteActive()
 }
 
 // showsWarmHintInView is false while native art is on screen (progress uses tea.Raw
@@ -135,7 +148,7 @@ func (m Model) showsWarmHintInView() bool {
 	if m.showHelp || m.showDialog || m.quitting {
 		return true
 	}
-	if m.nativeSpriteActive() {
+	if m.nativeGraphicsOnScreen() {
 		return false
 	}
 	return true

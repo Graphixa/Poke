@@ -236,11 +236,25 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 
 	// Tab on browse is reserved (sprite variants later) — no-op.
 	m = apply(t, m, key("tab"))
-	if m.ActiveBrowseView() != tui.BrowseSprite {
-		t.Fatalf("view = %v want Sprite", m.ActiveBrowseView())
+	if m.ActiveBrowseView() != tui.BrowseGlance {
+		t.Fatalf("view = %v want Glance", m.ActiveBrowseView())
 	}
-	if details.loadCalls.Load() != 0 {
-		t.Fatalf("browse must not load dossier, got %d", details.loadCalls.Load())
+	m = apply(t, m, key("v"))
+	if m.ActiveBrowseView() != tui.BrowseArt {
+		t.Fatalf("v → Art, got %v", m.ActiveBrowseView())
+	}
+	if f := m.LayoutFlags(); !f.ShowSprite || f.SpriteSize != 40 {
+		t.Fatalf("Art view show=%v size=%d want 40", f.ShowSprite, f.SpriteSize)
+	}
+	m = apply(t, m, key("v"))
+	if m.ActiveBrowseView() != tui.BrowseGlance {
+		t.Fatalf("v cycles back to Glance, got %v", m.ActiveBrowseView())
+	}
+	if details.coreCalls.Load() < 1 {
+		t.Fatalf("browse should load dossier core for About, got %d", details.coreCalls.Load())
+	}
+	if details.extrasCalls.Load() != 0 {
+		t.Fatalf("browse must not load extras, got %d", details.extrasCalls.Load())
 	}
 
 	m = apply(t, m, key("enter"))
@@ -250,8 +264,8 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 	if m.ActiveDialogSection() != tui.DialogSummary {
 		t.Fatalf("section = %v", m.ActiveDialogSection())
 	}
-	if details.loadCalls.Load() != 1 {
-		t.Fatalf("dossier loads = %d", details.loadCalls.Load())
+	if details.coreCalls.Load() != 1 {
+		t.Fatalf("core loads = %d want 1", details.coreCalls.Load())
 	}
 	m = apply(t, m, key("tab"))
 	if m.ActiveDialogSection() != tui.DialogStats {
