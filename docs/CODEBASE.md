@@ -111,11 +111,13 @@ Read path for a paint: mem LRU → gunzip disk → cold encode.
 
 ### 5. Sprite rendering
 
-1. Selection change → `bumpSelection` increments `selectionGen`, blanks view-model image state, and **clears** `nativePaint*` (no sticky previous species). Art shows a themed empty reservation until the new frame is ready (pop-in).
-2. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` (mem/disk, no PNG/HTTP) at `currentSpriteCells()` (Glance `16` or Art `40`). Hit applies immediately.
-3. Miss → `coldsched.Scheduler` latest-selection-wins. `RenderCold` decodes PNG, resizes, encodes (sixel/chafa/halfblock). Loading is blank themed art (no spinner).
+1. Selection change → `bumpSelection` blanks image VM state but **keeps** `nativePaint*` when cell size matches (sticky sixel identity). `glanceHoldID` keeps the previous right-pane species (name/stats/about/art reservation) until the new selection is commit-ready (sprite ready/unavailable). List cursor moves immediately. Art cells stay stable across list-only updates so BT cell-diff may leave on-screen sixel intact.
+2. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` (mem/disk, no PNG/HTTP) at `currentSpriteCells()` (Glance `16` or Art `40`). Hit applies immediately; hold commits on the next `maybeCommitGlanceHold` pass.
+3. Miss → `coldsched.Scheduler` latest-selection-wins. `RenderCold` decodes PNG, resizes, encodes (sixel/chafa/halfblock). Right pane stays on the held species until the frame arrives (no spinner).
 4. Fallback chain: Kitty/iTerm/Sixel (`image`) → chafa → halfblock → placeholder.
-5. Native frames paint via deferred `tea.Raw` overlay (`native_overlay.go`) because Bubble Tea v2 `StyledString` drops DCS and the FPS loop flushes Raw **before** cell `Clear+Draw`. Same-tick Raw is wiped whenever View changes, so paint is always scheduled one frame later (`nativeOverlayMsg`). Paint positions DCS without a prior space-clear; the art reservation uses theme-base backgrounds so wipe frames are not terminal black. Real clears use theme-base cell fills (+ `ClearNativeRegion` when available). Footer progress uses `tea.Raw` (`footer_raw.go`) while current-species native graphics are on screen.
+5. Native frames paint via `tea.Raw` overlay (`native_overlay.go`) because Bubble Tea v2 `StyledString` drops DCS and the FPS loop flushes Raw **before** cell `Clear+Draw`. View-changing dirties (`nativeDeferPaint`) wait one frame (`nativeOverlayMsg`). Every successful ready (and sticky) paint arms one **insurance** re-paint at ~60ms so a follow-on cell flush (dossier core, list settle) does not leave a permanent drop — same recovery window as `origin/main`. Stable-View ready emits Raw immediately, then insurance. **Never wrap stdout / inject into syncd**. Paint positions DCS without a prior space-clear; art reservation uses theme-base backgrounds. Footer progress uses `tea.Raw` (`footer_raw.go`) while current, held, or sticky native graphics are on screen.
+
+**Manual RC (Windows Terminal):** scroll a warm list — right pane must not strobe empty; sixel should not black-void between mons when art cells stay stable; dossier open/resize still restores art. Cold neighbor: previous glance held until the new frame commits once.
 6. Chafa-only terminals may run `warm.Service` with the same `[16,40]` phase policy. Native terminals do not start chafa warm (CPU contention).
 
 ### 6. TUI event processing

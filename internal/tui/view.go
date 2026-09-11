@@ -85,16 +85,17 @@ func (m Model) browseData() views.BrowseData {
 		data.FooterHint = "Tab section • ↑↓ scroll • Esc close"
 	}
 
-	if sel, ok := m.selected(); ok {
+	rightID, hold := m.glanceDisplayID()
+	if sum, ok := m.speciesSummary(rightID); ok {
 		data.HasSelected = true
-		data.Selected = sel
-		data.HeaderTypes = style.TypeSummary(sel.Types)
+		data.Selected = sum
+		data.HeaderTypes = style.TypeSummary(sum.Types)
 		data.HeaderGenus = ""
-		if st, ok := m.browseStats[sel.ID]; ok {
+		if st, ok := m.browseStats[rightID]; ok {
 			data.HasBrowseStats = true
 			data.Stats = st
 		}
-		if r := m.resources[sel.ID]; r != nil && r.HasCore {
+		if r := m.resources[rightID]; r != nil && r.HasCore {
 			data.HasCore = true
 			data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
 			data.HeaderGenus = r.Species.Genus
@@ -104,7 +105,7 @@ func (m Model) browseData() views.BrowseData {
 			data.AboutWeight = formatWeight(r.Pokemon.WeightHectogram)
 			data.AboutBaseExp = r.Pokemon.BaseExperience
 		}
-		if m.imageSpeciesID == sel.ID && !m.imagePlaceholder && m.imageANSI != "" {
+		if !hold && m.imageSpeciesID == rightID && !m.imagePlaceholder && m.imageANSI != "" {
 			if m.imageNative {
 				data.SpriteNative = true
 			} else {
@@ -116,7 +117,84 @@ func (m Model) browseData() views.BrowseData {
 		data.WarmHint = m.warmRight
 	}
 	data.ImageState = int(m.imageState)
+	if hold || m.nativeStickyPaintOK() {
+		// Empty native reservation while held/sticky sixel stays on screen.
+		data.SpriteNative = true
+		if hold {
+			// Stable reservation so list-only View churn does not imply loading UI.
+			data.ImageState = int(ImageReady)
+		}
+	}
 	return data
+}
+
+// glanceDisplayID is the species shown in the right pane (hold or selection).
+func (m Model) glanceDisplayID() (id int, holding bool) {
+	sel, ok := m.selected()
+	if m.glanceHoldID > 0 && ok && m.glanceHoldID != sel.ID && !m.glanceCommitReady() {
+		return m.glanceHoldID, true
+	}
+	if ok {
+		return sel.ID, false
+	}
+	if m.glanceHoldID > 0 {
+		return m.glanceHoldID, true
+	}
+	return 0, false
+}
+
+// glanceCommitReady is true when the selected species can replace a held glance.
+func (m Model) glanceCommitReady() bool {
+	sel, ok := m.selected()
+	if !ok {
+		return true
+	}
+	if m.imageSpeciesID != sel.ID {
+		return false
+	}
+	switch m.imageState {
+	case ImageReady:
+		return !m.imagePlaceholder && m.imageANSI != ""
+	case ImageUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// maybeCommitGlanceHold clears the right-pane hold once the selection is ready.
+func (m *Model) maybeCommitGlanceHold() {
+	if m.glanceHoldID == 0 {
+		return
+	}
+	if m.showHelp || m.showDialog || m.quitting {
+		m.glanceHoldID = 0
+		return
+	}
+	if !m.glanceCommitReady() {
+		return
+	}
+	m.glanceHoldID = 0
+	m.markNativeOverlayDirtyFollowUp()
+}
+
+func (m Model) speciesSummary(id int) (domain.SpeciesSummary, bool) {
+	if id < 1 {
+		return domain.SpeciesSummary{}, false
+	}
+	for _, s := range m.filtered {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	if m.index != nil {
+		for _, s := range m.index.All() {
+			if s.ID == id {
+				return s, true
+			}
+		}
+	}
+	return domain.SpeciesSummary{ID: id}, true
 }
 
 // nativeSpriteActive reports whether a native frame is shown for the selection
@@ -136,14 +214,17 @@ func (m Model) nativeSpriteActive() bool {
 	return lay.ShowSprite && lay.SpriteSize >= sprite.SmallestFrameBucket()
 }
 
-// nativeGraphicsOnScreen is true when a native frame for the current selection
-// is expected on the art box — footer progress must use tea.Raw, not View text.
+// nativeGraphicsOnScreen is true when a native frame (current, hold, or sticky)
+// is expected on the art box — footer progress must use tea.Raw, not View.
 func (m Model) nativeGraphicsOnScreen() bool {
-	return m.nativeSpriteActive()
+	if m.glanceHoldID > 0 {
+		return true
+	}
+	return m.nativeSpriteActive() || m.nativeStickyPaintOK()
 }
 
-// showsWarmHintInView is false while native art is on screen (progress uses tea.Raw
-// on the footer instead). Must not call browseData or nativeOverlayReady.
+// showsWarmHintInView is false while native art is on screen (progress uses
+// tea.Raw footer instead). Must not call browseData or nativeOverlayReady.
 func (m Model) showsWarmHintInView() bool {
 	if m.showHelp || m.showDialog || m.quitting {
 		return true

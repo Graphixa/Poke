@@ -14,16 +14,22 @@ import (
 )
 
 // nativeOverlayMsg signals a deferred native-graphics paint/clear via tea.Raw.
-// Paint must run after Bubble Tea's cell flush: the FPS loop writes Raw first,
-// then Clear+Draw, so same-tick Raw is always wiped when View changed.
+// Paint must run after Bubble Tea's cell flush when View changed: the FPS loop
+// writes Raw first, then Clear+Draw, so same-tick Raw is wiped on View churn.
+// Never wrap stdout / inject into syncd — that corrupts WT cell apply.
 type nativeOverlayMsg struct {
-	// followUp is kept for test helpers; all deferred paints behave the same.
+	// followUp is true for the insurance re-paint after a deferred paint.
 	followUp bool
 }
 
 // nativeOverlayRepaintDelay is one frame at the default BT FPS so the wiping
 // cell flush completes before we emit tea.Raw (which then sticks via viewEquals).
 const nativeOverlayRepaintDelay = time.Second / 60
+
+// nativeOverlayInsuranceDelay is a second re-paint after the first Raw. WT/BT
+// often flush another cell frame (dossier core, list settle) that wipes sixel;
+// main used ~60ms — keep that window so the insurance shot lands after churn.
+const nativeOverlayInsuranceDelay = 60 * time.Millisecond
 
 const (
 	decSaveCursor    = "\x1b7" // DECSC
@@ -33,32 +39,35 @@ const (
 	wtSixelCursorHereOff = "\x1b[?8452l"
 )
 
-// markNativeOverlayDirty requests a deferred paint/clear on the next schedule pass.
+// markNativeOverlayDirty requests a paint eligible for immediate tea.Raw when
+// View is already stable (sprite ready after selection settled).
 func (m *Model) markNativeOverlayDirty() {
 	m.nativeOverlayDirty = true
 }
 
 // markNativeOverlayDirtyFollowUp requests a deferred paint after View-changing
-// updates (selection, dossier core, layout). Same as markNativeOverlayDirty —
-// all native paints are post-flush.
+// updates (selection, dossier core, layout). Same-tick Raw would be wiped.
 func (m *Model) markNativeOverlayDirtyFollowUp() {
 	m.nativeOverlayDirty = true
+	m.nativeDeferPaint = true
 }
 
 // dirtyNativeIfPaintChanged dirties only when the painted payload changes.
+// Uses immediate Dirty — payload refresh without selection View churn.
 func (m *Model) dirtyNativeIfPaintChanged(speciesID, cells int, ansi string) {
 	if speciesID == m.nativePaintSpecies && cells == m.nativePaintCells && ansi == m.nativePaintANSI {
 		return
 	}
-	m.markNativeOverlayDirtyFollowUp()
+	m.markNativeOverlayDirty()
 }
 
-// scheduleNativeOverlay queues a one-frame deferred paint/clear when dirty.
+// scheduleNativeOverlay paints Kitty/iTerm/Sixel via tea.Raw when dirty.
 //
 // BT v2's StyledString drops DCS/graphics from View content, so we reserve blank
-// themed cells and paint via tea.Raw after the cell flush. Emitting Raw on the
-// same Update that changes View is always wiped (flush order: Raw then Clear+Draw).
-// Loading shows an empty themed reservation until the frame is ready (pop-in).
+// themed cells and paint via tea.Raw. View-changing dirties (nativeDeferPaint)
+// wait one frame so Clear+Draw finishes first. Every successful ready paint
+// schedules one insurance re-paint (~60ms) so a follow-on cell flush does not
+// leave a permanent drop. Stable-View ready paints immediately.
 func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 	if !m.nativeOverlayDirty {
 		return m, nil
@@ -77,7 +86,19 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 		if m.width < 1 || m.height < 1 {
 			return m, nil
 		}
+		if m.nativeStickyPaintOK() {
+			m.nativeOverlayDirty = false
+			m.nativeDeferPaint = false
+			m.nativePaintPending = true
+			m.nativePaintInsurance = true // sticky Raw can also be wiped by list churn
+			debuglog.Renderf("native overlay defer sticky")
+			return m, tea.Tick(nativeOverlayRepaintDelay, func(time.Time) tea.Msg {
+				return nativeOverlayMsg{}
+			})
+		}
 		m.nativeOverlayDirty = false
+		m.nativeDeferPaint = false
+		m.nativePaintInsurance = false
 		// Wipe leftover Sixel when we truly have nothing to show (unavailable /
 		// hidden / size change). Avoids ghost art from a prior species.
 		if m.nativePaintANSI != "" || m.nativePaintSpecies != 0 {
@@ -89,12 +110,45 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	deferPaint := m.nativeDeferPaint
 	m.nativeOverlayDirty = false
-	m.nativePaintPending = true
-	debuglog.Renderf("native overlay defer paint")
-	return m, tea.Tick(nativeOverlayRepaintDelay, func(time.Time) tea.Msg {
-		return nativeOverlayMsg{}
-	})
+	m.nativeDeferPaint = false
+	// Always arm insurance for ready paints — dossier/list churn drops sixel.
+	m.nativePaintInsurance = true
+	if deferPaint {
+		m.nativePaintPending = true
+		debuglog.Renderf("native overlay defer paint")
+		return m, tea.Tick(nativeOverlayRepaintDelay, func(time.Time) tea.Msg {
+			return nativeOverlayMsg{}
+		})
+	}
+	debuglog.Renderf("native overlay immediate paint")
+	return m.emitNativeOverlay(false)
+}
+
+// nativeStickyPaintOK is true when we should deferred-repaint the last native
+// frame while the current selection's sprite is not ready yet.
+func (m Model) nativeStickyPaintOK() bool {
+	if m.nativePaintANSI == "" {
+		return false
+	}
+	if m.showHelp || m.showDialog || m.quitting {
+		return false
+	}
+	lay := m.layout()
+	if !lay.ShowSprite || lay.SpriteSize < sprite.SmallestFrameBucket() {
+		return false
+	}
+	cells := m.currentSpriteCells()
+	if cells < 1 || m.nativePaintCells != cells {
+		return false
+	}
+	switch m.imageState {
+	case ImageLoading, ImageBlank:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m Model) emitNativeClear() (Model, tea.Cmd) {
@@ -103,6 +157,8 @@ func (m Model) emitNativeClear() (Model, tea.Cmd) {
 	m.nativePaintSpecies = 0
 	m.nativePaintCells = 0
 	m.nativePaintPending = false
+	m.nativePaintInsurance = false
+	m.nativeDeferPaint = false
 	if m.sprites != nil {
 		m.sprites.ClearNative()
 	}
@@ -133,21 +189,27 @@ func (m Model) nativeOverlayReady() bool {
 	return ok
 }
 
-func (m Model) emitNativeOverlay(_ bool) (Model, tea.Cmd) {
+func (m Model) emitNativeOverlay(followUp bool) (Model, tea.Cmd) {
 	end := debuglog.Trace(debuglog.Render, "frame.paint")
 	defer end()
 	if !m.nativeOverlayReady() {
 		if m.showHelp || m.showDialog {
 			// Keep dirty so dismissing help/dialog restores the paint.
 			m.nativePaintPending = false
+			m.nativePaintInsurance = false
 			m.nativeOverlayDirty = true
+			m.nativeDeferPaint = true
 			debuglog.Renderf("native overlay defer while overlay")
 			return m, nil
+		}
+		if m.nativeStickyPaintOK() {
+			return m.emitNativeStickyOverlay()
 		}
 		if m.nativePaintANSI != "" || m.nativePaintSpecies != 0 {
 			return m.emitNativeClear()
 		}
 		m.nativePaintPending = false
+		m.nativePaintInsurance = false
 		debuglog.Renderf("native overlay stop")
 		return m, nil
 	}
@@ -155,16 +217,55 @@ func (m Model) emitNativeOverlay(_ bool) (Model, tea.Cmd) {
 	row, col, artW, artH, ok := views.SpriteArtOrigin(m.browseData())
 	if !ok {
 		m.nativePaintPending = false
+		m.nativePaintInsurance = false
 		return m, nil
 	}
 	seq := nativeOverlayPaintSeq(row, col, artW, artH, m.imageANSI)
-	debuglog.Renderf("native overlay emit row=%d col=%d %dx%d bytes=%d",
-		row, col, artW, artH, len(m.imageANSI))
+	debuglog.Renderf("native overlay emit row=%d col=%d %dx%d bytes=%d followUp=%v",
+		row, col, artW, artH, len(m.imageANSI), followUp)
 	m.nativePaintSpecies = sel.ID
 	m.nativePaintCells = m.imageCells
 	m.nativePaintANSI = m.imageANSI
-	m.nativePaintPending = false
-	return m, tea.Raw(seq)
+	cmds := []tea.Cmd{tea.Raw(seq)}
+	// Insurance re-paint: a later cell flush (dossier core, warm footer layout)
+	// often wipes the first Raw. One shot at ~60ms matches origin/main recovery.
+	if !followUp && m.nativePaintInsurance {
+		m.nativePaintInsurance = false
+		m.nativePaintPending = true
+		cmds = append(cmds, tea.Tick(nativeOverlayInsuranceDelay, func(time.Time) tea.Msg {
+			return nativeOverlayMsg{followUp: true}
+		}))
+	} else {
+		m.nativePaintPending = false
+		m.nativePaintInsurance = false
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// emitNativeStickyOverlay re-paints the last native frame after a cell wipe
+// while the new selection is still loading. Does not retarget paint identity
+// to the new selection until a real ready paint runs.
+func (m Model) emitNativeStickyOverlay() (Model, tea.Cmd) {
+	row, col, artW, artH, ok := views.SpriteArtRegion(m.browseData())
+	if !ok || m.nativePaintANSI == "" {
+		m.nativePaintPending = false
+		m.nativePaintInsurance = false
+		return m, nil
+	}
+	seq := nativeOverlayPaintSeq(row, col, artW, artH, m.nativePaintANSI)
+	debuglog.Renderf("native overlay sticky emit row=%d col=%d %dx%d bytes=%d species=%d",
+		row, col, artW, artH, len(m.nativePaintANSI), m.nativePaintSpecies)
+	cmds := []tea.Cmd{tea.Raw(seq)}
+	if m.nativePaintInsurance {
+		m.nativePaintInsurance = false
+		m.nativePaintPending = true
+		cmds = append(cmds, tea.Tick(nativeOverlayInsuranceDelay, func(time.Time) tea.Msg {
+			return nativeOverlayMsg{followUp: true}
+		}))
+	} else {
+		m.nativePaintPending = false
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // nativeOverlayPaintSeq positions and paints DCS between DECSC/DECRC.

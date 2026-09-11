@@ -150,9 +150,12 @@ type Model struct {
 	dossierLoadSpecies int
 	nativePaintPending bool
 	nativeOverlayDirty bool
+	nativeDeferPaint   bool // View-changing: defer one frame; false → immediate Raw when ready
+	nativePaintInsurance bool // after deferred paint, one insurance re-paint
 	nativePaintSpecies int
 	nativePaintCells   int
 	nativePaintANSI    string
+	glanceHoldID       int // right pane shows this ID until selection is commit-ready
 
 	warmer           SpriteWarmer
 	dossierWarmer    DossierWarmer
@@ -441,11 +444,15 @@ func (m *Model) bumpSelection() {
 	m.cancelSprite()
 	m.cancelDossier()
 	m.nativePaintPending = false
-	// Drop prior paint tracking — art pops in when the new frame is ready.
-	// Cell flush + themed reservation clear any on-screen sixel.
-	m.nativePaintANSI = ""
-	m.nativePaintSpecies = 0
-	m.nativePaintCells = 0
+	// Keep prior sixel identity when cell size matches so a deferred tick can
+	// sticky-repaint after a wipe. Geometry change drops tracking.
+	cells := m.currentSpriteCells()
+	if cells < 1 || m.nativePaintCells != cells {
+		m.nativePaintANSI = ""
+		m.nativePaintSpecies = 0
+		m.nativePaintCells = 0
+	}
+	m.nativePaintInsurance = false
 	m.markNativeOverlayDirtyFollowUp()
 }
 

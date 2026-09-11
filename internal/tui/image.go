@@ -58,7 +58,9 @@ func (m *Model) applySpriteFrame(speciesID, cells int, res sprite.RenderResult) 
 	m.imagePlaceholder = false
 	m.imageState = ImageReady
 	if res.Native {
-		m.markNativeOverlayDirtyFollowUp()
+		// Stable-View ready (encode after selection settled) → immediate Raw.
+		// Selection/commit paths already set nativeDeferPaint via FollowUp.
+		m.markNativeOverlayDirty()
 	}
 }
 

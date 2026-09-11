@@ -56,8 +56,10 @@ func TestStartupPaintsFirstNativeSprite(t *testing.T) {
 }
 
 func TestNativeOverlayDebounceDoesNotStarve(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	block := make(chan struct{})
 	details := &fakeDetails{}
-	sprites := &fakeSprites{ansi: "ART"}
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
 	m := tui.NewModel(tui.Options{
 		Index:   fixtureIndex(),
 		Details: details,
@@ -65,26 +67,26 @@ func TestNativeOverlayDebounceDoesNotStarve(t *testing.T) {
 	})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-
-	id, ok := m.SelectedID()
-	if !ok {
-		t.Fatal("expected selection")
-	}
+	id, _ := m.SelectedID()
 	cells := m.CurrentSpriteCells()
-	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
-		m.SpriteReqID(), m.SelectionGen(), id, cells,
-		"\x1bP0;0;8q#1~~~\x1b\\", false,
-	))
-	updated, cmd := m.Update(msg)
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
 	m = updated.(tui.Model)
-	if cmd == nil {
-		t.Fatal("expected overlay schedule cmd after native sprite load")
-	}
-	if !m.NativePaintPendingForTest() {
-		t.Fatal("expected nativePaintPending after schedule")
+	for m.NativePaintPendingForTest() {
+		updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+		m = updated.(tui.Model)
 	}
 
-	// Flood updates (warm progress style). Overlay must stay pending through defer window.
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	if cmd != nil {
+		go func() { _ = cmd() }()
+	}
+	// Sticky re-paint while loading is deferred → pending must stick through floods.
+	if !m.NativePaintPendingForTest() {
+		t.Fatal("expected nativePaintPending after selection sticky schedule")
+	}
 	for i := 0; i < 20; i++ {
 		updated, _ = m.Update(tui.WarmProgressMsgForTest(i, 100))
 		m = updated.(tui.Model)
@@ -92,11 +94,14 @@ func TestNativeOverlayDebounceDoesNotStarve(t *testing.T) {
 	if !m.NativePaintPendingForTest() {
 		t.Fatal("overlay pending flag cleared by update flood — paint would starve")
 	}
+	close(block)
 }
 
-func TestNativeOverlayClearsPaintOnSelectionWhileLoading(t *testing.T) {
+
+
+func TestNativeOverlayKeepsPaintOnSelectionWhileLoading(t *testing.T) {
 	details := &fakeDetails{}
-	sprites := &fakeSprites{ansi: "ART"}
+	sprites := &fakeSprites{ansi: "ART", block: make(chan struct{})}
 	m := tui.NewModel(tui.Options{
 		Index:   fixtureIndex(),
 		Details: details,
@@ -118,14 +123,114 @@ func TestNativeOverlayClearsPaintOnSelectionWhileLoading(t *testing.T) {
 		t.Fatal("expected painted native ANSI tracked")
 	}
 
-	updated, _ = m.Update(key("down"))
+	updated, cmd := m.Update(key("down"))
 	m = updated.(tui.Model)
-	// Pop-in UX: drop prior paint tracking; themed blank until next frame ready.
-	if m.NativePaintANSIForTest() != "" {
-		t.Fatalf("selection change must clear prior paint tracking, got %q", m.NativePaintANSIForTest())
+	if cmd != nil {
+		go func() { _ = cmd() }()
+	}
+	// Sticky UX: keep prior paint tracking for deferred re-emit after wipe.
+	if m.NativePaintANSIForTest() != dcs {
+		t.Fatalf("selection change must keep prior paint tracking, got %q", m.NativePaintANSIForTest())
 	}
 	if m.HasSpriteANSI() {
 		t.Fatal("image pane must not keep prior species after selection change")
+	}
+	if m.NativePaintPendingForTest() {
+		updated, cmd = m.Update(tui.NativeOverlayFollowUpForTest())
+		m = updated.(tui.Model)
+		found := false
+		for _, p := range collectRawPayloads(cmd) {
+			if strings.Contains(p, dcs) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatal("deferred follow-up must Raw sticky previous DCS while loading")
+		}
+	}
+	close(sprites.block)
+}
+
+func TestGlanceHoldKeepsPreviousUntilReady(t *testing.T) {
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	const dcs = "\x1bP0;0;8q#A~~~\x1b\\"
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if m.BrowseSelectedNameForTest() != "Charmander" {
+		t.Fatalf("name=%q", m.BrowseSelectedNameForTest())
+	}
+
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	if cmd != nil {
+		go func() { _ = cmd() }()
+	}
+	if m.GlanceHoldIDForTest() != id {
+		t.Fatalf("hold=%d want %d", m.GlanceHoldIDForTest(), id)
+	}
+	if m.BrowseSelectedNameForTest() != "Charmander" {
+		t.Fatalf("held glance name=%q want Charmander", m.BrowseSelectedNameForTest())
+	}
+	nextID, _ := m.SelectedID()
+	if nextID == id {
+		t.Fatal("list selection should have moved")
+	}
+
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, "\x1bP0;0;8q#B~~~\x1b\\", false, true, "artwork"))
+	m = updated.(tui.Model)
+	close(block)
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("hold should clear once new frame is ready")
+	}
+	if m.BrowseSelectedNameForTest() != "Charmeleon" {
+		t.Fatalf("committed name=%q want Charmeleon", m.BrowseSelectedNameForTest())
+	}
+}
+
+func TestGlanceHoldClearsOnHelp(t *testing.T) {
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, "\x1bP0;0;8q#A~~~\x1b\\", false,
+	)))
+	m = updated.(tui.Model)
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	if cmd != nil {
+		go func() { _ = cmd() }()
+	}
+	if m.GlanceHoldIDForTest() == 0 {
+		t.Fatal("expected glance hold before help")
+	}
+	updated, _ = m.Update(key("?"))
+	m = updated.(tui.Model)
+	close(block)
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("help should clear glance hold")
 	}
 }
 
@@ -145,21 +250,144 @@ func TestNativeOverlayNotPerpetualLoop(t *testing.T) {
 		m.SpriteReqID(), m.SelectionGen(), id, cells,
 		"\x1bP0;0;8q#1~~~\x1b\\", false,
 	))
-	updated, _ = m.Update(msg)
+	updated, cmd := m.Update(msg)
 	m = updated.(tui.Model)
-	if !m.NativePaintPendingForTest() {
-		t.Fatal("expected pending after dirty paint schedule")
-	}
-	// Deferred paint clears pending — no perpetual loop.
-	updated, cmd := m.Update(tui.NativeOverlayFollowUpForTest())
-	m = updated.(tui.Model)
-	if m.NativePaintPendingForTest() {
-		t.Fatal("deferred paint should clear nativePaintPending")
+	if m.NativePaintANSIForTest() == "" {
+		t.Fatal("expected immediate paint tracking")
 	}
 	if len(collectRawPayloads(cmd)) == 0 {
-		t.Fatal("expected Raw after deferred paint")
+		t.Fatal("expected Raw on immediate stable paint")
+	}
+	// Immediate ready arms one insurance tick — drain it.
+	if m.NativePaintPendingForTest() {
+		updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+		m = updated.(tui.Model)
+	}
+	if m.NativePaintPendingForTest() {
+		t.Fatal("insurance follow-up must clear nativePaintPending")
+	}
+	// Extra follow-up must not re-arm a perpetual pending loop.
+	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+	if m.NativePaintPendingForTest() {
+		t.Fatal("follow-up must not leave pending without dirty")
 	}
 }
+
+func TestNativeOverlayInsuranceRepaintAfterImmediate(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, cmd := m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if !m.NativePaintPendingForTest() {
+		t.Fatal("ready paint must arm insurance pending")
+	}
+	found := false
+	for _, p := range collectRawPayloads(cmd) {
+		if strings.Contains(p, dcs) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected first Raw with DCS")
+	}
+	updated, cmd = m.Update(tui.NativeOverlayFollowUpForTest())
+	m = updated.(tui.Model)
+	found = false
+	for _, p := range collectRawPayloads(cmd) {
+		if strings.Contains(p, dcs) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("insurance follow-up must Raw-paint again")
+	}
+	if m.NativePaintPendingForTest() {
+		t.Fatal("insurance must be single-shot")
+	}
+}
+
+func TestNativeOverlayImmediateOnStableReady(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+	// Drain any deferred/insurance ticks from first paint.
+	for m.NativePaintPendingForTest() {
+		updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+		m = updated.(tui.Model)
+	}
+	if m.NativePaintANSIForTest() != dcsA {
+		t.Fatalf("species A paint=%q", m.NativePaintANSIForTest())
+	}
+
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	nextID, _ := m.SelectedID()
+	if nextID == id {
+		t.Fatal("expected selection to move")
+	}
+	if cmd != nil {
+		go func() { _ = cmd() }()
+	}
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		_ = m.ForceSpriteLoadForTest()
+	}
+	// Consume deferred sticky tick first so B's paint is a separate Update.
+	if m.NativePaintPendingForTest() {
+		updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
+		m = updated.(tui.Model)
+	}
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, cmd = m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, dcsB, false, true, "artwork"))
+	m = updated.(tui.Model)
+	close(block)
+	// Commit changes View → deferred (+ optional insurance); drain until Raw has B.
+	found := false
+	for i := 0; i < 3; i++ {
+		for _, p := range collectRawPayloads(cmd) {
+			if strings.Contains(p, dcsB) {
+				found = true
+			}
+		}
+		if found || !m.NativePaintPendingForTest() {
+			break
+		}
+		updated, cmd = m.Update(tui.NativeOverlayFollowUpForTest())
+		m = updated.(tui.Model)
+	}
+	if !found {
+		t.Fatal("commit-ready paint must include tea.Raw with B DCS")
+	}
+	if m.NativePaintANSIForTest() != dcsB {
+		t.Fatalf("tracked=%q want B", m.NativePaintANSIForTest())
+	}
+}
+
 
 func TestSpriteArtOriginTwoPane(t *testing.T) {
 	d := views.BrowseData{

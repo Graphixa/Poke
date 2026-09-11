@@ -110,6 +110,14 @@ func (m Model) NativePaintPendingForTest() bool { return m.nativePaintPending }
 // NativePaintANSIForTest returns the last painted native sequence (test helper).
 func (m Model) NativePaintANSIForTest() string { return m.nativePaintANSI }
 
+// GlanceHoldIDForTest returns the right-pane hold species (0 if none).
+func (m Model) GlanceHoldIDForTest() int { return m.glanceHoldID }
+
+// BrowseSelectedNameForTest returns the name shown in the glance header.
+func (m Model) BrowseSelectedNameForTest() string {
+	return m.browseData().Selected.DisplayName
+}
+
 // NativeOverlayDirtyForTest reports whether a native re-paint is requested.
 func (m Model) NativeOverlayDirtyForTest() bool { return m.nativeOverlayDirty }
 

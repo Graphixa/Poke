@@ -20,6 +20,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	next, cmd := m.update(msg)
 	n := next.(Model)
+	n.maybeCommitGlanceHold()
 	// Always drain a dirty overlay after updates — including follow-up paints,
 	// where a warm/list tick may have set dirty while paint was pending.
 	n, overlay := n.scheduleNativeOverlay()
@@ -217,6 +218,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.ForceQuit) {
 		m.quitting = true
+		m.glanceHoldID = 0
 		return m, tea.Quit
 	}
 
@@ -238,6 +240,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if key.Matches(msg, m.keys.Help) {
 		m.showHelp = true
+		m.glanceHoldID = 0
 		return m, nil
 	}
 
@@ -255,6 +258,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Quit) {
 		if m.layout().TooSmall || m.canQuitWithQ() {
 			m.quitting = true
+			m.glanceHoldID = 0
 			return m, tea.Quit
 		}
 		return m.updateSearch(msg)
@@ -340,6 +344,7 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.showDialog = true
+	m.glanceHoldID = 0
 	m.dialogSection = DialogSummary
 	m.dialogVP.GotoTop()
 	m.syncDialogViewport()
@@ -389,8 +394,15 @@ func (m *Model) syncSelectionLoads() tea.Cmd {
 	if id == m.trackedID {
 		return nil
 	}
+	displayed := m.glanceHoldID
+	if displayed == 0 {
+		displayed = m.trackedID
+	}
 	m.trackedID = id
 	m.bumpSelection()
+	if displayed > 0 && displayed != id {
+		m.glanceHoldID = displayed
+	}
 	m.notifyWarmer()
 	return m.ensureSelectionLoads()
 }
