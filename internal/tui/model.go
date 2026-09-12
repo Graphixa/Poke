@@ -148,14 +148,13 @@ type Model struct {
 	dossierCancel      context.CancelFunc
 	dossierLoadCtx     context.Context
 	dossierLoadSpecies int
-	nativePaintPending bool
-	nativeOverlayDirty bool
-	nativeDeferPaint   bool // View-changing: defer one frame; false → immediate Raw when ready
-	nativePaintInsurance bool // after deferred paint, one insurance re-paint
-	nativePaintSpecies int
-	nativePaintCells   int
-	nativePaintANSI    string
-	glanceHoldID       int // right pane shows this ID until selection is commit-ready
+	nativePaintPending  bool
+	nativeOverlayDirty  bool
+	nativeNeedsFollowUp bool // after View-changing dirty: one ~60ms insurance re-paint
+	nativePaintSpecies  int
+	nativePaintCells    int
+	nativePaintANSI     string
+	glanceHoldID        int // text/stats hold until selection commit-ready (does not block sixel)
 
 	warmer           SpriteWarmer
 	dossierWarmer    DossierWarmer
@@ -444,15 +443,17 @@ func (m *Model) bumpSelection() {
 	m.cancelSprite()
 	m.cancelDossier()
 	m.nativePaintPending = false
-	// Keep prior sixel identity when cell size matches so a deferred tick can
-	// sticky-repaint after a wipe. Geometry change drops tracking.
-	cells := m.currentSpriteCells()
-	if cells < 1 || m.nativePaintCells != cells {
-		m.nativePaintANSI = ""
-		m.nativePaintSpecies = 0
-		m.nativePaintCells = 0
+	m.nativeNeedsFollowUp = false
+	if m.sprites != nil {
+		m.sprites.ClearNative()
 	}
-	m.nativePaintInsurance = false
+	// Drop paint identity (species/ANSI). Keep nativePaintCells as geometry token
+	// so a same-bucket ready paint can overwrite in place after ClearNative +
+	// themed reservation — avoids a second space-clear flash on warm scroll.
+	// Real wipes (emitNativeClear, help/dialog dismiss, size change) zero cells.
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	// Dirty overlay so scheduleNativeOverlay wipes or repaints as needed.
 	m.markNativeOverlayDirtyFollowUp()
 }
 

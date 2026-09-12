@@ -193,6 +193,64 @@ func TestSpriteArtOriginStable(t *testing.T) {
 	}
 }
 
+// TestSpriteArtOriginMatchesRenderedCard locks paint CUP to the Glance art
+// inner box (not the card border / not a bottom strip).
+func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
+	rw := views.GlanceRightPanelWidth()
+	d := views.BrowseData{
+		Width: 120, Height: 50,
+		HasSelected: true,
+		Selected:    domain.SpeciesSummary{ID: 25, DisplayName: "Pikachu"},
+		ShowSprite:  true, SpriteNative: true,
+		BodySize:    views.GlanceBucket,
+		LeftWidth:   120 - rw - 1, RightWidth: rw,
+		HasBrowseStats: true,
+		Stats:          domain.Stats{HP: 35, Attack: 55, Defense: 40, SpecialAttack: 50, SpecialDefense: 50, Speed: 90},
+		HasCore:        true,
+		AboutHeight:    "0.4 m", AboutWeight: "6.0 kg", AboutBaseExp: 112,
+		HeaderTypes:    "Electric",
+		ImageState:     2,
+	}
+	row, col, artW, artH, ok := views.SpriteArtOrigin(d)
+	if !ok {
+		t.Fatal("expected origin")
+	}
+	if artW != 16 || artH != 8 {
+		t.Fatalf("art %dx%d want 16x8", artW, artH)
+	}
+
+	plain := stripANSI(views.Browse(d))
+	lines := strings.Split(plain, "\n")
+	artTop, artCol := -1, -1
+	for i, line := range lines {
+		runes := []rune(line)
+		for j := 0; j < len(runes)-1; j++ {
+			if runes[j] != '╭' || runes[j+1] != '─' || j == 0 || runes[j-1] != '│' {
+				continue
+			}
+			rest := string(runes[j:])
+			if strings.HasPrefix(rest, "╭─ Stats") || strings.HasPrefix(rest, "╭─ About") {
+				continue
+			}
+			artTop, artCol = i, j
+			break
+		}
+		if artTop >= 0 {
+			break
+		}
+	}
+	if artTop < 0 {
+		t.Fatalf("art card not found:\n%s", plain)
+	}
+	g := views.ComputeGlance(rw-1, 50-1-2, true)
+	wantRow := artTop + 1 + 1 + g.ArtPadY // 1-index border row + inner top + pad
+	wantCol := artCol + 1 + 1 + g.ArtPadX
+	if row != wantRow || col != wantCol {
+		t.Fatalf("SpriteArtOrigin=%d,%d want card-inner %d,%d (card top 0-index %d,%d pad %d,%d)",
+			row, col, wantRow, wantCol, artTop, artCol, g.ArtPadX, g.ArtPadY)
+	}
+}
+
 func TestGlanceAboutRequiresFullHug(t *testing.T) {
 	_, artH := views.ArtCardOuter(views.GlanceBucket)
 	// rightInnerH = header + art + (hug-1) → remain too small for full About hug.

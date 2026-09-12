@@ -111,14 +111,19 @@ Read path for a paint: mem LRU → gunzip disk → cold encode.
 
 ### 5. Sprite rendering
 
-1. Selection change → `bumpSelection` blanks image VM state but **keeps** `nativePaint*` when cell size matches (sticky sixel identity). `glanceHoldID` keeps the previous right-pane species (name/stats/about/art reservation) until the new selection is commit-ready (sprite ready/unavailable). List cursor moves immediately. Art cells stay stable across list-only updates so BT cell-diff may leave on-screen sixel intact.
-2. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` (mem/disk, no PNG/HTTP) at `currentSpriteCells()` (Glance `16` or Art `40`). Hit applies immediately; hold commits on the next `maybeCommitGlanceHold` pass.
-3. Miss → `coldsched.Scheduler` latest-selection-wins. `RenderCold` decodes PNG, resizes, encodes (sixel/chafa/halfblock). Right pane stays on the held species until the frame arrives (no spinner).
-4. Fallback chain: Kitty/iTerm/Sixel (`image`) → chafa → halfblock → placeholder.
-5. Native frames paint via `tea.Raw` overlay (`native_overlay.go`) because Bubble Tea v2 `StyledString` drops DCS and the FPS loop flushes Raw **before** cell `Clear+Draw`. View-changing dirties (`nativeDeferPaint`) wait one frame (`nativeOverlayMsg`). Every successful ready (and sticky) paint arms one **insurance** re-paint at ~60ms so a follow-on cell flush (dossier core, list settle) does not leave a permanent drop — same recovery window as `origin/main`. Stable-View ready emits Raw immediately, then insurance. **Never wrap stdout / inject into syncd**. Paint positions DCS without a prior space-clear; art reservation uses theme-base backgrounds. Footer progress uses `tea.Raw` (`footer_raw.go`) while current, held, or sticky native graphics are on screen.
+**Snappy native paint (no stdout wrap):** Glance/Art keep cell-buffer truth for chafa/halfblock. Native (Sixel/Kitty/iTerm) reserves blank themed cells and paints via `tea.Raw` only — never wrap stdout / `tea.WithOutput` / syncd inject, never fork Bubble Tea.
 
-**Manual RC (Windows Terminal):** scroll a warm list — right pane must not strobe empty; sixel should not black-void between mons when art cells stay stable; dossier open/resize still restores art. Cold neighbor: previous glance held until the new frame commits once.
-6. Chafa-only terminals may run `warm.Service` with the same `[16,40]` phase policy. Native terminals do not start chafa warm (CPU contention).
+1. Selection change → `bumpSelection` blanks image VM, `ClearNative()`, clears paint identity (`nativePaintANSI` / species) but **keeps** `nativePaintCells` as a geometry token, marks FollowUp dirty. `glanceHoldID` may keep previous **text/stats/about** until the new selection is commit-ready; it does **not** sticky-preserve prior graphics. List cursor moves immediately; art shows themed blank reservation (no spinner).
+2. Not-ready dirty → `emitNativeClear` (themed space-clear art rect, zeros geometry) — **only when a frame was actually painted** (skipped on startup / already-clear), and **spaces only**: no solid-Sixel `ClearNativeRegion` fill (encoding an opaque rect per uncached selection was pure lag; a cell write already erases Sixel on WT). Ready dirty → immediate `emitNativeOverlay`: **same cell bucket** overwrites in place (DCS only); **first paint / size change / post-wipe** space-clears then DCS. View-changing dirties set `nativeNeedsFollowUp` so the first paint also arms one ~60ms insurance re-paint — not a defer-first 16ms wait.
+   - **Browse dossier-core arrival** repaints the overlay **once, in place** via `markNativeOverlayDirty` (no `FollowUp`) and only while a native sprite is active. Core adds genus/About cells outside the art box; the Sixel payload is unchanged, so it must not arm a second, delayed ~60ms redraw (that late re-paint per newly-browsed species read as "much slower"). `origin/main` did not repaint on core at all; this is the minimal safe version.
+3. Stable-frame gate (`nativeOverlayReady`): native image ready for the selected species and sprite shown (hold is text-only; commit clears hold then paints Raw in the same Update).
+4. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` at `currentSpriteCells()` (Glance `16` or Art `40`). Hit applies immediately; cell art appears in View on apply; native marks FollowUp for immediate Raw + insurance.
+5. Miss → `coldsched.Scheduler` latest-selection-wins. Right pane text may stay on the held species until the frame arrives (no spinner).
+6. Fallback chain: Kitty/iTerm/Sixel (`image`) → chafa → halfblock → placeholder. Cell art in View is buffer-safe; native frames use reservation + Raw.
+7. Native paint seq: DECSC → (optional theme space-clear + slack) → CUP + `?8452h` + DCS + `?8452l` → DECRC. Space-clear only on geometry/identity wipe; same-geometry paints overwrite. Help/dialog dismiss invalidates geometry so restore clears. Footer progress uses `tea.Raw` (`footer_raw.go`) while native graphics are on screen for the selection.
+
+**Manual RC (Windows Terminal):** scroll a warm list — same-bucket overwrite (no pre-DCS space-clear flash); immediate Raw + ~60ms insurance. Cold neighbor: previous glance **text** held until commit; sixel clears then paints when ready. Dossier/help dismiss still space-clears then restores art. No spinner tick churn.
+8. Chafa-only terminals may run `warm.Service` with the same `[16,40]` phase policy. Native terminals do not start chafa warm (CPU contention).
 
 ### 6. TUI event processing
 
@@ -530,7 +535,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `native_overlay.go` / `footer_raw.go` / `warm_footer.go`
 
-- Deferred Raw sixel paint (post cell-flush) and raw footer patch. Footer **only** renders native stage.
+- Snappy immediate Raw when ready; same-geometry overwrite (no space-clear); clear+DCS on geometry/identity wipe; `nativeNeedsFollowUp` → one ~60ms insurance. Not-ready → immediate clear. No stdout wrap. Footer **only** renders native stage via Raw while graphics on screen.
 
 #### `image.go` / `resources.go` / `content.go` / `view.go` / `layout.go` / `frame.go` / `keys.go` / `tabs.go` / `run.go`
 

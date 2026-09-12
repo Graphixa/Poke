@@ -71,9 +71,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.applyCore(msg.dossier, msg.complete)
 		if m.showDialog {
 			m.syncDialogViewport()
-		} else {
-			// Browse header/stats/About change wipes sixel via cell flush.
-			m.markNativeOverlayDirtyFollowUp()
+		} else if m.nativeSpriteActive() {
+			// Core only adds genus/About cells outside the art box; the Sixel
+			// payload is unchanged. Repaint once, in place (no space-clear, no
+			// delayed ~60ms insurance) so the art re-lays if the cell flush
+			// grazed it — without the second, delayed redraw that read as lag
+			// on WT while browsing new species. origin/main did not repaint the
+			// overlay on core arrival at all; this is the minimal safe version.
+			m.markNativeOverlayDirty()
 		}
 		var extrasCmd tea.Cmd
 		// Extras only while the dossier overlay is open — browse highlight loads core alone.
@@ -225,6 +230,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		if key.Matches(msg, m.keys.Help, m.keys.Clear) {
 			m.showHelp = false
+			// Help View wiped sixel; force space-clear on restore paint.
+			m.invalidateNativePaintGeometry()
 			m.markNativeOverlayDirtyFollowUp()
 		}
 		return m, nil
@@ -293,7 +300,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Clear, m.keys.Quit) {
 		m.showDialog = false
-		// Dialog wiped native graphics from the cell grid; re-paint cached art.
+		// Dialog wiped native graphics from the cell grid; force space-clear restore.
+		m.invalidateNativePaintGeometry()
 		m.markNativeOverlayDirtyFollowUp()
 		return m, nil
 	}

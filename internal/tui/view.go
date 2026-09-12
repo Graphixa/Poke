@@ -107,8 +107,10 @@ func (m Model) browseData() views.BrowseData {
 		}
 		if !hold && m.imageSpeciesID == rightID && !m.imagePlaceholder && m.imageANSI != "" {
 			if m.imageNative {
+				// Native reservation; Raw paint via scheduleNativeOverlay.
 				data.SpriteNative = true
 			} else {
+				// Cell art (chafa/halfblock) is buffer truth; no Raw needed.
 				data.SpriteANSI = m.imageANSI
 			}
 		}
@@ -117,14 +119,6 @@ func (m Model) browseData() views.BrowseData {
 		data.WarmHint = m.warmRight
 	}
 	data.ImageState = int(m.imageState)
-	if hold || m.nativeStickyPaintOK() {
-		// Empty native reservation while held/sticky sixel stays on screen.
-		data.SpriteNative = true
-		if hold {
-			// Stable reservation so list-only View churn does not imply loading UI.
-			data.ImageState = int(ImageReady)
-		}
-	}
 	return data
 }
 
@@ -162,7 +156,8 @@ func (m Model) glanceCommitReady() bool {
 	}
 }
 
-// maybeCommitGlanceHold clears the right-pane hold once the selection is ready.
+// maybeCommitGlanceHold clears the right-pane text hold once the selection is ready.
+// Commit must not defer the first ready sixel — FollowUp only arms ~60ms insurance.
 func (m *Model) maybeCommitGlanceHold() {
 	if m.glanceHoldID == 0 {
 		return
@@ -214,13 +209,10 @@ func (m Model) nativeSpriteActive() bool {
 	return lay.ShowSprite && lay.SpriteSize >= sprite.SmallestFrameBucket()
 }
 
-// nativeGraphicsOnScreen is true when a native frame (current, hold, or sticky)
-// is expected on the art box — footer progress must use tea.Raw, not View.
+// nativeGraphicsOnScreen is true when a native frame is expected on the art box —
+// footer progress must use tea.Raw, not View.
 func (m Model) nativeGraphicsOnScreen() bool {
-	if m.glanceHoldID > 0 {
-		return true
-	}
-	return m.nativeSpriteActive() || m.nativeStickyPaintOK()
+	return m.nativeSpriteActive()
 }
 
 // showsWarmHintInView is false while native art is on screen (progress uses

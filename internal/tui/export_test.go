@@ -131,9 +131,16 @@ func ClearCellRectForTest(row, col, w, h int) string {
 	return clearCellRect(row, col, w, h)
 }
 
-// NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite.
+// NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite
+// with a leading space-clear (first paint / geometry wipe).
 func NativeOverlayPaintSeqForTest(row, col, artW, artH int, ansi string) string {
-	return nativeOverlayPaintSeq(row, col, artW, artH, ansi)
+	return nativeOverlayPaintSeq(row, col, artW, artH, ansi, true)
+}
+
+// NativeOverlayPaintOnlySeqForTest paints DCS without a leading space-clear
+// (same-geometry overwrite path).
+func NativeOverlayPaintOnlySeqForTest(row, col, artW, artH int, ansi string) string {
+	return nativeOverlayPaintSeq(row, col, artW, artH, ansi, false)
 }
 
 // BrowseWarmHintForTest returns the warm status shown in the browse footer (right segment).
