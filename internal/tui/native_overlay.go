@@ -118,7 +118,7 @@ func (m Model) emitNativeClear() (Model, tea.Cmd) {
 }
 
 // nativeOverlayReady is true when a native frame can paint for the selection.
-// Glance hold is text-only and must not block ready sixel after commit.
+// Glance text hold does not block ready sixel — art may paint while About lags.
 func (m Model) nativeOverlayReady() bool {
 	if m.showHelp || m.showDialog || m.quitting {
 		return false

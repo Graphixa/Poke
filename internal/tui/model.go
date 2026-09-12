@@ -154,7 +154,14 @@ type Model struct {
 	nativePaintSpecies  int
 	nativePaintCells    int
 	nativePaintANSI     string
-	glanceHoldID        int // text/stats hold until selection commit-ready (does not block sixel)
+	glanceHoldID        int // text/stats/About hold until commit-ready (does not block sixel)
+	// Last-good About/genus snapshot: survives glanceHoldID churn and resources LRU
+	// eviction during cold fast scroll (hold ID alone is not enough).
+	glanceAboutFromID  int
+	glanceAboutHeight  string
+	glanceAboutWeight  string
+	glanceAboutBaseExp int
+	glanceHeaderGenus  string
 
 	warmer           SpriteWarmer
 	dossierWarmer    DossierWarmer

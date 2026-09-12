@@ -69,6 +69,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		r.applyCore(msg.dossier, msg.complete)
+		m.refreshGlanceAboutSnapshot(msg.speciesID)
 		if m.showDialog {
 			m.syncDialogViewport()
 		} else if m.nativeSpriteActive() {
@@ -463,7 +464,11 @@ func (m *Model) ensureDossierCore() tea.Cmd {
 		return nil
 	}
 	r := m.ensureResource(sel.ID)
-	if r.HasCore || r.loadingCore {
+	if r.HasCore {
+		m.refreshGlanceAboutSnapshot(sel.ID)
+		return nil
+	}
+	if r.loadingCore {
 		return nil
 	}
 	r.loadingCore = true
@@ -481,6 +486,7 @@ func (m *Model) ensureDossierLoad() tea.Cmd {
 		return nil
 	}
 	if r.HasCore {
+		m.refreshGlanceAboutSnapshot(sel.ID)
 		return m.ensureDossierExtras(sel.Slug)
 	}
 	if r.loadingCore {

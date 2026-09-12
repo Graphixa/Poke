@@ -447,6 +447,183 @@ func TestNativeOverlayImmediateOnStableReady(t *testing.T) {
 	}
 }
 
+// Selection change must not blank About when the previous species had core and
+// the new frame arrives before the new species' core. Text hold keeps About;
+// sixel may still paint immediately.
+func TestGlanceHoldKeepsAboutUntilNewCore(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+
+	heldCore := domain.Dossier{
+		Pokemon: domain.Pokemon{
+			ID: id, DisplayName: "Charmander",
+			HeightDecimeter: 6, WeightHectogram: 85, BaseExperience: 62,
+			Types: []domain.TypeSlot{{Slot: 1, Name: "fire"}},
+			Stats: domain.Stats{HP: 39, Attack: 52, Defense: 43, SpecialAttack: 60, SpecialDefense: 50, Speed: 65},
+		},
+		Species: domain.Species{ID: id, Genus: "Lizard Pokémon"},
+	}
+	updated, _ = m.Update(tui.DossierCoreMsgForTest(m.SelectionGen(), id, heldCore, false, nil))
+	m = updated.(tui.Model)
+	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "0.6 m" {
+		t.Fatalf("setup About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	}
+
+	// Discard load cmds so neighbor core does not arrive before we assert hold.
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	nextID, _ := m.SelectedID()
+	if m.GlanceHoldIDForTest() != id {
+		t.Fatalf("hold=%d want %d", m.GlanceHoldIDForTest(), id)
+	}
+	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "0.6 m" {
+		t.Fatalf("held About cleared early: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	}
+
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, cmd := m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, dcsB, false, true, "artwork"))
+	m = updated.(tui.Model)
+	close(block)
+
+	if m.GlanceHoldIDForTest() != id {
+		t.Fatal("sprite-ready must not clear text hold while new About is missing")
+	}
+	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "0.6 m" {
+		t.Fatalf("About blanked after sprite commit: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	}
+	if m.BrowseSelectedNameForTest() != "Charmander" {
+		t.Fatalf("identity should stay held, got %q", m.BrowseSelectedNameForTest())
+	}
+	found := false
+	for _, p := range collectRawPayloads(cmd) {
+		if strings.Contains(p, dcsB) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("sixel must paint for selection even while About hold remains")
+	}
+
+	nextCore := domain.Dossier{
+		Pokemon: domain.Pokemon{
+			ID: nextID, DisplayName: "Charmeleon",
+			HeightDecimeter: 11, WeightHectogram: 190, BaseExperience: 142,
+			Types: []domain.TypeSlot{{Slot: 1, Name: "fire"}},
+			Stats: domain.Stats{HP: 58, Attack: 64, Defense: 58, SpecialAttack: 80, SpecialDefense: 65, Speed: 80},
+		},
+		Species: domain.Species{ID: nextID, Genus: "Flame Pokémon"},
+	}
+	updated, _ = m.Update(tui.DossierCoreMsgForTest(m.SelectionGen(), nextID, nextCore, false, nil))
+	m = updated.(tui.Model)
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("new core should commit text hold")
+	}
+	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "1.1 m" {
+		t.Fatalf("committed About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	}
+	if m.BrowseSelectedNameForTest() != "Charmeleon" {
+		t.Fatalf("committed name=%q", m.BrowseSelectedNameForTest())
+	}
+}
+
+// Cold fast scroll: About must keep the last-good snapshot after leaving a warm
+// mon, even when that mon is LRU-evicted and hold ID churns across cold species.
+func TestGlanceAboutSnapshotSurvivesColdFastScroll(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsD = "\x1bP0;0;8q#D~~~\x1b\\"
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "COLD", native: true},
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	idA, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), idA, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+
+	coreA := domain.Dossier{
+		Pokemon: domain.Pokemon{
+			ID: idA, DisplayName: "Charmander",
+			HeightDecimeter: 6, WeightHectogram: 85, BaseExperience: 62,
+			Types: []domain.TypeSlot{{Slot: 1, Name: "fire"}},
+			Stats: domain.Stats{HP: 39, Attack: 52, Defense: 43, SpecialAttack: 60, SpecialDefense: 50, Speed: 65},
+		},
+		Species: domain.Species{ID: idA, Genus: "Lizard Pokémon"},
+	}
+	updated, _ = m.Update(tui.DossierCoreMsgForTest(m.SelectionGen(), idA, coreA, false, nil))
+	m = updated.(tui.Model)
+	if m.GlanceAboutFromIDForTest() != idA {
+		t.Fatalf("snapshot fromID=%d want %d", m.GlanceAboutFromIDForTest(), idA)
+	}
+	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "0.6 m" {
+		t.Fatalf("setup About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	}
+
+	// Fast Down through cold B, C, D — discard load cmds so cores never arrive.
+	var idD int
+	for i := 0; i < 3; i++ {
+		updated, _ = m.Update(key("down"))
+		m = updated.(tui.Model)
+		idD, _ = m.SelectedID()
+	}
+	if idD == idA {
+		t.Fatal("expected to land on a later species")
+	}
+
+	// Simulate resources LRU dropping the warm mon that owned About.
+	m.DropResourceForTest(idA)
+	if m.ResourceName(idA) != "" {
+		t.Fatal("eviction setup failed")
+	}
+
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.ColdFrameMsgForTest(gen, idD, cells, dcsD, false, true, "artwork"))
+	m = updated.(tui.Model)
+
+	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "0.6 m" {
+		t.Fatalf("cold scroll blanked About: has=%v height=%q fromID=%d",
+			m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest(), m.GlanceAboutFromIDForTest())
+	}
+
+	coreD := domain.Dossier{
+		Pokemon: domain.Pokemon{
+			ID: idD, DisplayName: "Charizard",
+			HeightDecimeter: 17, WeightHectogram: 905, BaseExperience: 240,
+			Types: []domain.TypeSlot{{Slot: 1, Name: "fire"}, {Slot: 2, Name: "flying"}},
+			Stats: domain.Stats{HP: 78, Attack: 84, Defense: 78, SpecialAttack: 109, SpecialDefense: 85, Speed: 100},
+		},
+		Species: domain.Species{ID: idD, Genus: "Flame Pokémon"},
+	}
+	updated, _ = m.Update(tui.DossierCoreMsgForTest(m.SelectionGen(), idD, coreD, false, nil))
+	m = updated.(tui.Model)
+	if m.GlanceAboutFromIDForTest() != idD {
+		t.Fatalf("warm settle snapshot fromID=%d want %d", m.GlanceAboutFromIDForTest(), idD)
+	}
+	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "1.7 m" {
+		t.Fatalf("settled About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	}
+}
 
 func TestSpriteArtOriginTwoPane(t *testing.T) {
 	d := views.BrowseData{

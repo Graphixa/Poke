@@ -113,9 +113,34 @@ func (m Model) NativePaintANSIForTest() string { return m.nativePaintANSI }
 // GlanceHoldIDForTest returns the right-pane hold species (0 if none).
 func (m Model) GlanceHoldIDForTest() int { return m.glanceHoldID }
 
+// GlanceAboutFromIDForTest returns the species ID last snapshotted for About.
+func (m Model) GlanceAboutFromIDForTest() int { return m.glanceAboutFromID }
+
+// DropResourceForTest removes a species from the detail LRU (simulates eviction).
+func (m *Model) DropResourceForTest(id int) {
+	delete(m.resources, id)
+	out := m.lruIDs[:0]
+	for _, existing := range m.lruIDs {
+		if existing != id {
+			out = append(out, existing)
+		}
+	}
+	m.lruIDs = out
+}
+
 // BrowseSelectedNameForTest returns the name shown in the glance header.
 func (m Model) BrowseSelectedNameForTest() string {
 	return m.browseData().Selected.DisplayName
+}
+
+// BrowseAboutHasCoreForTest reports whether browseData currently exposes About.
+func (m Model) BrowseAboutHasCoreForTest() bool {
+	return m.browseData().HasCore
+}
+
+// BrowseAboutHeightForTest returns the About height string from browseData.
+func (m Model) BrowseAboutHeightForTest() string {
+	return m.browseData().AboutHeight
 }
 
 // NativeOverlayDirtyForTest reports whether a native re-paint is requested.
