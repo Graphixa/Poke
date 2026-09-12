@@ -79,73 +79,18 @@ func ContentBounds(src image.Image, alphaThreshold uint8) image.Rectangle {
 	return image.Rect(minX, minY, maxX, maxY)
 }
 
-// CropAndPrepare trims transparent margins to a 1:1 crop and composites onto bg
-// in one pass (single bounds scan + single write pass).
+// CropAndPrepare trims transparent margins to a 1:1 crop and composites onto bg.
 func CropAndPrepare(src image.Image, bg color.RGBA, alphaThreshold uint8, pad int) *image.RGBA {
-	if src == nil {
-		out := image.NewRGBA(image.Rect(0, 0, 1, 1))
-		draw.Draw(out, out.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
-		return out
-	}
-	if bg.A == 0 {
-		bg = DefaultBackground
-	}
-	if pad < 0 {
-		pad = 0
-	}
-	b := src.Bounds()
-	content := ContentBounds(src, alphaThreshold)
-	content = content.Inset(-pad).Intersect(b)
-	if content.Empty() {
-		content = b
-	}
-
-	side := content.Dx()
-	if content.Dy() > side {
-		side = content.Dy()
-	}
-	if side < 1 {
-		side = 1
-	}
-	cx := (content.Min.X + content.Max.X) / 2
-	cy := (content.Min.Y + content.Max.Y) / 2
-	sq := image.Rect(cx-side/2, cy-side/2, cx-side/2+side, cy-side/2+side)
-
-	dst := image.NewRGBA(image.Rect(0, 0, side, side))
-	draw.Draw(dst, dst.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
-
-	for y := 0; y < side; y++ {
-		sy := sq.Min.Y + y
-		for x := 0; x < side; x++ {
-			sx := sq.Min.X + x
-			if !image.Pt(sx, sy).In(b) {
-				continue
-			}
-			r, g, bl, a := src.At(sx, sy).RGBA()
-			a8 := uint8(a >> 8)
-			if a8 < alphaThreshold {
-				continue
-			}
-			srcC := color.RGBA{
-				R: uint8(r >> 8),
-				G: uint8(g >> 8),
-				B: uint8(bl >> 8),
-				A: a8,
-			}
-			if a8 == 255 {
-				dst.SetRGBA(x, y, srcC)
-				continue
-			}
-			dst.SetRGBA(x, y, blendOver(bg, srcC))
-		}
-	}
-	return dst
+	return cropAndComposite(src, bg, alphaThreshold, pad, true)
 }
 
 // CropAndPrepareTight trims transparent margins and composites onto bg without
-// forcing a 1:1 square (square padding was letterboxing subjects inside the
-// encode target). pad expands the content rect before crop.
+// forcing a 1:1 square.
 func CropAndPrepareTight(src image.Image, bg color.RGBA, alphaThreshold uint8, pad int) *image.RGBA {
+	return cropAndComposite(src, bg, alphaThreshold, pad, false)
+}
+
+func cropAndComposite(src image.Image, bg color.RGBA, alphaThreshold uint8, pad int, square bool) *image.RGBA {
 	if src == nil {
 		out := image.NewRGBA(image.Rect(0, 0, 1, 1))
 		draw.Draw(out, out.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
@@ -163,21 +108,39 @@ func CropAndPrepareTight(src image.Image, bg color.RGBA, alphaThreshold uint8, p
 	if content.Empty() {
 		content = b
 	}
-	w, h := content.Dx(), content.Dy()
-	if w < 1 {
-		w = 1
-	}
-	if h < 1 {
-		h = 1
+
+	var srcRect image.Rectangle
+	var dw, dh int
+	if square {
+		side := content.Dx()
+		if content.Dy() > side {
+			side = content.Dy()
+		}
+		if side < 1 {
+			side = 1
+		}
+		cx := (content.Min.X + content.Max.X) / 2
+		cy := (content.Min.Y + content.Max.Y) / 2
+		srcRect = image.Rect(cx-side/2, cy-side/2, cx-side/2+side, cy-side/2+side)
+		dw, dh = side, side
+	} else {
+		srcRect = content
+		dw, dh = content.Dx(), content.Dy()
+		if dw < 1 {
+			dw = 1
+		}
+		if dh < 1 {
+			dh = 1
+		}
 	}
 
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
 	draw.Draw(dst, dst.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
 
-	for y := 0; y < h; y++ {
-		sy := content.Min.Y + y
-		for x := 0; x < w; x++ {
-			sx := content.Min.X + x
+	for y := 0; y < dh; y++ {
+		sy := srcRect.Min.Y + y
+		for x := 0; x < dw; x++ {
+			sx := srcRect.Min.X + x
 			if !image.Pt(sx, sy).In(b) {
 				continue
 			}

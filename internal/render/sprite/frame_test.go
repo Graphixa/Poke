@@ -45,25 +45,7 @@ func TestClampFrameSideBuckets(t *testing.T) {
 	}
 }
 
-func TestLargestFrameFittingBuckets(t *testing.T) {
-	steps := sprite.FrameSteps()
-	if len(steps) != 4 {
-		t.Fatalf("steps=%v", steps)
-	}
-	minOW, minOH := sprite.OuterFor(16)
-	if sprite.LargestFrameFitting(minOW-1, minOH) != 0 {
-		t.Fatal("expected no fit when too small")
-	}
-	if got := sprite.LargestFrameFitting(minOW, minOH); got != 16 {
-		t.Fatalf("min fit=%d want 16", got)
-	}
-	maxOW, maxOH := sprite.OuterFor(40)
-	if got := sprite.LargestFrameFitting(maxOW, maxOH); got != 40 {
-		t.Fatalf("max fit=%d want 40", got)
-	}
-}
-
-func TestFrameStepsAndFit(t *testing.T) {
+func TestFrameStepsAndOuter(t *testing.T) {
 	steps := sprite.FrameSteps()
 	if len(steps) < 2 {
 		t.Fatalf("steps=%v", steps)
@@ -72,15 +54,8 @@ func TestFrameStepsAndFit(t *testing.T) {
 		t.Fatalf("steps=%v", steps)
 	}
 	ow, oh := sprite.OuterFor(16)
-	if sprite.LargestFrameFitting(ow-1, oh) != 0 {
-		t.Fatal("expected no fit when width short")
-	}
-	if got := sprite.LargestFrameFitting(ow, oh); got != 16 {
-		t.Fatalf("got %d want 16", got)
-	}
-	maxOW, maxOH := sprite.OuterFor(sprite.MaxFrameSize)
-	if got := sprite.LargestFrameFitting(maxOW, maxOH); got != sprite.MaxFrameSize {
-		t.Fatalf("got %d want max", got)
+	if ow < 16 || oh < 8 {
+		t.Fatalf("outer 16 = %dx%d", ow, oh)
 	}
 }
 
@@ -95,36 +70,16 @@ func TestFrameSizeForAspect(t *testing.T) {
 	}
 }
 
-func TestLargestArtFittingBuckets(t *testing.T) {
-	if sprite.LargestArtFitting(15, 40) != 0 {
-		t.Fatal("too narrow for 16")
+func TestNormalizeBuckets(t *testing.T) {
+	got := sprite.NormalizeBuckets([]int{40, 16, 16, 99, 8})
+	want := []int{40, 16}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
 	}
-	if got := sprite.LargestArtFitting(16, 8); got != 16 {
-		t.Fatalf("min art = %d want 16", got)
-	}
-	if got := sprite.LargestArtFitting(24, 12); got != 24 {
-		t.Fatalf("24 pane = %d want 24", got)
-	}
-	if got := sprite.LargestArtFitting(88, 43); got != 40 {
-		t.Fatalf("large pane = %d want 40", got)
-	}
-}
-
-func TestLargestArtFittingPrefersNextBucket(t *testing.T) {
-	if got := sprite.LargestArtFitting(40, 8); got != 16 {
-		t.Fatalf("8 rows = %d want 16", got)
-	}
-	if got := sprite.LargestArtFitting(40, 15); got != 24 {
-		t.Fatalf("15 rows = %d want 24", got)
-	}
-	if got := sprite.LargestArtFitting(40, 16); got != 32 {
-		t.Fatalf("16 rows = %d want 32", got)
-	}
-	if got := sprite.LargestArtFitting(40, 19); got != 32 {
-		t.Fatalf("19 rows = %d want 32", got)
-	}
-	if got := sprite.LargestArtFitting(40, 20); got != 40 {
-		t.Fatalf("20 rows = %d want 40", got)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
 	}
 }
 

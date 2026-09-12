@@ -201,17 +201,14 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		Prefill:       req.Prefill,
 		Context:       runCtx,
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
-		ListTypes:     svc.Config.ListTypesEnabled(),
+		ListTypes:     svc.Config.TUI.ListTypes,
 	}
 	if entries, err := svc.Cache.LoadBrowse(); err == nil && len(entries) > 0 {
-		stats := make(map[int]domain.Stats, len(entries))
+		byID := make(map[int]domain.BrowseEntry, len(entries))
 		for _, e := range entries {
-			stats[e.ID] = domain.Stats{
-				HP: e.HP, Attack: e.Attack, Defense: e.Defence,
-				SpecialAttack: e.SpAttack, SpecialDefense: e.SpDefence, Speed: e.Speed,
-			}
+			byID[e.ID] = e
 		}
-		opts.BrowseStats = stats
+		opts.BrowseEntries = byID
 	}
 
 	// Chafa artefact warm only helps chafa-only terminals. Native (Sixel/Kitty/

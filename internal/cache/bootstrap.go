@@ -288,16 +288,20 @@ func (s *Service) fetchRecord(ctx context.Context, sum domain.SpeciesSummary) re
 		name = poke.DisplayName
 	}
 	entry := domain.BrowseEntry{
-		ID:        sum.ID,
-		Slug:      sum.Slug,
-		Name:      name,
-		Types:     types,
-		HP:        poke.Stats.HP,
-		Attack:    poke.Stats.Attack,
-		Defence:   poke.Stats.Defense,
-		SpAttack:  poke.Stats.SpecialAttack,
-		SpDefence: poke.Stats.SpecialDefense,
-		Speed:     poke.Stats.Speed,
+		ID:              sum.ID,
+		Slug:            sum.Slug,
+		Name:            name,
+		Types:           types,
+		HP:              poke.Stats.HP,
+		Attack:          poke.Stats.Attack,
+		Defence:         poke.Stats.Defense,
+		SpAttack:        poke.Stats.SpecialAttack,
+		SpDefence:       poke.Stats.SpecialDefense,
+		Speed:           poke.Stats.Speed,
+		HeightDecimeter: poke.HeightDecimeter,
+		WeightHectogram: poke.WeightHectogram,
+		BaseExperience:  poke.BaseExperience,
+		Genus:           sp.Genus,
 	}
 
 	evoID := 0

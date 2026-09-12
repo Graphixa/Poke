@@ -63,18 +63,23 @@ func (s Sprites) Images() Images {
 	}
 }
 
-// BrowseEntry is the compact, in-memory row used for list selection.
+// BrowseEntry is the compact, in-memory row used for list selection and glance
+// stats/About (so the right pane does not wait on dossier core).
 type BrowseEntry struct {
-	ID        int      `json:"id"`
-	Slug      string   `json:"slug"`
-	Name      string   `json:"name"`
-	Types     []string `json:"types"`
-	HP        int      `json:"hp"`
-	Attack    int      `json:"attack"`
-	Defence   int      `json:"defence"`
-	SpAttack  int      `json:"sp_attack"`
-	SpDefence int      `json:"sp_defence"`
-	Speed     int      `json:"speed"`
+	ID              int      `json:"id"`
+	Slug            string   `json:"slug"`
+	Name            string   `json:"name"`
+	Types           []string `json:"types"`
+	HP              int      `json:"hp"`
+	Attack          int      `json:"attack"`
+	Defence         int      `json:"defence"`
+	SpAttack        int      `json:"sp_attack"`
+	SpDefence       int      `json:"sp_defence"`
+	Speed           int      `json:"speed"`
+	HeightDecimeter int      `json:"height_dm"`
+	WeightHectogram int      `json:"weight_hg"`
+	BaseExperience  int      `json:"base_exp"`
+	Genus           string   `json:"genus,omitempty"`
 }
 
 func (b BrowseEntry) Summary() SpeciesSummary {
@@ -84,6 +89,18 @@ func (b BrowseEntry) Summary() SpeciesSummary {
 		DisplayName: b.Name,
 		Types:       b.Types,
 	}
+}
+
+func (b BrowseEntry) Stats() Stats {
+	return Stats{
+		HP: b.HP, Attack: b.Attack, Defense: b.Defence,
+		SpecialAttack: b.SpAttack, SpecialDefense: b.SpDefence, Speed: b.Speed,
+	}
+}
+
+// HasAbout reports whether glance About can render from this row (not dossier).
+func (b BrowseEntry) HasAbout() bool {
+	return b.HeightDecimeter > 0 || b.WeightHectogram > 0 || b.BaseExperience > 0
 }
 
 func BrowseEntryFrom(summary SpeciesSummary, stats Stats) BrowseEntry {

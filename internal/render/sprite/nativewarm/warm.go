@@ -4,6 +4,7 @@ package nativewarm
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -159,12 +160,12 @@ func (s *Service) SetBuckets(buckets []int) {
 	if s == nil {
 		return
 	}
-	norm := normalizeBuckets(buckets)
+	norm := sprite.NormalizeBuckets(buckets)
 	if len(norm) == 0 {
 		return
 	}
 	s.mu.Lock()
-	if bucketsEqual(s.buckets, norm) {
+	if slices.Equal(s.buckets, norm) {
 		s.mu.Unlock()
 		return
 	}
@@ -219,32 +220,6 @@ func (s *Service) applyPhaseLocked(cells int) {
 	s.retryAt = make(map[int]time.Time)
 	s.failCount = make(map[int]int)
 	s.resetProgressLocked(cells)
-}
-
-func normalizeBuckets(buckets []int) []int {
-	seen := make(map[int]bool, len(buckets))
-	out := make([]int, 0, len(buckets))
-	for _, b := range buckets {
-		b = sprite.ClampFrameSide(b)
-		if b < sprite.SmallestFrameBucket() || seen[b] {
-			continue
-		}
-		seen[b] = true
-		out = append(out, b)
-	}
-	return out
-}
-
-func bucketsEqual(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // ActiveCells returns the current background phase bucket (for tests).

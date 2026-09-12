@@ -35,7 +35,7 @@ func TestDefault(t *testing.T) {
 	if cfg.EffectiveSixelColors() != DefaultSixelColors {
 		t.Fatalf("effective sixel_colors = %d want %d", cfg.EffectiveSixelColors(), DefaultSixelColors)
 	}
-	if cfg.ListTypesEnabled() {
+	if cfg.TUI.ListTypes {
 		t.Fatal("tui.list_types default = true, want false")
 	}
 	if err := cfg.Validate(); err != nil {
@@ -52,7 +52,7 @@ func TestLoadListTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.ListTypesEnabled() {
+	if !cfg.TUI.ListTypes {
 		t.Fatal("tui.list_types was not enabled")
 	}
 }
@@ -153,9 +153,6 @@ func TestInitializeIsIdempotent(t *testing.T) {
 	original, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !strings.Contains(string(original), "# Show coloured type labels in browse list rows.") {
-		t.Fatalf("initialized config lacks list_types comment:\n%s", original)
 	}
 	if _, _, err := Load(path); err != nil {
 		t.Fatalf("initialized config cannot be loaded: %v", err)

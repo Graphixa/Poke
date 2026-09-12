@@ -113,9 +113,6 @@ func (m Model) NativePaintANSIForTest() string { return m.nativePaintANSI }
 // GlanceHoldIDForTest returns the right-pane hold species (0 if none).
 func (m Model) GlanceHoldIDForTest() int { return m.glanceHoldID }
 
-// GlanceAboutFromIDForTest returns the species ID last snapshotted for About.
-func (m Model) GlanceAboutFromIDForTest() int { return m.glanceAboutFromID }
-
 // DropResourceForTest removes a species from the detail LRU (simulates eviction).
 func (m *Model) DropResourceForTest(id int) {
 	delete(m.resources, id)

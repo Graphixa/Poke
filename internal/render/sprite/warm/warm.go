@@ -7,6 +7,7 @@ import (
 	"container/heap"
 	"context"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -150,13 +151,13 @@ func (s *Service) SetBuckets(buckets []int) {
 	if s == nil {
 		return
 	}
-	norm := normalizeWarmBuckets(buckets)
+	norm := sprite.NormalizeBuckets(buckets)
 	if len(norm) == 0 {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if warmBucketsEqual(s.buckets, norm) {
+	if slices.Equal(s.buckets, norm) {
 		return
 	}
 	s.buckets = norm
@@ -205,32 +206,6 @@ func (s *Service) applyPhaseLocked(cells int) {
 		}
 		s.totalN.Store(int64(len(s.cfg.Index)))
 	}
-}
-
-func normalizeWarmBuckets(buckets []int) []int {
-	seen := map[int]bool{}
-	out := make([]int, 0, len(buckets))
-	for _, b := range buckets {
-		b = sprite.ClampFrameSide(b)
-		if b < sprite.SmallestFrameBucket() || seen[b] {
-			continue
-		}
-		seen[b] = true
-		out = append(out, b)
-	}
-	return out
-}
-
-func warmBucketsEqual(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // Prioritize bumps the selected species to P0 for the focus bucket, then other phases.

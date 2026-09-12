@@ -91,9 +91,12 @@ func (m Model) browseData() views.BrowseData {
 		data.Selected = sum
 		data.HeaderTypes = style.TypeSummary(sum.Types)
 		data.HeaderGenus = ""
-		if st, ok := m.browseStats[rightID]; ok {
+		if e, ok := m.browseEntries[rightID]; ok {
 			data.HasBrowseStats = true
-			data.Stats = st
+			data.Stats = e.Stats()
+			if e.Genus != "" {
+				data.HeaderGenus = e.Genus
+			}
 		}
 		if r := m.resources[rightID]; r != nil && r.HasCore {
 			data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
@@ -104,7 +107,7 @@ func (m Model) browseData() views.BrowseData {
 	}
 	m.fillBrowseAbout(&data)
 	// Art follows the list selection as soon as its frame is ready. Text hold
-	// (name/stats/About) may lag until glanceCommitReady so About does not blank.
+	// may lag until sprite commit so identity does not jump over a blank art box.
 	if sel, ok := m.selected(); ok {
 		if m.imageSpeciesID == sel.ID && !m.imagePlaceholder && m.imageANSI != "" {
 			if m.imageNative {
@@ -138,19 +141,14 @@ func (m Model) glanceDisplayID() (id int, holding bool) {
 	return 0, false
 }
 
-// glanceCommitReady is true when identity+stats+About can replace a held glance.
-// Sprite readiness alone is not enough when the held species had About and the
-// selection still lacks core — keep the previous About until the new one can
-// fill it (or core has settled with an error).
+// glanceCommitReady is true when the selection's sprite can replace held text.
+// About/stats come from browse.json, so they do not gate commit.
 func (m Model) glanceCommitReady() bool {
 	sel, ok := m.selected()
 	if !ok {
 		return true
 	}
-	if !m.glanceSpriteCommitReady(sel.ID) {
-		return false
-	}
-	return m.glanceAboutCommitReady(sel.ID)
+	return m.glanceSpriteCommitReady(sel.ID)
 }
 
 func (m Model) glanceSpriteCommitReady(selID int) bool {
@@ -167,74 +165,37 @@ func (m Model) glanceSpriteCommitReady(selID int) bool {
 	}
 }
 
-// glanceAboutCommitReady is true when releasing text hold will not blank About.
-// Uses the last-good About snapshot (not resources[glanceHoldID].HasCore) so
-// cold hold-ID churn and LRU eviction cannot drop the preserved values.
-func (m Model) glanceAboutCommitReady(selID int) bool {
-	if m.glanceAboutFromID < 1 {
-		return true
+// fillBrowseAbout sets About from the displayed species: browse.json first, else core.
+func (m Model) fillBrowseAbout(data *views.BrowseData) {
+	id, _ := m.glanceDisplayID()
+	if id < 1 {
+		return
 	}
-	r := m.resources[selID]
-	if r != nil && r.HasCore {
-		return true
+	if e, ok := m.browseEntries[id]; ok && e.HasAbout() {
+		data.HasCore = true
+		data.AboutHeight = formatHeight(e.HeightDecimeter)
+		data.AboutWeight = formatWeight(e.WeightHectogram)
+		data.AboutBaseExp = e.BaseExperience
+		if data.HeaderGenus == "" && e.Genus != "" {
+			data.HeaderGenus = e.Genus
+		}
+		return
 	}
-	if r != nil && r.CoreErr != nil {
-		// Settled failure: allow empty About rather than holding forever.
-		return true
-	}
-	return false
-}
-
-// refreshGlanceAboutSnapshot stores About/genus from a species that has core.
-func (m *Model) refreshGlanceAboutSnapshot(id int) {
 	r := m.resources[id]
 	if r == nil || !r.HasCore {
 		return
 	}
-	m.glanceAboutFromID = id
-	m.glanceAboutHeight = formatHeight(r.Pokemon.HeightDecimeter)
-	m.glanceAboutWeight = formatWeight(r.Pokemon.WeightHectogram)
-	m.glanceAboutBaseExp = r.Pokemon.BaseExperience
-	m.glanceHeaderGenus = r.Species.Genus
-}
-
-// fillBrowseAbout sets HasCore/About from the selected species when it has core,
-// otherwise from the last-good snapshot while cold-scrolling. CoreErr gives up
-// (no snapshot fill) so a settled failure does not sticky-show a prior mon.
-func (m Model) fillBrowseAbout(data *views.BrowseData) {
-	sel, ok := m.selected()
-	if !ok {
-		return
-	}
-	r := m.resources[sel.ID]
-	if r != nil && r.HasCore {
-		data.HasCore = true
-		data.AboutHeight = formatHeight(r.Pokemon.HeightDecimeter)
-		data.AboutWeight = formatWeight(r.Pokemon.WeightHectogram)
-		data.AboutBaseExp = r.Pokemon.BaseExperience
-		if data.HeaderGenus == "" {
-			data.HeaderGenus = r.Species.Genus
-		}
-		return
-	}
-	if r != nil && r.CoreErr != nil {
-		return
-	}
-	if m.glanceAboutFromID < 1 {
-		return
-	}
 	data.HasCore = true
-	data.AboutHeight = m.glanceAboutHeight
-	data.AboutWeight = m.glanceAboutWeight
-	data.AboutBaseExp = m.glanceAboutBaseExp
+	data.AboutHeight = formatHeight(r.Pokemon.HeightDecimeter)
+	data.AboutWeight = formatWeight(r.Pokemon.WeightHectogram)
+	data.AboutBaseExp = r.Pokemon.BaseExperience
 	if data.HeaderGenus == "" {
-		data.HeaderGenus = m.glanceHeaderGenus
+		data.HeaderGenus = r.Species.Genus
 	}
 }
 
-// maybeCommitGlanceHold clears the right-pane text hold once the selection is
-// ready for identity+stats+About. Sixel may already have painted for the
-// selection while hold remained (art is not gated on hold).
+// maybeCommitGlanceHold clears the right-pane text hold once the selection sprite
+// is ready. Sixel may already have painted while hold remained.
 func (m *Model) maybeCommitGlanceHold() {
 	if m.glanceHoldID == 0 {
 		return
@@ -286,22 +247,13 @@ func (m Model) nativeSpriteActive() bool {
 	return lay.ShowSprite && lay.SpriteSize >= sprite.SmallestFrameBucket()
 }
 
-// nativeGraphicsOnScreen is true when a native frame is expected on the art box —
-// footer progress must use tea.Raw, not View.
-func (m Model) nativeGraphicsOnScreen() bool {
-	return m.nativeSpriteActive()
-}
-
 // showsWarmHintInView is false while native art is on screen (progress uses
 // tea.Raw footer instead). Must not call browseData or nativeOverlayReady.
 func (m Model) showsWarmHintInView() bool {
 	if m.showHelp || m.showDialog || m.quitting {
 		return true
 	}
-	if m.nativeGraphicsOnScreen() {
-		return false
-	}
-	return true
+	return !m.nativeSpriteActive()
 }
 
 func pokemonTypeNames(p domain.Pokemon) []string {

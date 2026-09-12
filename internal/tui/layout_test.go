@@ -80,7 +80,7 @@ func TestListGrowsHorizontally(t *testing.T) {
 	if f2.LeftWidth <= f1.LeftWidth {
 		t.Fatalf("list should grow: left %d → %d", f1.LeftWidth, f2.LeftWidth)
 	}
-	wantRight := views.GlanceRightPanelWidth()
+	wantRight := views.GlanceRightInnerWidth() + 1
 	if f2.RightWidth != wantRight {
 		t.Fatalf("RightWidth=%d want GlanceRightPanelWidth=%d", f2.RightWidth, wantRight)
 	}
@@ -97,14 +97,14 @@ func TestListFirstColumns(t *testing.T) {
 		t.Fatalf("widths must fill frame: left=%d right=%d", f.LeftWidth, f.RightWidth)
 	}
 	// List absorbs leftover; with fixed glance right pane, list is usually the wider column.
-	if f.RightWidth != views.GlanceRightPanelWidth() {
-		t.Fatalf("RightWidth=%d want fixed glance %d", f.RightWidth, views.GlanceRightPanelWidth())
+	if f.RightWidth != views.GlanceRightInnerWidth()+1 {
+		t.Fatalf("RightWidth=%d want fixed glance %d", f.RightWidth, views.GlanceRightInnerWidth()+1)
 	}
 
 	m = tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}, ListTypes: true})
 	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
 	f = m.LayoutFlags()
-	if f.RightWidth != views.GlanceRightPanelWidth() {
+	if f.RightWidth != views.GlanceRightInnerWidth()+1 {
 		t.Fatalf("typed list still keeps fixed right pane: got %d", f.RightWidth)
 	}
 }
@@ -124,7 +124,7 @@ func TestSpriteShowsWhenBodyFits(t *testing.T) {
 }
 
 func TestBrowseSpritePadAndOrigin(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	d := views.BrowseData{
 		Width: 120, Height: 52,
 		HasSelected: true,
@@ -182,7 +182,7 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		BrowseView: 0,
 		ViewLabels: []string{"Glance", "Art"},
 		BodySize:   views.GlanceBucket,
-		LeftWidth:  120 - views.GlanceRightPanelWidth() - 1, RightWidth: views.GlanceRightPanelWidth(),
+		LeftWidth:  120 - (views.GlanceRightInnerWidth() + 1) - 1, RightWidth: views.GlanceRightInnerWidth() + 1,
 		HeaderTypes:    "Fire",
 		HeaderGenus:    "Lizard Pokémon",
 		HasBrowseStats: true,

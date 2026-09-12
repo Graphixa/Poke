@@ -8,11 +8,11 @@ const (
 	GlanceBucket = 16 // ArtCardH matches StatsCardOuter height
 	HeroBucket   = sprite.MaxFrameSize
 
-	glanceHeaderRows  = 2
-	glanceCardBorder  = 2
-	glanceContentPad  = 1 // row/col of space inside art and stats cards
-	glanceCardGap     = 1
-	glanceMinAboutH   = 3 // 1 content row + borders
+	glanceHeaderRows = 2
+	glanceCardBorder = 2
+	glanceContentPad = 1 // row/col of space inside art and stats cards
+	glanceCardGap    = 1
+	glanceMinAboutH  = 3 // 1 content row + borders
 
 	// Stats bar line is "~8 label + 1 + 12 bar + 2 + 3 value" ≈ 26 cells.
 	glanceStatsContentW = 26
@@ -75,20 +75,10 @@ func GlanceRightInnerWidth() int {
 	return artW + glanceCardGap + statsW
 }
 
-// GlanceRightPanelWidth is the combined-frame right column (inner + left border slot).
-func GlanceRightPanelWidth() int {
-	return GlanceRightInnerWidth() + 1
-}
-
 // HeroRightInnerWidth is the right-pane content width for View 2 (art only).
 func HeroRightInnerWidth() int {
 	w, _ := ArtCardOuter(HeroBucket)
 	return w
-}
-
-// HeroRightPanelWidth is the combined-frame right column for View 2.
-func HeroRightPanelWidth() int {
-	return HeroRightInnerWidth() + 1
 }
 
 // ComputeGlance lays out the fixed art+stats tile (View 1). About hugs content

@@ -75,21 +75,21 @@ func TestPreferredBucket16OrZero(t *testing.T) {
 }
 
 func TestGlanceRightPanelStable(t *testing.T) {
-	w := views.GlanceRightPanelWidth()
+	w := views.GlanceRightInnerWidth() + 1
 	if w < 40 || w > 80 {
 		t.Fatalf("GlanceRightPanelWidth=%d looks wrong", w)
 	}
 }
 
 func TestBrowseGlanceShowsStatsAndAbout(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 52,
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 39, DisplayName: "Jigglypuff", Types: []string{"normal", "fairy"}},
 		ShowSprite:  true, VerboseFooter: true,
-		BodySize:   views.GlanceBucket,
-		LeftWidth:  120 - rw - 1, RightWidth: rw,
+		BodySize:  views.GlanceBucket,
+		LeftWidth: 120 - rw - 1, RightWidth: rw,
 		HeaderTypes:    "Normal/Fairy",
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 115, Attack: 45, Defense: 20, SpecialAttack: 45, SpecialDefense: 25, Speed: 20},
@@ -108,7 +108,7 @@ func TestBrowseGlanceShowsStatsAndAbout(t *testing.T) {
 }
 
 func TestBrowseGlanceHidesAboutWithoutCore(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 52,
 		HasSelected: true,
@@ -128,7 +128,7 @@ func TestBrowseGlanceHidesAboutWithoutCore(t *testing.T) {
 }
 
 func TestBrowseGlanceCardsHugOnTallTerminal(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	g := views.ComputeGlance(rw-1, 80-1-2, true) // right inner ≈ panelH-2 with Height 80
 	_, wantStatsH := views.StatsCardOuter()
 	if g.StatsH != wantStatsH {
@@ -170,7 +170,7 @@ func TestBrowseGlanceCardsHugOnTallTerminal(t *testing.T) {
 }
 
 func TestSpriteArtOriginStable(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	base := views.BrowseData{
 		Width: 120, Height: 52,
 		ShowSprite: true, SpriteNative: true,
@@ -196,20 +196,20 @@ func TestSpriteArtOriginStable(t *testing.T) {
 // TestSpriteArtOriginMatchesRenderedCard locks paint CUP to the Glance art
 // inner box (not the card border / not a bottom strip).
 func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	d := views.BrowseData{
 		Width: 120, Height: 50,
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 25, DisplayName: "Pikachu"},
 		ShowSprite:  true, SpriteNative: true,
-		BodySize:    views.GlanceBucket,
-		LeftWidth:   120 - rw - 1, RightWidth: rw,
+		BodySize:  views.GlanceBucket,
+		LeftWidth: 120 - rw - 1, RightWidth: rw,
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 35, Attack: 55, Defense: 40, SpecialAttack: 50, SpecialDefense: 50, Speed: 90},
 		HasCore:        true,
 		AboutHeight:    "0.4 m", AboutWeight: "6.0 kg", AboutBaseExp: 112,
-		HeaderTypes:    "Electric",
-		ImageState:     2,
+		HeaderTypes: "Electric",
+		ImageState:  2,
 	}
 	row, col, artW, artH, ok := views.SpriteArtOrigin(d)
 	if !ok {
@@ -265,7 +265,7 @@ func TestGlanceAboutRequiresFullHug(t *testing.T) {
 }
 
 func TestBrowseGlanceAboutVisibleMediumHeight(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	_, artH := views.ArtCardOuter(views.GlanceBucket)
 	// Terminal tall enough for header+art+about (+frame/footer chrome).
 	termH := 2 /*frame*/ + 2 /*header*/ + artH + 5 + 1 /*footer*/ + 2
@@ -293,7 +293,7 @@ func TestBrowseGlanceAboutVisibleMediumHeight(t *testing.T) {
 }
 
 func TestBrowseArtCardPinnedSize(t *testing.T) {
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	cw, ch := views.ArtCardOuter(views.GlanceBucket)
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 50,
@@ -306,8 +306,8 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 		Stats:          domain.Stats{HP: 45},
 		HasCore:        true,
 		AboutHeight:    "0.7 m", AboutWeight: "6.9 kg", AboutBaseExp: 64,
-		SpriteANSI:     "X",
-		ImageState:     2,
+		SpriteANSI: "X",
+		ImageState: 2,
 	})
 	plain := stripANSI(out)
 	lines := strings.Split(plain, "\n")
@@ -363,7 +363,7 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 }
 
 func TestBrowseArtViewNoStatsAbout(t *testing.T) {
-	rw := views.HeroRightPanelWidth()
+	rw := views.HeroRightInnerWidth() + 1
 	out := views.Browse(views.BrowseData{
 		Width: 140, Height: 52,
 		HasSelected: true,
@@ -412,7 +412,7 @@ func stripANSI(s string) string {
 
 func TestArtCardCentresSprite(t *testing.T) {
 	// Smoke: browse with ANSI sprite includes the payload (centering is structural).
-	rw := views.GlanceRightPanelWidth()
+	rw := views.GlanceRightInnerWidth() + 1
 	out := views.Browse(views.BrowseData{
 		Width: 100, Height: 40,
 		HasSelected: true,
@@ -420,8 +420,8 @@ func TestArtCardCentresSprite(t *testing.T) {
 		ShowSprite:  true,
 		BodySize:    sprite.MinFrameSize,
 		LeftWidth:   100 - rw - 1, RightWidth: rw,
-		SpriteANSI:  "SPRITEROW",
-		ImageState:  2,
+		SpriteANSI: "SPRITEROW",
+		ImageState: 2,
 	})
 	if !strings.Contains(out, "SPRITEROW") {
 		t.Fatalf("missing sprite in:\n%s", out)

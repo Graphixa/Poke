@@ -31,8 +31,8 @@ type Options struct {
 	DisableSprite bool
 	// ListTypes includes coloured type labels in browse list rows.
 	ListTypes bool
-	// BrowseStats maps species ID → base stats from browse.json (optional).
-	BrowseStats map[int]domain.Stats
+	// BrowseEntries maps species ID → browse.json row (stats + About; optional).
+	BrowseEntries map[int]domain.BrowseEntry
 	// DossierWarmer pre-assembles dossier core or full dossiers in the background.
 	DossierWarmer DossierWarmer
 	// Warmer is an optional priority sprite prewarm service.
@@ -120,7 +120,7 @@ type Model struct {
 	listOff   int
 	listTypes bool
 
-	browseStats map[int]domain.Stats
+	browseEntries map[int]domain.BrowseEntry
 
 	browseView    BrowseView
 	dialogSection DialogSection
@@ -140,28 +140,21 @@ type Model struct {
 	imagePlaceholder bool
 	imageLoading     bool
 
-	spriteCancel       context.CancelFunc
-	spriteReqID        int
-	spriteLoadSpecies  int
-	coldSched          *coldsched.Scheduler
-	coldFrameCh        chan coldFrameMsg
-	dossierCancel      context.CancelFunc
-	dossierLoadCtx     context.Context
-	dossierLoadSpecies int
+	spriteCancel        context.CancelFunc
+	spriteReqID         int
+	spriteLoadSpecies   int
+	coldSched           *coldsched.Scheduler
+	coldFrameCh         chan coldFrameMsg
+	dossierCancel       context.CancelFunc
+	dossierLoadCtx      context.Context
+	dossierLoadSpecies  int
 	nativePaintPending  bool
 	nativeOverlayDirty  bool
 	nativeNeedsFollowUp bool // after View-changing dirty: one ~60ms insurance re-paint
 	nativePaintSpecies  int
 	nativePaintCells    int
 	nativePaintANSI     string
-	glanceHoldID        int // text/stats/About hold until commit-ready (does not block sixel)
-	// Last-good About/genus snapshot: survives glanceHoldID churn and resources LRU
-	// eviction during cold fast scroll (hold ID alone is not enough).
-	glanceAboutFromID  int
-	glanceAboutHeight  string
-	glanceAboutWeight  string
-	glanceAboutBaseExp int
-	glanceHeaderGenus  string
+	glanceHoldID        int // text hold until sprite commit-ready (does not block sixel)
 
 	warmer           SpriteWarmer
 	dossierWarmer    DossierWarmer
@@ -205,10 +198,10 @@ func NewModel(opts Options) Model {
 		layoutTh: layoutThresholds{
 			DisableSprite: opts.DisableSprite,
 		},
-		resources:  make(map[int]*resourceCache),
-		lruIDs:     nil,
-		imageState: ImageBlank,
-		browseView: BrowseGlance,
+		resources:     make(map[int]*resourceCache),
+		lruIDs:        nil,
+		imageState:    ImageBlank,
+		browseView:    BrowseGlance,
 		dialogSection: DialogSummary,
 		keys:          defaultKeyMap(),
 		help:          newHelpModel(),
@@ -222,7 +215,7 @@ func NewModel(opts Options) Model {
 		onUIReady:     opts.OnUIReady,
 		pokemonSrc:    opts.Pokemon,
 		listTypes:     opts.ListTypes,
-		browseStats:   opts.BrowseStats,
+		browseEntries: opts.BrowseEntries,
 	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)

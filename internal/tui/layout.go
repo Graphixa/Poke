@@ -6,7 +6,7 @@ import (
 )
 
 // Default responsive breakpoints. Browse sprite visibility uses glance/hero
-// PreferredBucket helpers (16 / 40); MinTerminal* remain classic-24 helpers.
+// PreferredBucket helpers (16 / 40).
 const (
 	minFooterWidth   = 76
 	minFooterHeight  = 22
@@ -124,9 +124,9 @@ func layoutFor(width, height int, th layoutThresholds, list listColumnSpec, brow
 		innerH = 1
 	}
 
-	rightPanel := views.GlanceRightPanelWidth()
+	rightPanel := views.GlanceRightInnerWidth() + 1
 	if browseView == BrowseArt {
-		rightPanel = views.HeroRightPanelWidth()
+		rightPanel = views.HeroRightInnerWidth() + 1
 	}
 	minList := 16
 	if !f.OnePane && !f.TooSmall {

@@ -119,51 +119,6 @@ const RightPanelSharePercent = 42
 // itself includes its own borders and 1-cell pad (see views.ArtCardOuter).
 const BrowseChromeRows = 5
 
-// MinTerminalWidth is the smallest terminal width that can host the padded
-// *minimum* sprite frame beside a usable list column.
-func MinTerminalWidth() int {
-	needRight, _ := OuterFor(MinFrameSize)
-	if needRight < MinRightHeaderWidth {
-		needRight = MinRightHeaderWidth
-	}
-	needRight += 2                      // frame borders / gutter
-	return needRight + MinListWidth + 1 // + sep
-}
-
-// MinTerminalHeight is the smallest terminal height that can host the
-// *minimum* pinned art card (24) plus browse chrome (header, frame, footer).
-func MinTerminalHeight() int {
-	_, cardH := FrameSizeFor(MinFrameSize)
-	cardH += 2 + 2 // card borders + 1-cell pad each side
-	return cardH + BrowseChromeRows
-}
-
-// LargestFrameFitting returns the largest bucket whose padded outer box fits
-// in the given cell budgets, or 0 if even the minimum does not fit.
-func LargestFrameFitting(maxOuterW, maxOuterH int) int {
-	best := 0
-	for _, side := range FrameSteps() {
-		ow, oh := OuterFor(side)
-		if ow <= maxOuterW && oh <= maxOuterH {
-			best = side
-		}
-	}
-	return best
-}
-
-// LargestArtFitting returns the largest FrameBuckets entry whose art box (not
-// OuterFor padding) fits in the given cell budgets, or 0 if none fit.
-func LargestArtFitting(maxArtW, maxArtH int) int {
-	best := 0
-	for _, side := range FrameSteps() {
-		w, h := FrameSizeFor(side)
-		if w <= maxArtW && h <= maxArtH {
-			best = side
-		}
-	}
-	return best
-}
-
 // PixelSize converts a cell box to the pixel target used by sixel encoding.
 func PixelSize(cellsW, cellsH int) (pxW, pxH int) {
 	if cellsW < 1 {
@@ -173,6 +128,21 @@ func PixelSize(cellsW, cellsH int) (pxW, pxH int) {
 		cellsH = 1
 	}
 	return cellsW * SixelCellPxW, cellsH * SixelCellPxH
+}
+
+// NormalizeBuckets clamps, de-dupes, and drops sizes below the smallest bucket.
+func NormalizeBuckets(buckets []int) []int {
+	seen := make(map[int]bool, len(buckets))
+	out := make([]int, 0, len(buckets))
+	for _, b := range buckets {
+		b = ClampFrameSide(b)
+		if b < SmallestFrameBucket() || seen[b] {
+			continue
+		}
+		seen[b] = true
+		out = append(out, b)
+	}
+	return out
 }
 
 // RightPanelWidth picks the right column width: about RightPanelSharePercent of
