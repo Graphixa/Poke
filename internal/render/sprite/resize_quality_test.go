@@ -29,8 +29,8 @@ func TestResizeArtworkInteractiveProducesTargetSize(t *testing.T) {
 }
 
 func TestAlgorithmVersionBumpedForNativeKey(t *testing.T) {
-	if sprite.AlgorithmVersion != "v15" {
-		t.Fatalf("AlgorithmVersion=%s want v15 (10x20 cell px + artwork fit encode)", sprite.AlgorithmVersion)
+	if sprite.AlgorithmVersion != "v16" {
+		t.Fatalf("AlgorithmVersion=%s want v16 (P1=7 1:1 sixel aspect)", sprite.AlgorithmVersion)
 	}
 }
 

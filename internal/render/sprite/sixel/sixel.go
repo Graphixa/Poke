@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	stdimage "image"
+	"strings"
 
 	"github.com/mattn/go-sixel"
 
@@ -44,6 +45,10 @@ func EncodeWithColors(src stdimage.Image, colors int) (string, error) {
 	if out == "" {
 		return "", fmt.Errorf("sixel: empty render")
 	}
+	// go-sixel hardcodes P1=0 (device default aspect). On Windows Terminal that
+	// is often 2:1, so the bitmap paints ~2× tall and spills / gets cell-punched.
+	// P1=7 forces 1:1 pixel aspect to match our PixelSize cell geometry.
+	out = strings.Replace(out, "\x1bP0;0;8q", "\x1bP7;0;8q", 1)
 	if countESCPrefix(out, 'P') != 1 {
 		return "", fmt.Errorf("sixel: malformed sequence")
 	}

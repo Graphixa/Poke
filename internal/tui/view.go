@@ -165,10 +165,20 @@ func (m Model) glanceSpriteCommitReady(selID int) bool {
 	}
 }
 
-// fillBrowseAbout sets About from the displayed species: browse.json first, else core.
+// fillBrowseAbout sets About from dossier core when present, else browse.json.
 func (m Model) fillBrowseAbout(data *views.BrowseData) {
 	id, _ := m.glanceDisplayID()
 	if id < 1 {
+		return
+	}
+	if r := m.resources[id]; r != nil && r.HasCore {
+		data.HasCore = true
+		data.AboutHeight = formatHeight(r.Pokemon.HeightDecimeter)
+		data.AboutWeight = formatWeight(r.Pokemon.WeightHectogram)
+		data.AboutBaseExp = r.Pokemon.BaseExperience
+		if data.HeaderGenus == "" {
+			data.HeaderGenus = r.Species.Genus
+		}
 		return
 	}
 	if e, ok := m.browseEntries[id]; ok && e.HasAbout() {
@@ -179,18 +189,6 @@ func (m Model) fillBrowseAbout(data *views.BrowseData) {
 		if data.HeaderGenus == "" && e.Genus != "" {
 			data.HeaderGenus = e.Genus
 		}
-		return
-	}
-	r := m.resources[id]
-	if r == nil || !r.HasCore {
-		return
-	}
-	data.HasCore = true
-	data.AboutHeight = formatHeight(r.Pokemon.HeightDecimeter)
-	data.AboutWeight = formatWeight(r.Pokemon.WeightHectogram)
-	data.AboutBaseExp = r.Pokemon.BaseExperience
-	if data.HeaderGenus == "" {
-		data.HeaderGenus = r.Species.Genus
 	}
 }
 
@@ -208,7 +206,7 @@ func (m *Model) maybeCommitGlanceHold() {
 		return
 	}
 	m.glanceHoldID = 0
-	m.markNativeOverlayDirtyFollowUp()
+	m.markNativeOverlayDirty()
 }
 
 func (m Model) speciesSummary(id int) (domain.SpeciesSummary, bool) {
@@ -247,9 +245,13 @@ func (m Model) nativeSpriteActive() bool {
 	return lay.ShowSprite && lay.SpriteSize >= sprite.SmallestFrameBucket()
 }
 
-// showsWarmHintInView is false while native art is on screen (progress uses
-// tea.Raw footer instead). Must not call browseData or nativeOverlayReady.
+// showsWarmHintInView is false while native art is on screen in the Raw path
+// (progress uses tea.Raw footer). Composite mode keeps the hint in View so
+// cell flushes run; the compositor re-appends DCS after those writes.
 func (m Model) showsWarmHintInView() bool {
+	if m.composite {
+		return true
+	}
 	if m.showHelp || m.showDialog || m.quitting {
 		return true
 	}

@@ -76,8 +76,8 @@ type BrowseEntry struct {
 	SpAttack        int      `json:"sp_attack"`
 	SpDefence       int      `json:"sp_defence"`
 	Speed           int      `json:"speed"`
-	HeightDecimeter int      `json:"height_dm"`
-	WeightHectogram int      `json:"weight_hg"`
+	HeightDecimeter int      `json:"height"`
+	WeightHectogram int      `json:"weight"`
 	BaseExperience  int      `json:"base_exp"`
 	Genus           string   `json:"genus,omitempty"`
 }
@@ -99,8 +99,9 @@ func (b BrowseEntry) Stats() Stats {
 }
 
 // HasAbout reports whether glance About can render from this row (not dossier).
+// BaseExperience alone is not enough — old browse.json rows had exp without size.
 func (b BrowseEntry) HasAbout() bool {
-	return b.HeightDecimeter > 0 || b.WeightHectogram > 0 || b.BaseExperience > 0
+	return b.HeightDecimeter > 0 || b.WeightHectogram > 0
 }
 
 func BrowseEntryFrom(summary SpeciesSummary, stats Stats) BrowseEntry {

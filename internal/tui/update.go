@@ -21,17 +21,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	n := next.(Model)
 	n.maybeCommitGlanceHold()
-	// Always drain a dirty overlay after updates — including follow-up paints,
-	// where a warm/list tick may have set dirty while paint was pending.
 	n, overlay := n.scheduleNativeOverlay()
 	return n, tea.Batch(cmd, overlay)
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case nativeOverlayMsg:
-		m, cmd := m.emitNativeOverlay(msg.followUp)
-		return m, tea.Batch(cmd, m.warmFooterPatchIfNeeded())
+	case nativeReassertMsg:
+		if m.nativeOverlayReady() {
+			m.markNativeOverlayDirty()
+		}
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		prevShow := m.layout().ShowSprite
@@ -201,9 +201,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var patch tea.Cmd
 		nativeComplete := msg.Stage == WarmStageNative && msg.Total > 0 && msg.Done >= msg.Total
-		if nativeComplete && m.nativeSpriteActive() {
+		if !m.composite && nativeComplete && m.nativeSpriteActive() {
 			patch = clearWarmFooterRawCmd(m)
-		} else if m.nativeSpriteActive() {
+		} else if !m.composite && m.nativeSpriteActive() {
 			switch {
 			case right != "":
 				patch = patchWarmFooterCmd(m)
@@ -232,7 +232,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.showHelp = false
 			// Help View wiped sixel; force space-clear on restore paint.
 			m.invalidateNativePaintGeometry()
-			m.markNativeOverlayDirtyFollowUp()
+			m.markNativeOverlayDirty()
 		}
 		return m, nil
 	}
@@ -302,7 +302,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.showDialog = false
 		// Dialog wiped native graphics from the cell grid; force space-clear restore.
 		m.invalidateNativePaintGeometry()
-		m.markNativeOverlayDirtyFollowUp()
+		m.markNativeOverlayDirty()
 		return m, nil
 	}
 	if key.Matches(msg, m.keys.TabNext) {
@@ -364,7 +364,7 @@ func (m Model) cycleBrowseView() (tea.Model, tea.Cmd) {
 	prevShow := m.layout().ShowSprite
 	prevSide := m.currentSpriteSide()
 	m.browseView = m.browseView.Next()
-	m.markNativeOverlayDirtyFollowUp()
+	m.markNativeOverlayDirty()
 	m.notifyWarmer()
 	return m, m.handleSpriteLayoutChange(prevShow, prevSide)
 }
@@ -646,14 +646,16 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 		// Only treat official artwork as final. Pixel frames must upgrade when
 		// background artwork warm finishes for this species.
 		if m.imageKind == "artwork" {
-			if m.imageNative && m.imageANSI != "" {
-				m.dirtyNativeIfPaintChanged(sel.ID, cells, m.imageANSI)
+			if m.imageNative && m.imageANSI != "" &&
+				!(sel.ID == m.nativePaintSpecies && cells == m.nativePaintCells && m.imageANSI == m.nativePaintANSI) {
+				m.markNativeOverlayDirty()
 			}
 			return nil
 		}
 		if !m.artworkReady(sel.ID) {
-			if m.imageNative && m.imageANSI != "" {
-				m.dirtyNativeIfPaintChanged(sel.ID, cells, m.imageANSI)
+			if m.imageNative && m.imageANSI != "" &&
+				!(sel.ID == m.nativePaintSpecies && cells == m.nativePaintCells && m.imageANSI == m.nativePaintANSI) {
+				m.markNativeOverlayDirty()
 			}
 			return nil
 		}

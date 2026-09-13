@@ -105,8 +105,6 @@ func WarmProgressNativeMsgForTest(done, total, cells int) warmProgressMsg {
 	return warmProgressMsg{Done: done, Total: total, Message: "Building image cache", Stage: WarmStageNative, Cells: cells}
 }
 
-func (m Model) NativePaintPendingForTest() bool { return m.nativePaintPending }
-
 // NativePaintANSIForTest returns the last painted native sequence (test helper).
 func (m Model) NativePaintANSIForTest() string { return m.nativePaintANSI }
 
@@ -143,10 +141,14 @@ func (m Model) BrowseAboutHeightForTest() string {
 // NativeOverlayDirtyForTest reports whether a native re-paint is requested.
 func (m Model) NativeOverlayDirtyForTest() bool { return m.nativeOverlayDirty }
 
-// NativeOverlayFollowUpForTest builds the deferred paint/clear message.
-func NativeOverlayFollowUpForTest() nativeOverlayMsg {
-	return nativeOverlayMsg{followUp: true}
-}
+// NativeFollowUpPendingForTest reports whether a post-flush overwrite is armed.
+func (m Model) NativeFollowUpPendingForTest() bool { return m.nativeFollowUpPending }
+
+// NativeReassertMsgForTest is the post-flush overwrite tick message.
+func NativeReassertMsgForTest() tea.Msg { return nativeReassertMsg{} }
+
+// InstantNativeReassertForTest sets the post-flush delay to 0 (Tick returns promptly).
+func InstantNativeReassertForTest() { nativeReassertDelay = 0 }
 
 // ClearCellRectForTest exports clearCellRect for overlay tests.
 func ClearCellRectForTest(row, col, w, h int) string {
@@ -154,7 +156,7 @@ func ClearCellRectForTest(row, col, w, h int) string {
 }
 
 // NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite
-// with a leading space-clear (first paint / geometry wipe).
+// with a leading space-clear (geometry change).
 func NativeOverlayPaintSeqForTest(row, col, artW, artH int, ansi string) string {
 	return nativeOverlayPaintSeq(row, col, artW, artH, ansi, true)
 }

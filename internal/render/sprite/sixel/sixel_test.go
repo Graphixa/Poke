@@ -39,6 +39,12 @@ func TestEncodeFromCellsSnapsHeightToSixelBands(t *testing.T) {
 		}
 		t.Fatalf("raster header %q want substring %s", head, raster)
 	}
+	if !strings.HasPrefix(out, "\x1bP7;0;8q") {
+		t.Fatalf("want P1=7 square aspect intro, got %q", out[:min(24, len(out))])
+	}
+	if strings.HasPrefix(out, "\x1bP0;0;8q") {
+		t.Fatal("go-sixel default P1=0 must be rewritten")
+	}
 }
 
 func TestEncodeCropsHeightToSixelBands(t *testing.T) {

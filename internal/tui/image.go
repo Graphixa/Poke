@@ -58,8 +58,7 @@ func (m *Model) applySpriteFrame(speciesID, cells int, res sprite.RenderResult) 
 	m.imagePlaceholder = false
 	m.imageState = ImageReady
 	if res.Native {
-		// Ready paint is immediate; FollowUp arms the single ~60ms insurance shot.
-		m.markNativeOverlayDirtyFollowUp()
+		m.markNativeOverlayDirty()
 	}
 }
 

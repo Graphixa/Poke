@@ -98,6 +98,10 @@ func (w warmPokemonLoader) Pokemon(ctx context.Context, speciesID int) (domain.P
 }
 
 func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
+	return h.runBrowse(ctx, req)
+}
+
+func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	debuglog.StartupMark("startup.browse_enter")
 	svc, err := h.Services()
 	if err != nil {

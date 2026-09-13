@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -23,7 +24,7 @@ func (m runModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// Run starts the browse TUI and blocks until quit.
+// Run starts the browse TUI with cells-then-DCS native paint and blocks until quit.
 func Run(ctx context.Context, opts Options) error {
 	if opts.Context == nil {
 		opts.Context = ctx
@@ -31,10 +32,17 @@ func Run(ctx context.Context, opts Options) error {
 	if opts.Index == nil {
 		return fmt.Errorf("browse requires a species index")
 	}
-	m := runModel{Model: NewModel(opts)}
-	p := tea.NewProgram(m, tea.WithContext(ctx))
-	_, err := p.Run()
-	m.Model.shutdown()
+	m := NewModel(opts)
+	comp := newCompositorWriter(os.Stdout)
+	m.composite = true
+	m.compositor = comp
+	p := tea.NewProgram(runModel{Model: m}, tea.WithContext(ctx), tea.WithOutput(comp))
+	final, err := p.Run()
+	if fm, ok := final.(runModel); ok {
+		fm.Model.shutdown()
+	} else {
+		m.shutdown()
+	}
 	if err != nil && !errors.Is(err, tea.ErrInterrupted) {
 		return err
 	}

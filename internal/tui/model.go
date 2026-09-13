@@ -140,21 +140,24 @@ type Model struct {
 	imagePlaceholder bool
 	imageLoading     bool
 
-	spriteCancel        context.CancelFunc
-	spriteReqID         int
-	spriteLoadSpecies   int
-	coldSched           *coldsched.Scheduler
-	coldFrameCh         chan coldFrameMsg
-	dossierCancel       context.CancelFunc
-	dossierLoadCtx      context.Context
-	dossierLoadSpecies  int
-	nativePaintPending  bool
-	nativeOverlayDirty  bool
-	nativeNeedsFollowUp bool // after View-changing dirty: one ~60ms insurance re-paint
-	nativePaintSpecies  int
-	nativePaintCells    int
-	nativePaintANSI     string
-	glanceHoldID        int // text hold until sprite commit-ready (does not block sixel)
+	spriteCancel       context.CancelFunc
+	spriteReqID        int
+	spriteLoadSpecies  int
+	coldSched          *coldsched.Scheduler
+	coldFrameCh        chan coldFrameMsg
+	dossierCancel      context.CancelFunc
+	dossierLoadCtx     context.Context
+	dossierLoadSpecies int
+	nativeOverlayDirty    bool
+	nativeFollowUpPending bool // armed until post-flush overwrite fires (Raw path)
+	nativePaintSpecies    int
+	nativePaintCells      int
+	nativePaintANSI       string
+	glanceHoldID          int // text hold until sprite commit-ready (does not block sixel)
+
+	// composite: cells-then-DCS via compositorWriter; no tea.Raw sprites.
+	composite  bool
+	compositor *compositorWriter
 
 	warmer           SpriteWarmer
 	dossierWarmer    DossierWarmer
@@ -442,19 +445,11 @@ func (m *Model) bumpSelection() {
 	m.setImageBlank()
 	m.cancelSprite()
 	m.cancelDossier()
-	m.nativePaintPending = false
-	m.nativeNeedsFollowUp = false
-	if m.sprites != nil {
-		m.sprites.ClearNative()
-	}
-	// Drop paint identity (species/ANSI). Keep nativePaintCells as geometry token
-	// so a same-bucket ready paint can overwrite in place after ClearNative +
-	// themed reservation — avoids a second space-clear flash on warm scroll.
-	// Real wipes (emitNativeClear, help/dialog dismiss, size change) zero cells.
+	// Keep nativePaintCells so a same-bucket ready paint can overwrite in place.
+	// Do not ClearNative here — that flashes Kitty/WT; View reservation + Raw handle it.
 	m.nativePaintANSI = ""
 	m.nativePaintSpecies = 0
-	// Dirty overlay so scheduleNativeOverlay wipes or repaints as needed.
-	m.markNativeOverlayDirtyFollowUp()
+	m.markNativeOverlayDirty()
 }
 
 func (m *Model) ensureResource(id int) *resourceCache {
