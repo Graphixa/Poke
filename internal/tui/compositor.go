@@ -68,6 +68,17 @@ func (c *compositorWriter) SetNative(seq string) {
 	c.mu.Unlock()
 }
 
+// PaintNow stores seq for post-frame re-assert and writes it immediately.
+// Needed when Bubble Tea skips a flush (viewEquals) after sprite ready — pending
+// alone would never reach the terminal until some later View change (e.g. resize).
+func (c *compositorWriter) PaintNow(seq string) {
+	if c == nil || seq == "" {
+		return
+	}
+	c.SetNative(seq)
+	_, _ = c.inner.Write([]byte(seq))
+}
+
 // SetNativeOnce appends seq after the next completed frame only (geometry wipe).
 func (c *compositorWriter) SetNativeOnce(seq string) {
 	if c == nil {
@@ -88,6 +99,19 @@ func (c *compositorWriter) ClearNative() {
 	c.pending = nil
 	c.oneshot = false
 	c.mu.Unlock()
+}
+
+// WriteDirect clears pending and writes seq immediately (quit wipe — must not
+// wait for the next cell frame, and must not re-tail DCS after alt-screen exit).
+func (c *compositorWriter) WriteDirect(seq string) {
+	if c == nil {
+		return
+	}
+	c.ClearNative()
+	if seq == "" {
+		return
+	}
+	_, _ = c.inner.Write([]byte(seq))
 }
 
 func frameComplete(p []byte) bool {

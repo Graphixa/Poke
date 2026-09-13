@@ -34,6 +34,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.WindowSizeMsg:
+		// Wipe sixel at the pre-resize art origin before layout moves — WT does
+		// not erase old placements when CUP shifts.
+		var wipe tea.Cmd
+		if msg.Width != m.width || msg.Height != m.height {
+			wipe = m.wipeNativeGraphics()
+		}
 		prevShow := m.layout().ShowSprite
 		prevSide := m.currentSpriteSide()
 		m.width = msg.Width
@@ -43,9 +49,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDialog {
 			m.syncDialogViewport()
 		}
+		m.invalidateNativePaintGeometry()
+		m.markNativeOverlayDirty()
 		layoutCmd := m.handleSpriteLayoutChange(prevShow, prevSide)
 		m.notifyWarmer()
-		return m, m.noteFirstLayout(layoutCmd)
+		return m, tea.Batch(wipe, m.noteFirstLayout(layoutCmd))
 
 	case dossierCoreMsg:
 		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
@@ -224,7 +232,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.ForceQuit) {
 		m.quitting = true
 		m.glanceHoldID = 0
-		return m, tea.Quit
+		return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
 	}
 
 	if m.showHelp {
@@ -266,7 +274,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.layout().TooSmall || m.canQuitWithQ() {
 			m.quitting = true
 			m.glanceHoldID = 0
-			return m, tea.Quit
+			return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
 		}
 		return m.updateSearch(msg)
 	}

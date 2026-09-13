@@ -74,10 +74,45 @@ func (m Model) emitNativeClear() (Model, tea.Cmd) {
 	debuglog.Renderf("native overlay clear row=%d col=%d %dx%d", row, col, artW, artH)
 	seq := nativeOverlayClearSeq(row, col, artW, artH)
 	if m.composite && m.compositor != nil {
+		// Quit has no further cell flush — write clear now. Live clears can wait
+		// for the next frame via SetNativeOnce; on exit that would never run and
+		// a pending SetNative could re-paint DCS after alt-screen exit.
+		if m.quitting {
+			m.compositor.WriteDirect(seq)
+			return m, nil
+		}
 		m.compositor.SetNativeOnce(seq)
 		return m, nil
 	}
 	return m, tea.Raw(seq)
+}
+
+// wipeNativeGraphics drops pending DCS and erases the art box at the current
+// origin. Call before Quit (so alt-screen exit cannot re-tail DCS onto the main
+// buffer) and before resize (so the old CUP placement is not left behind).
+func (m *Model) wipeNativeGraphics() tea.Cmd {
+	if m.sprites != nil {
+		m.sprites.ClearNative()
+	}
+	hadPaint := m.nativePaintCells > 0 || m.nativePaintANSI != "" || m.nativePaintSpecies != 0
+	row, col, artW, artH, ok := views.SpriteArtRegion(m.browseData())
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	m.nativePaintCells = 0
+	m.nativeFollowUpPending = false
+	m.nativeOverlayDirty = false
+	if !ok || !hadPaint {
+		if m.compositor != nil {
+			m.compositor.ClearNative()
+		}
+		return nil
+	}
+	seq := nativeOverlayClearSeq(row, col, artW, artH)
+	if m.compositor != nil {
+		m.compositor.WriteDirect(seq)
+		return nil
+	}
+	return tea.Raw(seq)
 }
 
 func (m Model) nativeOverlayReady() bool {
@@ -120,7 +155,8 @@ func (m Model) emitNativeOverlay() (Model, tea.Cmd) {
 	m.nativePaintCells = m.imageCells
 	m.nativePaintANSI = m.imageANSI
 	if m.composite && m.compositor != nil {
-		m.compositor.SetNative(seq)
+		// Paint immediately; also keep pending so later cell flushes re-assert.
+		m.compositor.PaintNow(seq)
 		m.nativeFollowUpPending = false
 		return m, nil
 	}

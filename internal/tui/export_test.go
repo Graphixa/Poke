@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"bytes"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -149,6 +151,15 @@ func NativeReassertMsgForTest() tea.Msg { return nativeReassertMsg{} }
 
 // InstantNativeReassertForTest sets the post-flush delay to 0 (Tick returns promptly).
 func InstantNativeReassertForTest() { nativeReassertDelay = 0 }
+
+// AttachCompositorForTest enables composite paint into buf (cells-then-DCS path).
+func (m *Model) AttachCompositorForTest(buf *bytes.Buffer) {
+	m.composite = true
+	m.compositor = newCompositorWriter(buf)
+}
+
+// NativePaintCellsForTest reports the last painted cell bucket token.
+func (m Model) NativePaintCellsForTest() int { return m.nativePaintCells }
 
 // ClearCellRectForTest exports clearCellRect for overlay tests.
 func ClearCellRectForTest(row, col, w, h int) string {

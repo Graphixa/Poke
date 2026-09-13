@@ -78,6 +78,39 @@ func TestCompositorWriterClearNative(t *testing.T) {
 	}
 }
 
+func TestCompositorWriterPaintNowKeepsPending(t *testing.T) {
+	var buf bytes.Buffer
+	c := newCompositorWriter(&buf)
+	c.PaintNow("DCS")
+	if got := buf.String(); got != "DCS" {
+		t.Fatalf("PaintNow write: got %q", got)
+	}
+	buf.Reset()
+	if _, err := c.Write(frameEnd()); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != "CELLS\x1b[?2026lDCS" {
+		t.Fatalf("pending must survive PaintNow for re-assert: got %q", got)
+	}
+}
+
+func TestCompositorWriterWriteDirectClearsPending(t *testing.T) {
+	var buf bytes.Buffer
+	c := newCompositorWriter(&buf)
+	c.SetNative("DCS")
+	c.WriteDirect("CLR")
+	if got := buf.String(); got != "CLR" {
+		t.Fatalf("got %q want CLR", got)
+	}
+	buf.Reset()
+	if _, err := c.Write(frameEnd()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "DCS") {
+		t.Fatalf("WriteDirect must drop pending: %q", buf.String())
+	}
+}
+
 func TestCompositorWriterNoTailBeforeFrameEnd(t *testing.T) {
 	var buf bytes.Buffer
 	c := newCompositorWriter(&buf)

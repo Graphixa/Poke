@@ -1,6 +1,7 @@
 package tui_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -727,6 +728,42 @@ func TestNativeOverlayReassertOverwritesWithoutClear(t *testing.T) {
 	}
 }
 
+
+func TestResizeWipesNativeBeforeRelayout(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if m.NativePaintANSIForTest() != dcs {
+		t.Fatal("expected painted native")
+	}
+	buf.Reset()
+
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 60})
+	m = updated.(tui.Model)
+	out := buf.String()
+	clearAt := strings.Index(out, "48;2;")
+	if clearAt < 0 {
+		t.Fatalf("resize must WriteDirect theme space-clear of old art box, got %q", out)
+	}
+	// Wipe clears pending; scheduleNativeOverlay then PaintNows at the new
+	// origin — DCS after the clear is the re-paint, not a stale pending tail.
+	if dcsAt := strings.Index(out, dcs); dcsAt >= 0 && dcsAt < clearAt {
+		t.Fatal("stale DCS must not precede the resize wipe clear")
+	}
+}
 
 func assertNativeOverlayPayload(t *testing.T, seq, dcs string) {
 	t.Helper()
