@@ -105,7 +105,7 @@ func (m Model) browseData() views.BrowseData {
 			data.HasBrowseStats = true
 		}
 	}
-	m.fillBrowseAbout(&data)
+	m.fillBrowseAbilities(&data)
 	// Art follows the list selection as soon as its frame is ready. Text hold
 	// may lag until sprite commit so identity does not jump over a blank art box.
 	if sel, ok := m.selected(); ok {
@@ -142,7 +142,7 @@ func (m Model) glanceDisplayID() (id int, holding bool) {
 }
 
 // glanceCommitReady is true when the selection's sprite can replace held text.
-// About/stats come from browse.json, so they do not gate commit.
+// Stats/abilities come from browse.json, so they do not gate commit.
 func (m Model) glanceCommitReady() bool {
 	sel, ok := m.selected()
 	if !ok {
@@ -165,27 +165,27 @@ func (m Model) glanceSpriteCommitReady(selID int) bool {
 	}
 }
 
-// fillBrowseAbout sets About from dossier core when present, else browse.json.
-func (m Model) fillBrowseAbout(data *views.BrowseData) {
+// fillBrowseAbilities sets the glance Abilities card from dossier core or browse.json.
+func (m Model) fillBrowseAbilities(data *views.BrowseData) {
 	id, _ := m.glanceDisplayID()
 	if id < 1 {
 		return
 	}
 	if r := m.resources[id]; r != nil && r.HasCore {
-		data.HasCore = true
-		data.AboutHeight = formatHeight(r.Pokemon.HeightDecimeter)
-		data.AboutWeight = formatWeight(r.Pokemon.WeightHectogram)
-		data.AboutBaseExp = r.Pokemon.BaseExperience
+		if len(r.Pokemon.Abilities) > 0 {
+			data.HasCore = true
+			data.Abilities = r.Pokemon.Abilities
+		}
 		if data.HeaderGenus == "" {
 			data.HeaderGenus = r.Species.Genus
 		}
-		return
+		if data.HasCore {
+			return
+		}
 	}
-	if e, ok := m.browseEntries[id]; ok && e.HasAbout() {
+	if e, ok := m.browseEntries[id]; ok && e.HasAbilities() {
 		data.HasCore = true
-		data.AboutHeight = formatHeight(e.HeightDecimeter)
-		data.AboutWeight = formatWeight(e.WeightHectogram)
-		data.AboutBaseExp = e.BaseExperience
+		data.Abilities = e.Abilities
 		if data.HeaderGenus == "" && e.Genus != "" {
 			data.HeaderGenus = e.Genus
 		}

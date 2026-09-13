@@ -302,6 +302,7 @@ func (s *Service) fetchRecord(ctx context.Context, sum domain.SpeciesSummary) re
 		WeightHectogram: poke.WeightHectogram,
 		BaseExperience:  poke.BaseExperience,
 		Genus:           sp.Genus,
+		Abilities:       poke.Abilities,
 	}
 
 	evoID := 0

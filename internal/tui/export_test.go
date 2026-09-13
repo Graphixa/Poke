@@ -2,10 +2,13 @@ package tui
 
 import (
 	"bytes"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/tui/components"
+	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
 // Exported accessors for model/layout tests.
@@ -130,14 +133,16 @@ func (m Model) BrowseSelectedNameForTest() string {
 	return m.browseData().Selected.DisplayName
 }
 
-// BrowseAboutHasCoreForTest reports whether browseData currently exposes About.
-func (m Model) BrowseAboutHasCoreForTest() bool {
+// BrowseAbilitiesReadyForTest reports whether browseData exposes the Abilities card.
+func (m Model) BrowseAbilitiesReadyForTest() bool {
 	return m.browseData().HasCore
 }
 
-// BrowseAboutHeightForTest returns the About height string from browseData.
-func (m Model) BrowseAboutHeightForTest() string {
-	return m.browseData().AboutHeight
+// BrowseAbilitiesTextForTest returns the glance Abilities grid (joined lines).
+func (m Model) BrowseAbilitiesTextForTest() string {
+	d := m.browseData()
+	inner := views.GlanceRightInnerWidth() - 2 - 2
+	return strings.Join(components.GlanceAbilityGrid(d.Abilities, inner), "\n")
 }
 
 // NativeOverlayDirtyForTest reports whether a native re-paint is requested.

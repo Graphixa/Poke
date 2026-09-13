@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
@@ -39,16 +40,78 @@ func StatsBars(s domain.Stats) []string {
 	}
 }
 
-// AboutLines formats Height / Weight / Base Exp for the glance About card.
-// When width is large enough, all three share one row; otherwise Base Exp wraps.
-func AboutLines(height, weight string, baseExp int, innerW int) []string {
-	base := fmt.Sprintf("Base Exp  %d", baseExp)
-	row1 := fmt.Sprintf("Height  %s    Weight  %s    %s", height, weight, base)
-	if innerW > 0 && lipgloss.Width(row1) <= innerW {
-		return []string{row1}
+// AbilitySlotCell is dossier-style: "Slot N  Name", or "Hidden  Name" for
+// hidden abilities (games/fan convention — not "Slot 3 (hidden)").
+func AbilitySlotCell(a domain.AbilitySlot) string {
+	name := output.TitleFromSlug(a.Name)
+	label := fmt.Sprintf("Slot %d", a.Slot)
+	if a.IsHidden || a.Slot >= 3 {
+		label = "Hidden"
 	}
+	slot := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Render(label)
+	return fmt.Sprintf("%s  %s", slot, name)
+}
+
+// GlanceAbilityGrid lays out glance abilities as:
+//
+//	[Slot 1] [Slot 2]   — fixed half-width cells (empty slot still shows label)
+//	[Hidden ........]   — full-width bottom row (no Slot 4 / no "(hidden)" suffix)
+func GlanceAbilityGrid(abilities []domain.AbilitySlot, innerW int) []string {
+	var slot1, slot2, hidden *domain.AbilitySlot
+	for i := range abilities {
+		a := &abilities[i]
+		switch {
+		case a.IsHidden || a.Slot >= 3:
+			if hidden == nil {
+				hidden = a
+			}
+		case a.Slot == 2:
+			slot2 = a
+		case a.Slot == 1:
+			slot1 = a
+		default:
+			if slot1 == nil {
+				slot1 = a
+			} else if slot2 == nil {
+				slot2 = a
+			}
+		}
+	}
+	const gap = 2
+	if innerW < 16 {
+		innerW = 16
+	}
+	cellW := (innerW - gap) / 2
+	if cellW < 8 {
+		cellW = 8
+	}
+	fit := func(s string, w int) string {
+		if lipgloss.Width(s) > w {
+			return lipgloss.NewStyle().MaxWidth(w).Render(s)
+		}
+		for lipgloss.Width(s) < w {
+			s += " "
+		}
+		return s
+	}
+	primary := func(label string) string {
+		return lipgloss.NewStyle().Foreground(style.PrimaryColor()).Render(label)
+	}
+	regular := func(label string, a *domain.AbilitySlot) string {
+		if a == nil {
+			return fit(primary(label)+"  —", cellW)
+		}
+		return fit(primary(label)+"  "+output.TitleFromSlug(a.Name), cellW)
+	}
+	var hiddenLine string
+	if hidden == nil {
+		hiddenLine = fit(primary("Hidden")+"  —", innerW)
+	} else {
+		hiddenLine = fit(primary("Hidden")+"  "+output.TitleFromSlug(hidden.Name), innerW)
+	}
+	pad := strings.Repeat(" ", gap)
 	return []string{
-		fmt.Sprintf("Height  %s    Weight  %s", height, weight),
-		base,
+		regular("Slot 1", slot1) + pad + regular("Slot 2", slot2),
+		hiddenLine,
 	}
 }

@@ -80,7 +80,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDialog {
 			m.syncDialogViewport()
 		} else if m.nativeSpriteActive() {
-			// Core only adds genus/About cells outside the art box; the Sixel
+			// Core only adds genus cells outside the art box; the Sixel
 			// payload is unchanged. Repaint once, in place (no space-clear, no
 			// delayed ~60ms insurance) so the art re-lays if the cell flush
 			// grazed it — without the second, delayed redraw that read as lag
@@ -464,7 +464,7 @@ func (m *Model) ensureSelectionLoads() tea.Cmd {
 	return tea.Batch(m.ensureDossierCore(), m.ensureSpriteLoad())
 }
 
-// ensureDossierCore loads pokemon+species for glance About / genus without extras.
+// ensureDossierCore loads pokemon+species for glance genus / Enter dossier without extras.
 func (m *Model) ensureDossierCore() tea.Cmd {
 	sel, ok := m.selected()
 	if !ok || m.details == nil {

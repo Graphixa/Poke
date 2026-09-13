@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/tui"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
@@ -380,9 +381,9 @@ func TestNativeOverlayImmediateOnStableReady(t *testing.T) {
 	}
 }
 
-// Selection change keeps About from browse.json for the held/selected ID; sprite
-// commit alone releases text hold (About no longer waits on dossier core).
-func TestGlanceHoldCommitsOnSpriteWhenBrowseAboutReady(t *testing.T) {
+// Selection change keeps Abilities from browse.json for the held/selected ID; sprite
+// commit alone releases text hold (Abilities no longer waits on dossier core).
+func TestGlanceHoldCommitsOnSpriteWhenBrowseAbilitiesReady(t *testing.T) {
 	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
 	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
 	block := make(chan struct{})
@@ -393,20 +394,20 @@ func TestGlanceHoldCommitsOnSpriteWhenBrowseAboutReady(t *testing.T) {
 	for _, s := range all {
 		entries[s.ID] = domain.BrowseEntry{
 			ID: s.ID, Name: s.DisplayName, Types: s.Types,
-			HeightDecimeter: 6 + s.ID, WeightHectogram: 85, BaseExperience: 62,
 			Genus: "Test Pokémon",
 			HP:    39, Attack: 52, Defence: 43, SpAttack: 60, SpDefence: 50, Speed: 65,
+			Abilities: []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
 		}
 	}
-	// Distinct About heights for first two list rows.
+	// Distinct abilities for first two list rows.
 	id0 := all[0].ID
 	id1 := all[1].ID
 	e0 := entries[id0]
-	e0.HeightDecimeter = 6
+	e0.Abilities = []domain.AbilitySlot{{Slot: 1, Name: "blaze"}}
 	e0.Name = "Charmander"
 	entries[id0] = e0
 	e1 := entries[id1]
-	e1.HeightDecimeter = 11
+	e1.Abilities = []domain.AbilitySlot{{Slot: 1, Name: "solar-power"}}
 	e1.Name = "Charmeleon"
 	entries[id1] = e1
 
@@ -424,8 +425,8 @@ func TestGlanceHoldCommitsOnSpriteWhenBrowseAboutReady(t *testing.T) {
 		m.SpriteReqID(), m.SelectionGen(), id, cells, dcsA, false,
 	)))
 	m = updated.(tui.Model)
-	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "0.6 m" {
-		t.Fatalf("setup About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("setup Abilities: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
 	}
 
 	updated, _ = m.Update(key("down"))
@@ -435,8 +436,8 @@ func TestGlanceHoldCommitsOnSpriteWhenBrowseAboutReady(t *testing.T) {
 		t.Fatalf("hold=%d want %d", m.GlanceHoldIDForTest(), id)
 	}
 	// Hold keeps prior identity; About still comes from held browse row.
-	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "0.6 m" {
-		t.Fatalf("held About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("held Abilities: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
 	}
 
 	gen := m.SelectionGen()
@@ -446,10 +447,10 @@ func TestGlanceHoldCommitsOnSpriteWhenBrowseAboutReady(t *testing.T) {
 	close(block)
 
 	if m.GlanceHoldIDForTest() != 0 {
-		t.Fatal("browse About + sprite ready must commit text hold")
+		t.Fatal("browse Abilities + sprite ready must commit text hold")
 	}
-	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != "1.1 m" {
-		t.Fatalf("committed About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Solar Power") {
+		t.Fatalf("committed Abilities: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
 	}
 	if m.BrowseSelectedNameForTest() != "Charmeleon" {
 		t.Fatalf("committed name=%q", m.BrowseSelectedNameForTest())
@@ -465,9 +466,9 @@ func TestGlanceHoldCommitsOnSpriteWhenBrowseAboutReady(t *testing.T) {
 	}
 }
 
-// Cold fast scroll: each species' About comes from browse.json, so eviction of
-// dossier core cannot blank the About card.
-func TestGlanceAboutFromBrowseSurvivesColdFastScroll(t *testing.T) {
+// Cold fast scroll: each species' Abilities come from browse.json, so eviction of
+// dossier core cannot blank the Abilities card.
+func TestGlanceAbilitiesFromBrowseSurvivesColdFastScroll(t *testing.T) {
 	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
 	const dcsD = "\x1bP0;0;8q#D~~~\x1b\\"
 	idx := fixtureIndex()
@@ -476,9 +477,9 @@ func TestGlanceAboutFromBrowseSurvivesColdFastScroll(t *testing.T) {
 	for i, s := range all {
 		entries[s.ID] = domain.BrowseEntry{
 			ID: s.ID, Name: s.DisplayName, Types: s.Types,
-			HeightDecimeter: 6 + i*5, WeightHectogram: 85 + i, BaseExperience: 62,
 			Genus: "Test Pokémon",
 			HP:    39, Attack: 52, Defence: 43, SpAttack: 60, SpDefence: 50, Speed: 65,
+			Abilities: []domain.AbilitySlot{{Slot: 1, Name: fmt.Sprintf("ability-%d", i)}},
 		}
 	}
 	m := tui.NewModel(tui.Options{
@@ -495,8 +496,9 @@ func TestGlanceAboutFromBrowseSurvivesColdFastScroll(t *testing.T) {
 		m.SpriteReqID(), m.SelectionGen(), idA, cells, dcsA, false,
 	)))
 	m = updated.(tui.Model)
-	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != formatBrowseHeight(entries[idA].HeightDecimeter) {
-		t.Fatalf("setup About: has=%v height=%q", m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest())
+	wantA := formatGlanceAbility(entries[idA].Abilities[0].Name)
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), wantA) {
+		t.Fatalf("setup Abilities: has=%v text=%q want %q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest(), wantA)
 	}
 
 	var idD int
@@ -519,15 +521,15 @@ func TestGlanceAboutFromBrowseSurvivesColdFastScroll(t *testing.T) {
 	updated, _ = m.Update(tui.ColdFrameMsgForTest(gen, idD, cells, dcsD, false, true, "artwork"))
 	m = updated.(tui.Model)
 
-	wantH := formatBrowseHeight(entries[idD].HeightDecimeter)
-	if !m.BrowseAboutHasCoreForTest() || m.BrowseAboutHeightForTest() != wantH {
-		t.Fatalf("cold scroll About: has=%v height=%q want %q",
-			m.BrowseAboutHasCoreForTest(), m.BrowseAboutHeightForTest(), wantH)
+	wantD := formatGlanceAbility(entries[idD].Abilities[0].Name)
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), wantD) {
+		t.Fatalf("cold scroll Abilities: has=%v text=%q want %q",
+			m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest(), wantD)
 	}
 }
 
-func formatBrowseHeight(dm int) string {
-	return fmt.Sprintf("%.1f m", float64(dm)/10)
+func formatGlanceAbility(slug string) string {
+	return output.TitleFromSlug(slug)
 }
 
 func TestSpriteArtOriginTwoPane(t *testing.T) {

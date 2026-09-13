@@ -81,7 +81,7 @@ func TestGlanceRightPanelStable(t *testing.T) {
 	}
 }
 
-func TestBrowseGlanceShowsStatsAndAbout(t *testing.T) {
+func TestBrowseGlanceShowsStatsAndAbilities(t *testing.T) {
 	rw := views.GlanceRightInnerWidth() + 1
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 52,
@@ -94,20 +94,22 @@ func TestBrowseGlanceShowsStatsAndAbout(t *testing.T) {
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 115, Attack: 45, Defense: 20, SpecialAttack: 45, SpecialDefense: 25, Speed: 20},
 		HasCore:        true,
-		AboutHeight:    "0.5 m",
-		AboutWeight:    "5.5 kg",
-		AboutBaseExp:   95,
+		Abilities: []domain.AbilitySlot{
+			{Slot: 1, Name: "cute-charm"},
+			{Slot: 2, Name: "competitive"},
+			{Slot: 3, Name: "friend-guard", IsHidden: true},
+		},
 		SpriteANSI:     "[sprite]",
 		ImageState:     2,
 	})
-	for _, want := range []string{"Stats", "HP", "About", "Height", "Jigglypuff", "#039"} {
+	for _, want := range []string{"Stats", "HP", "Abilities", "Cute Charm", "Jigglypuff", "#039"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
 }
 
-func TestBrowseGlanceHidesAboutWithoutCore(t *testing.T) {
+func TestBrowseGlanceHidesAbilitiesWithoutCore(t *testing.T) {
 	rw := views.GlanceRightInnerWidth() + 1
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 52,
@@ -122,8 +124,8 @@ func TestBrowseGlanceHidesAboutWithoutCore(t *testing.T) {
 		SpriteANSI:     "[sprite]",
 		ImageState:     2,
 	})
-	if strings.Contains(out, " About ") {
-		t.Fatalf("About should be hidden without HasCore:\n%s", out)
+	if strings.Contains(out, " Abilities ") {
+		t.Fatalf("Abilities should be hidden without HasCore:\n%s", out)
 	}
 }
 
@@ -152,13 +154,14 @@ func TestBrowseGlanceCardsHugOnTallTerminal(t *testing.T) {
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 60, Attack: 62, Defense: 63, SpecialAttack: 80, SpecialDefense: 80, Speed: 60},
 		HasCore:        true,
-		AboutHeight:    "1.0 m",
-		AboutWeight:    "13.0 kg",
-		AboutBaseExp:   142,
+		Abilities: []domain.AbilitySlot{
+			{Slot: 1, Name: "overgrow"},
+			{Slot: 2, Name: "chlorophyll"},
+		},
 		SpriteANSI:     "[sprite]",
 		ImageState:     2,
 	})
-	if !strings.Contains(out, "About") || !strings.Contains(out, "Stats") {
+	if !strings.Contains(out, "Abilities") || !strings.Contains(out, "Stats") {
 		t.Fatalf("missing cards:\n%s", out)
 	}
 	// Tall pane must not leave About as a giant bordered void: hug AboutH from layout.
@@ -207,7 +210,7 @@ func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 35, Attack: 55, Defense: 40, SpecialAttack: 50, SpecialDefense: 50, Speed: 90},
 		HasCore:        true,
-		AboutHeight:    "0.4 m", AboutWeight: "6.0 kg", AboutBaseExp: 112,
+		Abilities: []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
 		HeaderTypes: "Electric",
 		ImageState:  2,
 	}
@@ -229,7 +232,7 @@ func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
 				continue
 			}
 			rest := string(runes[j:])
-			if strings.HasPrefix(rest, "╭─ Stats") || strings.HasPrefix(rest, "╭─ About") {
+			if strings.HasPrefix(rest, "╭─ Stats") || strings.HasPrefix(rest, "╭─ Abilities") {
 				continue
 			}
 			artTop, artCol = i, j
@@ -254,21 +257,21 @@ func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
 func TestGlanceAboutRequiresFullHug(t *testing.T) {
 	_, artH := views.ArtCardOuter(views.GlanceBucket)
 	// rightInnerH = header + art + (hug-1) → remain too small for full About hug.
-	tooTight := views.ComputeGlance(80, 2+artH+4, true)
+	tooTight := views.ComputeGlance(80, 2+artH+5, true)
 	if tooTight.ShowAbout {
 		t.Fatalf("About must not show when remain < hug (got AboutH=%d)", tooTight.AboutH)
 	}
-	fits := views.ComputeGlance(80, 2+artH+5, true)
-	if !fits.ShowAbout || fits.AboutH != 5 {
-		t.Fatalf("About should hug at 5 when it fits: show=%v h=%d", fits.ShowAbout, fits.AboutH)
+	fits := views.ComputeGlance(80, 2+artH+6, true)
+	if !fits.ShowAbout || fits.AboutH != 6 {
+		t.Fatalf("Abilities should hug at 6 when it fits: show=%v h=%d", fits.ShowAbout, fits.AboutH)
 	}
 }
 
-func TestBrowseGlanceAboutVisibleMediumHeight(t *testing.T) {
+func TestBrowseGlanceAbilitiesVisibleMediumHeight(t *testing.T) {
 	rw := views.GlanceRightInnerWidth() + 1
 	_, artH := views.ArtCardOuter(views.GlanceBucket)
 	// Terminal tall enough for header+art+about (+frame/footer chrome).
-	termH := 2 /*frame*/ + 2 /*header*/ + artH + 5 + 1 /*footer*/ + 2
+	termH := 2 /*frame*/ + 2 /*header*/ + artH + 6 + 1 /*footer*/ + 2
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: termH,
 		HasSelected: true,
@@ -280,15 +283,16 @@ func TestBrowseGlanceAboutVisibleMediumHeight(t *testing.T) {
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 45, Attack: 49, Defense: 49, SpecialAttack: 65, SpecialDefense: 65, Speed: 45},
 		HasCore:        true,
-		AboutHeight:    "0.7 m",
-		AboutWeight:    "6.9 kg",
-		AboutBaseExp:   64,
+		Abilities: []domain.AbilitySlot{
+			{Slot: 1, Name: "overgrow"},
+			{Slot: 2, Name: "chlorophyll"},
+		},
 		SpriteANSI:     "[sprite]",
 		ImageState:     2,
 	})
 	plain := stripANSI(out)
-	if !strings.Contains(plain, "About") || !strings.Contains(plain, "Height") {
-		t.Fatalf("About missing at medium height:\n%s", plain)
+	if !strings.Contains(plain, "Abilities") || !strings.Contains(plain, "Overgrow") {
+		t.Fatalf("Abilities missing at medium height:\n%s", plain)
 	}
 }
 
@@ -305,7 +309,7 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 45},
 		HasCore:        true,
-		AboutHeight:    "0.7 m", AboutWeight: "6.9 kg", AboutBaseExp: 64,
+		Abilities: []domain.AbilitySlot{{Slot: 1, Name: "overgrow"}},
 		SpriteANSI: "X",
 		ImageState: 2,
 	})
@@ -319,12 +323,12 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 		}
 		runes := []rune(line)
 		for j := 0; j < len(runes)-1; j++ {
-			// Untitled art: │╭─… not │╭─ Stats / │╭─ About.
+			// Untitled art: │╭─… not │╭─ Stats / │╭─ Abilities.
 			if runes[j] != '╭' || runes[j+1] != '─' || j == 0 || runes[j-1] != '│' {
 				continue
 			}
 			rest := string(runes[j:])
-			if strings.HasPrefix(rest, "╭─ Stats") || strings.HasPrefix(rest, "╭─ About") {
+			if strings.HasPrefix(rest, "╭─ Stats") || strings.HasPrefix(rest, "╭─ Abilities") {
 				continue
 			}
 			artTop = i
@@ -362,7 +366,7 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 	}
 }
 
-func TestBrowseArtViewNoStatsAbout(t *testing.T) {
+func TestBrowseArtViewNoStatsAbilities(t *testing.T) {
 	rw := views.HeroRightInnerWidth() + 1
 	out := views.Browse(views.BrowseData{
 		Width: 140, Height: 52,
@@ -373,15 +377,15 @@ func TestBrowseArtViewNoStatsAbout(t *testing.T) {
 		BodySize:    views.HeroBucket,
 		LeftWidth:   140 - rw - 1, RightWidth: rw,
 		HasCore:     true,
-		AboutHeight: "0.4 m", AboutWeight: "6.0 kg", AboutBaseExp: 112,
+		Abilities: []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 35},
 		SpriteANSI:     "[hero]",
 		ImageState:     2,
 	})
 	plain := stripANSI(out)
-	if strings.Contains(plain, "Stats") || strings.Contains(plain, "About") {
-		t.Fatalf("Art view must omit Stats/About:\n%s", plain)
+	if strings.Contains(plain, "Stats") || strings.Contains(plain, "Abilities") {
+		t.Fatalf("Art view must omit Stats/Abilities:\n%s", plain)
 	}
 	if !strings.Contains(out, "[hero]") {
 		t.Fatalf("missing hero sprite:\n%s", out)

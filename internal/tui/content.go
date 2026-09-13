@@ -153,17 +153,23 @@ func formatAbilityDialogLines(p domain.Pokemon) []string {
 	if len(p.Abilities) == 0 {
 		return []string{"No abilities."}
 	}
-	var lines []string
-	for _, a := range p.Abilities {
-		name := output.TitleFromSlug(a.Name)
-		slot := primaryText(fmt.Sprintf("Slot %d", a.Slot))
-		if a.IsHidden {
-			lines = append(lines, fmt.Sprintf("%s  %s  (hidden)", slot, name))
-		} else {
-			lines = append(lines, fmt.Sprintf("%s  %s", slot, name))
-		}
+	sorted := sortAbilitySlots(p.Abilities)
+	lines := make([]string, 0, len(sorted))
+	for _, a := range sorted {
+		lines = append(lines, components.AbilitySlotCell(a))
 	}
 	return lines
+}
+
+func sortAbilitySlots(abilities []domain.AbilitySlot) []domain.AbilitySlot {
+	sorted := append([]domain.AbilitySlot(nil), abilities...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Slot != sorted[j].Slot {
+			return sorted[i].Slot < sorted[j].Slot
+		}
+		return sorted[i].Name < sorted[j].Name
+	})
+	return sorted
 }
 
 func formatBreedingLines(s domain.Species) []string {

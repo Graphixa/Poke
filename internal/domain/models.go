@@ -23,9 +23,9 @@ type TypeSlot struct {
 }
 
 type AbilitySlot struct {
-	Slot     int
-	Name     string
-	IsHidden bool
+	Slot     int    `json:"slot,omitempty"`
+	Name     string `json:"name"`
+	IsHidden bool   `json:"is_hidden,omitempty"`
 }
 
 type Stats struct {
@@ -76,10 +76,11 @@ type BrowseEntry struct {
 	SpAttack        int      `json:"sp_attack"`
 	SpDefence       int      `json:"sp_defence"`
 	Speed           int      `json:"speed"`
-	HeightDecimeter int      `json:"height"`
-	WeightHectogram int      `json:"weight"`
-	BaseExperience  int      `json:"base_exp"`
-	Genus           string   `json:"genus,omitempty"`
+	HeightDecimeter int           `json:"height"`
+	WeightHectogram int           `json:"weight"`
+	BaseExperience  int           `json:"base_exp"`
+	Genus           string        `json:"genus,omitempty"`
+	Abilities       []AbilitySlot `json:"abilities,omitempty"`
 }
 
 func (b BrowseEntry) Summary() SpeciesSummary {
@@ -98,10 +99,9 @@ func (b BrowseEntry) Stats() Stats {
 	}
 }
 
-// HasAbout reports whether glance About can render from this row (not dossier).
-// BaseExperience alone is not enough — old browse.json rows had exp without size.
-func (b BrowseEntry) HasAbout() bool {
-	return b.HeightDecimeter > 0 || b.WeightHectogram > 0
+// HasAbilities reports whether glance Abilities can render from this row.
+func (b BrowseEntry) HasAbilities() bool {
+	return len(b.Abilities) > 0
 }
 
 func BrowseEntryFrom(summary SpeciesSummary, stats Stats) BrowseEntry {

@@ -96,10 +96,8 @@ type BrowseData struct {
 	// Glance cards (C3).
 	HasBrowseStats bool
 	Stats          domain.Stats
-	HasCore        bool
-	AboutHeight    string
-	AboutWeight    string
-	AboutBaseExp   int
+	HasCore    bool // bottom Abilities card has data (browse.json or dossier)
+	Abilities  []domain.AbilitySlot
 
 	ShowHelp bool
 	HelpBody string
@@ -325,9 +323,9 @@ func renderGlanceBody(d BrowseData, width, bodyH int, g GlanceLayout) string {
 	if aboutW > width {
 		aboutW = width
 	}
-	aboutLines := components.AboutLines(d.AboutHeight, d.AboutWeight, d.AboutBaseExp, aboutW-2-2*glanceContentPad)
-	aboutBody := GlanceStatsBody(aboutLines) // same 1-cell inset
-	aboutCard := components.InnerCard("About", aboutW, g.AboutH, aboutBody)
+	aboutInner := aboutW - 2 - 2*glanceContentPad
+	aboutBody := GlanceStatsBody(components.GlanceAbilityGrid(d.Abilities, aboutInner))
+	aboutCard := components.InnerCard("Abilities", aboutW, g.AboutH, aboutBody)
 	combined := strings.TrimRight(upper, "\n") + "\n" + aboutCard
 	return padBlock(combined, width, bodyH)
 }
@@ -383,8 +381,8 @@ func renderGlanceTextCards(d BrowseData, width, bodyH int, g GlanceLayout) strin
 	if !g.ShowAbout || g.AboutH < glanceMinAboutH {
 		return padBlock(upper, width, bodyH)
 	}
-	aboutLines := components.AboutLines(d.AboutHeight, d.AboutWeight, d.AboutBaseExp, statsW-2-2*glanceContentPad)
-	aboutCard := components.InnerCard("About", statsW, g.AboutH, GlanceStatsBody(aboutLines))
+	aboutInner := statsW - 2 - 2*glanceContentPad
+	aboutCard := components.InnerCard("Abilities", statsW, g.AboutH, GlanceStatsBody(components.GlanceAbilityGrid(d.Abilities, aboutInner)))
 	return padBlock(strings.TrimRight(upper, "\n")+"\n"+aboutCard, width, bodyH)
 }
 

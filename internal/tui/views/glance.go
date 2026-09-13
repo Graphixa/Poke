@@ -18,8 +18,8 @@ const (
 	glanceStatsContentW = 26
 	glanceStatsContentH = 8 // 6 bars + sep + total
 
-	// About typically one content row after pad; used for hug height.
-	glanceAboutContentH = 1
+	// Abilities: two content rows (slots 1–2 / slot 3) after pad; used for hug height.
+	glanceAboutContentH = 2
 )
 
 // GlanceLayout is the C3 right-pane geometry for a fixed terminal size.
