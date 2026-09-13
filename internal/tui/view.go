@@ -165,30 +165,48 @@ func (m Model) glanceSpriteCommitReady(selID int) bool {
 	}
 }
 
-// fillBrowseAbilities sets the glance Abilities card from dossier core or browse.json.
+// fillBrowseAbilities sets the glance Abilities card from browse.json (preferred),
+// dossier core, or the last-good snapshot so cold scroll never blanks the card.
 func (m Model) fillBrowseAbilities(data *views.BrowseData) {
 	id, _ := m.glanceDisplayID()
-	if id < 1 {
+	if abs := m.abilitiesFor(id); len(abs) > 0 {
+		data.HasCore = true
+		data.Abilities = abs
+		if data.HeaderGenus == "" {
+			if e, ok := m.browseEntries[id]; ok && e.Genus != "" {
+				data.HeaderGenus = e.Genus
+			} else if r := m.resources[id]; r != nil && r.HasCore {
+				data.HeaderGenus = r.Species.Genus
+			}
+		}
 		return
 	}
-	if r := m.resources[id]; r != nil && r.HasCore {
-		if len(r.Pokemon.Abilities) > 0 {
-			data.HasCore = true
-			data.Abilities = r.Pokemon.Abilities
-		}
-		if data.HeaderGenus == "" {
-			data.HeaderGenus = r.Species.Genus
-		}
-		if data.HasCore {
-			return
-		}
+	if m.glanceAbilitiesOK {
+		data.HasCore = true
+		data.Abilities = m.glanceAbilitiesSnap
+	}
+}
+
+// abilitiesFor returns glance abilities for id from browse.json, else dossier core.
+func (m Model) abilitiesFor(id int) []domain.AbilitySlot {
+	if id < 1 {
+		return nil
 	}
 	if e, ok := m.browseEntries[id]; ok && e.HasAbilities() {
-		data.HasCore = true
-		data.Abilities = e.Abilities
-		if data.HeaderGenus == "" && e.Genus != "" {
-			data.HeaderGenus = e.Genus
-		}
+		return e.Abilities
+	}
+	if r := m.resources[id]; r != nil && r.HasCore && len(r.Pokemon.Abilities) > 0 {
+		return r.Pokemon.Abilities
+	}
+	return nil
+}
+
+// captureGlanceAbilities stores last-good abilities after Update (View is read-only).
+func (m *Model) captureGlanceAbilities() {
+	id, _ := m.glanceDisplayID()
+	if abs := m.abilitiesFor(id); len(abs) > 0 {
+		m.glanceAbilitiesSnap = abs
+		m.glanceAbilitiesOK = true
 	}
 }
 

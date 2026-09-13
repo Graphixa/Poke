@@ -154,6 +154,10 @@ type Model struct {
 	nativePaintCells      int
 	nativePaintANSI       string
 	glanceHoldID          int // text hold until sprite commit-ready (does not block sixel)
+	// Last-good Abilities so cold fast scroll does not blank the card when the
+	// new species has neither browse.json abilities nor dossier core yet.
+	glanceAbilitiesSnap []domain.AbilitySlot
+	glanceAbilitiesOK   bool
 
 	// composite: cells-then-DCS via compositorWriter; no tea.Raw sprites.
 	composite  bool

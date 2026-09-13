@@ -21,6 +21,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	n := next.(Model)
 	n.maybeCommitGlanceHold()
+	n.captureGlanceAbilities()
 	n, overlay := n.scheduleNativeOverlay()
 	return n, tea.Batch(cmd, overlay)
 }

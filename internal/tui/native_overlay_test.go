@@ -528,6 +528,61 @@ func TestGlanceAbilitiesFromBrowseSurvivesColdFastScroll(t *testing.T) {
 	}
 }
 
+// Cold scroll onto species with no browse abilities and no dossier: keep last-good card.
+func TestGlanceAbilitiesSnapshotSurvivesColdScrollWithoutBrowse(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	idx := fixtureIndex()
+	all := idx.All()
+	entries := map[int]domain.BrowseEntry{}
+	for _, s := range all {
+		entries[s.ID] = domain.BrowseEntry{
+			ID: s.ID, Name: s.DisplayName, Types: s.Types,
+			HP: 39, Attack: 52, Defence: 43, SpAttack: 60, SpDefence: 50, Speed: 65,
+		}
+	}
+	id0 := all[0].ID
+	e0 := entries[id0]
+	e0.Abilities = []domain.AbilitySlot{{Slot: 1, Name: "blaze"}}
+	entries[id0] = e0
+	// Later rows intentionally have no abilities in browse.json.
+
+	m := tui.NewModel(tui.Options{
+		Index:         idx,
+		Details:       &fakeDetails{},
+		Sprites:       &fakeSprites{ansi: "COLD", native: true},
+		BrowseEntries: entries,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id0, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("setup: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
+	}
+
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	id1, _ := m.SelectedID()
+	if id1 == id0 {
+		t.Fatal("expected next species")
+	}
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.ColdFrameMsgForTest(gen, id1, cells, dcsB, false, true, "artwork"))
+	m = updated.(tui.Model)
+
+	if !m.BrowseAbilitiesReadyForTest() {
+		t.Fatal("abilities card must stay visible via last-good snapshot")
+	}
+	if !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("snapshot should keep prior abilities until new data exists, got %q", m.BrowseAbilitiesTextForTest())
+	}
+}
+
 func formatGlanceAbility(slug string) string {
 	return output.TitleFromSlug(slug)
 }
