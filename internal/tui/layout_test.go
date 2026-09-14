@@ -300,6 +300,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		DialogSection: 0,
 		DialogLabels:  []string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
 		DialogLines:   []string{"Height  0.6 m"},
+		FooterHint:    "tab section • ↑/↓ scroll • esc close",
 	})
 	for _, want := range []string{"Pokedex", "Charmander", "#004", "> Summary", "Height", "tab section", "esc close"} {
 		if !strings.Contains(out, want) {

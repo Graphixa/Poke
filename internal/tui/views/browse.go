@@ -139,7 +139,7 @@ func Browse(d BrowseData) string {
 	}
 
 	if d.ShowDialog {
-		d.FooterHint = "tab section • ↑/↓ scroll • esc close"
+		// FooterHint is set by the model (bubbles ShortHelpView); only clear warm.
 		d.WarmHint = ""
 	}
 	base := renderBrowseBase(d, fr)

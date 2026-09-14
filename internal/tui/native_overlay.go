@@ -48,8 +48,12 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 	if !m.nativeOverlayDirty {
 		return m, nil
 	}
-	// Keep dirty while covered so Esc can restore.
+	// Keep dirty while covered so Esc can restore — but drop pending DCS so
+	// cell flushes cannot re-tail the sprite over the dialog/help.
 	if m.showHelp || m.showDialog {
+		if m.compositor != nil {
+			m.compositor.ClearNative()
+		}
 		return m, nil
 	}
 	if m.width < 1 || m.height < 1 {
@@ -63,6 +67,19 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 	m.nativeOverlayDirty = false
 	debuglog.Renderf("native overlay paint")
 	return m.emitNativeOverlay()
+}
+
+// coverNativeOverlay erases on-screen native graphics and drops compositor
+// pending so help/dialog cell frames cannot re-tail DCS.
+func (m Model) coverNativeOverlay() (Model, tea.Cmd) {
+	if m.compositor != nil {
+		m.compositor.ClearNative()
+	}
+	hadPaint := m.nativePaintCells > 0 || m.nativePaintANSI != "" || m.nativePaintSpecies != 0
+	if !hadPaint {
+		return m, nil
+	}
+	return m.emitNativeClear()
 }
 
 func (m Model) emitNativeClear() (Model, tea.Cmd) {

@@ -259,7 +259,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Help) {
 		m.showHelp = true
 		m.glanceHoldID = 0
-		return m, nil
+		covered, wipe := m.coverNativeOverlay()
+		return covered, wipe
 	}
 
 	if key.Matches(msg, m.keys.Enter) {
@@ -376,7 +377,8 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 	m.dialogVP.GotoTop()
 	m.syncDialogViewport()
 	_ = sel
-	return m, m.ensureDossierLoad()
+	covered, wipe := m.coverNativeOverlay()
+	return covered, tea.Batch(wipe, covered.ensureDossierLoad())
 }
 
 func (m Model) setBrowseView(v BrowseView) (tea.Model, tea.Cmd) {

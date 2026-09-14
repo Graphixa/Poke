@@ -87,6 +87,15 @@ func defaultKeyMap() keyMap {
 	}
 }
 
+// DialogShortHelp implements the dossier overlay footer (bubbles/help).
+func (k keyMap) DialogShortHelp() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "section")),
+		key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "scroll")),
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+	}
+}
+
 // ShortHelp implements help.KeyMap for the footer strip.
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{

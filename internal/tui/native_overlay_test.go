@@ -1170,6 +1170,55 @@ func TestNativeWarmHintVisibleBeforeSpriteViaRaw(t *testing.T) {
 	}
 }
 
+func TestDialogOpenClearsNativeCompositor(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tui.NativeCompositeFlushMsgForTest())
+	m = updated.(tui.Model)
+	if m.CompositorPendingForTest() == "" {
+		t.Fatal("expected pending DCS after paint")
+	}
+
+	buf.Reset()
+	updated, cmd := m.Update(key("enter"))
+	m = updated.(tui.Model)
+	if !m.DialogVisible() {
+		t.Fatal("expected dialog")
+	}
+	// Run cover wipe cmd (SetNativeOnce clear / WriteDirect).
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			updated, _ = m.Update(msg)
+			m = updated.(tui.Model)
+		}
+	}
+	if pending := m.CompositorPendingForTest(); strings.Contains(pending, dcs) {
+		t.Fatalf("dialog must drop paint pending, got %q", pending)
+	}
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatal("dialog must clear painted native state")
+	}
+	buf.Reset()
+	m.CompositorWriteFrameForTest([]byte("cells\x1b[?2026l"))
+	if strings.Contains(buf.String(), dcs) {
+		t.Fatalf("cell flush must not re-tail sprite over dialog: %q", buf.String())
+	}
+}
+
 func TestDialogCloseRepaintsNativeOverlay(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{ansi: "ART"}

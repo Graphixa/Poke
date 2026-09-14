@@ -166,6 +166,23 @@ func (m *Model) AttachCompositorForTest(buf *bytes.Buffer) {
 	m.compositor = newCompositorWriter(buf)
 }
 
+// CompositorPendingForTest returns the pending native tail (test helper).
+func (m Model) CompositorPendingForTest() string {
+	if m.compositor == nil {
+		return ""
+	}
+	m.compositor.mu.Lock()
+	defer m.compositor.mu.Unlock()
+	return string(m.compositor.pending)
+}
+
+// CompositorWriteFrameForTest writes a completed cell frame through the compositor.
+func (m *Model) CompositorWriteFrameForTest(p []byte) {
+	if m.compositor != nil {
+		_, _ = m.compositor.Write(p)
+	}
+}
+
 // NativePaintCellsForTest reports the last painted cell bucket token.
 func (m Model) NativePaintCellsForTest() int { return m.nativePaintCells }
 

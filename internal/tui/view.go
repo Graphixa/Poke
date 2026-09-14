@@ -84,7 +84,13 @@ func (m Model) browseData() views.BrowseData {
 		DialogOff:     m.dialogVP.YOffset(),
 	}
 	if m.showDialog {
-		data.FooterHint = "tab section • ↑/↓ scroll • esc close"
+		hintW := m.width
+		if hintW < 10 {
+			hintW = m.width
+		}
+		h := m.help
+		h.SetWidth(max(1, hintW-1))
+		data.FooterHint = h.ShortHelpView(m.keys.DialogShortHelp())
 	}
 
 	rightID, _ := m.glanceDisplayID()
