@@ -90,7 +90,7 @@ func (m Model) browseData() views.BrowseData {
 		}
 		h := m.help
 		h.SetWidth(max(1, hintW-1))
-		data.FooterHint = h.ShortHelpView(m.keys.DialogShortHelp())
+		data.FooterHint = h.ShortHelpView(m.keys.DialogShortHelp(m.dialogStacked()))
 	}
 
 	rightID, _ := m.glanceDisplayID()

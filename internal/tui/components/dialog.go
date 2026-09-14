@@ -56,6 +56,47 @@ const (
 	dialogMinBodyWide = 56
 )
 
+// DialogGeom is the inset card geometry used by both render and key handling.
+type DialogGeom struct {
+	Stacked bool
+	BodyH   int
+	InnerW  int
+}
+
+// DialogLayout returns whether the dossier uses the stacked pager vs side rail,
+// and the body viewport height — same math as OverlayDialog.
+func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
+	if termW < 20 {
+		termW = 20
+	}
+	if termH < 10 {
+		termH = 10
+	}
+	padX, padY := dialogInsets(termW, termH)
+	dialogW := termW - 2*padX
+	dialogH := termH - 2*padY
+	if dialogW < 40 {
+		dialogW = min(termW, 40)
+	}
+	if dialogH < 12 {
+		dialogH = min(termH, 12)
+	}
+	innerW := dialogW - 4
+	if innerW < 20 {
+		innerW = 20
+	}
+	railW := dialogRailWidth(sectionLabels)
+	stacked := innerW-railW-3 < dialogMinBodyWide
+	h := dialogH - 4
+	if stacked {
+		h = dialogH - 6
+	}
+	if h < 1 {
+		h = 1
+	}
+	return DialogGeom{Stacked: stacked, BodyH: h, InnerW: innerW}
+}
+
 // OverlayDialog composites an inset detail dialog over a dimmed background.
 func OverlayDialog(background, title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int) string {
 	if termW < 20 {

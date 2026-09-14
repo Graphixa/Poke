@@ -267,15 +267,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openDialog()
 	}
 
-	if key.Matches(msg, m.keys.Quit) {
-		if m.layout().TooSmall || m.canQuitWithQ() {
-			m.quitting = true
-			m.glanceHoldID = 0
-			return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
-		}
-		return m.updateSearch(msg)
-	}
-
 	// Digits switch views only when the filter is empty so "25" / "#25" still type.
 	if key.Matches(msg, m.keys.ViewGlance) {
 		if m.queryValue() == "" {
@@ -291,7 +282,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Clear) {
-		if m.queryValue() == "" {
+		if m.queryValue() == "" || m.layout().TooSmall {
 			m.quitting = true
 			m.glanceHoldID = 0
 			return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
@@ -318,30 +309,35 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, m.keys.Clear, m.keys.Quit) {
+	if key.Matches(msg, m.keys.Clear) {
 		m.showDialog = false
 		// Dialog wiped native graphics from the cell grid; force space-clear restore.
 		m.invalidateNativePaintGeometry()
 		m.markNativeOverlayDirty()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.TabNext) {
+	stacked := m.dialogStacked()
+	// Stacked pager: ←/→ sections, ↑/↓ scroll.
+	// Side rail: ↑/↓ sections (vertical list), ←/→ still cycle sections; PgUp/PgDn scroll.
+	if key.Matches(msg, m.keys.TabNext) || key.Matches(msg, m.keys.Right) ||
+		(!stacked && key.Matches(msg, m.keys.Down)) {
 		m.dialogSection = m.dialogSection.Next()
 		m.dialogVP.GotoTop()
 		m.syncDialogViewport()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.TabPrev) {
+	if key.Matches(msg, m.keys.TabPrev) || key.Matches(msg, m.keys.Left) ||
+		(!stacked && key.Matches(msg, m.keys.Up)) {
 		m.dialogSection = m.dialogSection.Prev()
 		m.dialogVP.GotoTop()
 		m.syncDialogViewport()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.Up) {
+	if stacked && key.Matches(msg, m.keys.Up) {
 		m.scrollDialog(-1)
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.Down) {
+	if stacked && key.Matches(msg, m.keys.Down) {
 		m.scrollDialog(1)
 		return m, nil
 	}

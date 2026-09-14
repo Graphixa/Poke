@@ -7,6 +7,8 @@ import "charm.land/bubbles/v2/key"
 type keyMap struct {
 	Up         key.Binding
 	Down       key.Binding
+	Left       key.Binding
+	Right      key.Binding
 	TabNext    key.Binding
 	TabPrev    key.Binding
 	PageUp     key.Binding
@@ -18,7 +20,6 @@ type keyMap struct {
 	Enter      key.Binding
 	ViewGlance key.Binding
 	ViewArt    key.Binding
-	Quit       key.Binding
 	ForceQuit  key.Binding
 }
 
@@ -31,6 +32,14 @@ func defaultKeyMap() keyMap {
 		Down: key.NewBinding(
 			key.WithKeys("down"),
 			key.WithHelp("↑/↓", "move"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("left"),
+			key.WithHelp("←/→", "section"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("right"),
+			key.WithHelp("←/→", "section"),
 		),
 		TabNext: key.NewBinding(
 			key.WithKeys("tab"),
@@ -76,10 +85,6 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("2"),
 			key.WithHelp("2", "art"),
 		),
-		Quit: key.NewBinding(
-			key.WithKeys("q"),
-			key.WithHelp("q", "quit"),
-		),
 		ForceQuit: key.NewBinding(
 			key.WithKeys("ctrl+c"),
 			key.WithHelp("ctrl+c", "quit"),
@@ -87,11 +92,20 @@ func defaultKeyMap() keyMap {
 	}
 }
 
-// DialogShortHelp implements the dossier overlay footer (bubbles/help).
-func (k keyMap) DialogShortHelp() []key.Binding {
+// DialogShortHelp returns footer bindings for the dossier overlay.
+// Rail: ↑/↓ move the section list. Stacked: ↑/↓ scroll; ←/→ still change
+// sections but stay off the short footer.
+func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {
+	if stacked {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "section")),
+			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "scroll")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+		}
+	}
 	return []key.Binding{
-		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "section")),
-		key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "scroll")),
+		key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "section")),
+		key.NewBinding(key.WithKeys("pgup"), key.WithHelp("PgUp/PgDn", "scroll")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
 	}
 }
@@ -99,13 +113,11 @@ func (k keyMap) DialogShortHelp() []key.Binding {
 // ShortHelp implements help.KeyMap for the footer strip.
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter")),
 		k.Up,
 		k.Enter,
 		k.ViewGlance,
 		k.ViewArt,
 		k.Clear,
-		k.Quit,
 	}
 }
 
@@ -113,7 +125,6 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
-			key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter list (incl. letters)")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("backspace", "delete from search")),
 			k.Clear,
 			k.Up,
@@ -129,7 +140,6 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{
 			k.TabNext,
 			k.TabPrev,
-			k.Quit,
 			k.ForceQuit,
 			k.Help,
 		},

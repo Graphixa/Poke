@@ -15,6 +15,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite/coldsched"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/textwidth"
+	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
@@ -439,10 +440,6 @@ func (m *Model) clearQuery() {
 	m.dialogVP.GotoTop()
 }
 
-func (m *Model) canQuitWithQ() bool {
-	return m.queryValue() == ""
-}
-
 func (m *Model) bumpSelection() {
 	end := debuglog.Trace(debuglog.Render, "selection.changed")
 	defer end()
@@ -480,37 +477,13 @@ func (m *Model) syncDialogViewport() {
 }
 
 func (m *Model) dialogPageSize() int {
-	padX, padY := 7, 2
-	switch {
-	case m.width < 80:
-		padX = 2
-	case m.width < 90:
-		padX = 4
-	case m.width < 100:
-		padX = 6
-	}
-	if m.height < 18 {
-		padY = 1
-	}
-	dialogW := m.width - 2*padX
-	dialogH := m.height - 2*padY
-	if dialogW < 40 {
-		dialogW = min(m.width, 40)
-	}
-	if dialogH < 12 {
-		dialogH = min(m.height, 12)
-	}
-	innerW := max(20, dialogW-4)
-	// The renderer stacks when a 16-column rail plus divider padding would
-	// leave under 56 body columns.
-	stacked := innerW-16-3 < 56
-	// The card reserves one row of inner padding above and below its content.
-	h := dialogH - 4
-	if stacked {
-		h = dialogH - 6
-	}
-	if h < 1 {
-		h = 1
-	}
-	return h
+	return m.dialogGeom().BodyH
+}
+
+func (m *Model) dialogGeom() components.DialogGeom {
+	return components.DialogLayout(m.width, m.height, AllDialogSectionLabels())
+}
+
+func (m *Model) dialogStacked() bool {
+	return m.dialogGeom().Stacked
 }

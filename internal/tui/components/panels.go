@@ -252,9 +252,9 @@ func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	if hint != "" {
 		leftText = " " + hint
 	} else if verbose {
-		leftText = " type filter • ↑/↓ move • enter details • 1 glance • 2 art • esc clear/quit • q quit"
+		leftText = " ↑/↓ move • enter details • 1 glance • 2 art • esc clear/quit"
 	} else {
-		leftText = " type • ↑/↓ • enter • 1 • 2 • esc • q"
+		leftText = " ↑/↓ • enter • 1 • 2 • esc"
 	}
 	left := textwidth.PadRight(textwidth.Truncate(leftText, leftW), leftW)
 	return footerSty().Render(left + right)
@@ -285,8 +285,8 @@ func HelpOverlay(body string, width, height int) string {
 		body = strings.Join([]string{
 			"Browse help",
 			"",
-			"type filter • ↑/↓ move • 1 glance • 2 art",
-			"enter details • esc clear/quit • q quit",
+			"↑/↓ move • 1 glance • 2 art",
+			"enter details • esc clear/quit",
 			"",
 			"Press esc or ? to close",
 		}, "\n")

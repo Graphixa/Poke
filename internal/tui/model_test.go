@@ -195,7 +195,7 @@ func drainCmds(t *testing.T, model *tea.Model, cmd tea.Cmd) {
 	}
 }
 
-func TestSearchFilterAndQuitEligibility(t *testing.T) {
+func TestSearchFilterTypesQ(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
 	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -204,20 +204,17 @@ func TestSearchFilterAndQuitEligibility(t *testing.T) {
 	if m.Query() != "c" {
 		t.Fatalf("query = %q", m.Query())
 	}
-	if m.CanQuitWithQ() {
-		t.Fatal("q should not quit while query non-empty")
-	}
 	m = apply(t, m, key("q"))
 	if m.Query() != "cq" {
-		t.Fatalf("typed q should filter, got %q", m.Query())
+		t.Fatalf("q must type into search, got %q", m.Query())
+	}
+	if m.Quitting() {
+		t.Fatal("q must not quit")
 	}
 
 	m = apply(t, m, key("esc"))
 	if m.Query() != "" {
 		t.Fatalf("esc clear = %q", m.Query())
-	}
-	if !m.CanQuitWithQ() {
-		t.Fatal("q should quit when empty")
 	}
 }
 
@@ -271,6 +268,14 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 	if m.ActiveDialogSection() != tui.DialogStats {
 		t.Fatalf("tab section = %v want Stats", m.ActiveDialogSection())
 	}
+	m = apply(t, m, key("right"))
+	if m.ActiveDialogSection() != tui.DialogEvolution {
+		t.Fatalf("right section = %v want Evolution", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("left"))
+	if m.ActiveDialogSection() != tui.DialogStats {
+		t.Fatalf("left section = %v want Stats", m.ActiveDialogSection())
+	}
 	m = apply(t, m, key("shift+tab"), key("shift+tab"))
 	if m.ActiveDialogSection() != tui.DialogMeta {
 		t.Fatalf("shift-tab wrap section = %v want Meta", m.ActiveDialogSection())
@@ -280,17 +285,14 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("tab wrap section = %v want Summary", m.ActiveDialogSection())
 	}
 
-	// A short dialog makes Summary scrollable; arrows move only its body.
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 8}, key("down"))
-	if m.DialogOffset() == 0 {
-		t.Fatal("down should scroll the dialog body")
+	// Wide rail: ↑/↓ move the section list (body scroll is PgUp/PgDn).
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40}, key("down"))
+	if m.ActiveDialogSection() != tui.DialogStats {
+		t.Fatalf("rail down section = %v want Stats", m.ActiveDialogSection())
 	}
+	m = apply(t, m, key("up"))
 	if m.ActiveDialogSection() != tui.DialogSummary {
-		t.Fatal("body scrolling must not move the section rail")
-	}
-	m = apply(t, m, key("pgdown"), key("home"))
-	if m.DialogOffset() != 0 {
-		t.Fatalf("home offset = %d", m.DialogOffset())
+		t.Fatalf("rail up section = %v want Summary", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("esc"))
 	if m.DialogVisible() {
@@ -458,8 +460,8 @@ func TestEmptyResultsAndTooSmall(t *testing.T) {
 	if !strings.Contains(view, "too small") && !strings.Contains(view, "Too small") && !strings.Contains(strings.ToLower(view), "too small") {
 		t.Fatalf("expected too-small cue:\n%s", view)
 	}
-	m = apply(t, m, key("q"))
+	m = apply(t, m, key("esc"))
 	if !m.Quitting() {
-		t.Fatal("q should quit when terminal too small")
+		t.Fatal("esc should quit when terminal too small")
 	}
 }
