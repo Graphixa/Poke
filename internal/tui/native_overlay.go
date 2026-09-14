@@ -34,6 +34,12 @@ var nativeReassertDelay = 50 * time.Millisecond
 // follows the initial Raw (see emitNativeOverlay).
 type nativeReassertMsg struct{}
 
+// nativeCompositeFlushMsg writes pending CUP+DCS after View has run. PaintNow
+// during Update placed sixel before the art reservation cells existed on WT
+// (sprite overflowing the art box until relaunch). SetNative + this flush keeps
+// cells-then-DCS order while still covering viewEquals skips.
+type nativeCompositeFlushMsg struct{}
+
 func (m *Model) markNativeOverlayDirty() {
 	m.nativeOverlayDirty = true
 }
@@ -155,10 +161,10 @@ func (m Model) emitNativeOverlay() (Model, tea.Cmd) {
 	m.nativePaintCells = m.imageCells
 	m.nativePaintANSI = m.imageANSI
 	if m.composite && m.compositor != nil {
-		// Paint immediately; also keep pending so later cell flushes re-assert.
-		m.compositor.PaintNow(seq)
+		// Defer write until after View (cells-then-DCS). Flush covers viewEquals.
+		m.compositor.SetNative(seq)
 		m.nativeFollowUpPending = false
-		return m, nil
+		return m, func() tea.Msg { return nativeCompositeFlushMsg{} }
 	}
 	raw := tea.Raw(seq)
 	if m.nativeFollowUpPending {

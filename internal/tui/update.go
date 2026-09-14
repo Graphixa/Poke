@@ -18,6 +18,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(tea.RawMsg); ok {
 		return m, nil
 	}
+	if _, ok := msg.(nativeCompositeFlushMsg); ok {
+		if m.compositor != nil {
+			m.compositor.FlushPending()
+		}
+		return m, nil
+	}
 	next, cmd := m.update(msg)
 	n := next.(Model)
 	n.maybeCommitGlanceHold()

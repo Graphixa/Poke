@@ -68,9 +68,24 @@ func (c *compositorWriter) SetNative(seq string) {
 	c.mu.Unlock()
 }
 
+// FlushPending writes the current pending native sequence immediately without
+// clearing it. Used after View so a viewEquals skip still gets DCS, while a
+// normal frame already tailed the same bytes (harmless overwrite).
+func (c *compositorWriter) FlushPending() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	seq := append([]byte(nil), c.pending...)
+	c.mu.Unlock()
+	if len(seq) == 0 {
+		return
+	}
+	_, _ = c.inner.Write(seq)
+}
+
 // PaintNow stores seq for post-frame re-assert and writes it immediately.
-// Needed when Bubble Tea skips a flush (viewEquals) after sprite ready — pending
-// alone would never reach the terminal until some later View change (e.g. resize).
+// Prefer SetNative + nativeCompositeFlushMsg in the TUI so cells land first.
 func (c *compositorWriter) PaintNow(seq string) {
 	if c == nil || seq == "" {
 		return

@@ -154,6 +154,9 @@ func (m Model) NativeFollowUpPendingForTest() bool { return m.nativeFollowUpPend
 // NativeReassertMsgForTest is the post-flush overwrite tick message.
 func NativeReassertMsgForTest() tea.Msg { return nativeReassertMsg{} }
 
+// NativeCompositeFlushMsgForTest is the post-View DCS flush (composite path).
+func NativeCompositeFlushMsgForTest() tea.Msg { return nativeCompositeFlushMsg{} }
+
 // InstantNativeReassertForTest sets the post-flush delay to 0 (Tick returns promptly).
 func InstantNativeReassertForTest() { nativeReassertDelay = 0 }
 

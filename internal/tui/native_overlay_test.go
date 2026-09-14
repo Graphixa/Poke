@@ -786,6 +786,35 @@ func TestNativeOverlayReassertOverwritesWithoutClear(t *testing.T) {
 }
 
 
+func TestCompositeOverlayDefersDCSUntilFlushMsg(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	buf.Reset()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if strings.Contains(buf.String(), dcs) {
+		t.Fatalf("DCS must not paint during Update (before View): %q", buf.String())
+	}
+	// Simulate Bubble Tea running the post-View flush cmd.
+	updated, _ = m.Update(tui.NativeCompositeFlushMsgForTest())
+	m = updated.(tui.Model)
+	if !strings.Contains(buf.String(), dcs) {
+		t.Fatalf("flush msg must write DCS after View, got %q", buf.String())
+	}
+}
+
 func TestResizeWipesNativeBeforeRelayout(t *testing.T) {
 	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
 	var buf bytes.Buffer
@@ -815,8 +844,8 @@ func TestResizeWipesNativeBeforeRelayout(t *testing.T) {
 	if clearAt < 0 {
 		t.Fatalf("resize must WriteDirect theme space-clear of old art box, got %q", out)
 	}
-	// Wipe clears pending; scheduleNativeOverlay then PaintNows at the new
-	// origin — DCS after the clear is the re-paint, not a stale pending tail.
+	// Wipe clears pending; scheduleNativeOverlay SetNatives at the new origin
+	// (DCS lands via post-View flush / frame tail — not required in this buf check).
 	if dcsAt := strings.Index(out, dcs); dcsAt >= 0 && dcsAt < clearAt {
 		t.Fatal("stale DCS must not precede the resize wipe clear")
 	}

@@ -78,6 +78,23 @@ func TestCompositorWriterClearNative(t *testing.T) {
 	}
 }
 
+func TestCompositorWriterFlushPendingKeepsPending(t *testing.T) {
+	var buf bytes.Buffer
+	c := newCompositorWriter(&buf)
+	c.SetNative("DCS")
+	c.FlushPending()
+	if got := buf.String(); got != "DCS" {
+		t.Fatalf("FlushPending write: got %q", got)
+	}
+	buf.Reset()
+	if _, err := c.Write(frameEnd()); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != "CELLS\x1b[?2026lDCS" {
+		t.Fatalf("pending must survive FlushPending for re-assert: got %q", got)
+	}
+}
+
 func TestCompositorWriterPaintNowKeepsPending(t *testing.T) {
 	var buf bytes.Buffer
 	c := newCompositorWriter(&buf)
