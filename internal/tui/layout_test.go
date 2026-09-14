@@ -197,8 +197,9 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		"#004",
 		"[sprite]",
 		"Stats",
-		"Enter/i",
-		"v view",
+		"enter details",
+		"1 glance",
+		"2 art",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
@@ -300,7 +301,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		DialogLabels:  []string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
 		DialogLines:   []string{"Height  0.6 m"},
 	})
-	for _, want := range []string{"Pokedex", "Charmander", "#004", "> Summary", "Height", "Tab section", "Esc close"} {
+	for _, want := range []string{"Pokedex", "Charmander", "#004", "> Summary", "Height", "tab section", "esc close"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -308,7 +309,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 	if strings.Contains(out, "Enter/i") {
 		t.Fatalf("dialog must replace the browse footer:\n%s", out)
 	}
-	if strings.Count(out, "Esc close") != 1 {
+	if strings.Count(out, "esc close") != 1 {
 		t.Fatalf("dialog must render one command footer:\n%s", out)
 	}
 	if strings.Contains(stripANSI(out), "[ Summary ]") {

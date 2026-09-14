@@ -239,16 +239,16 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 	if m.ActiveBrowseView() != tui.BrowseGlance {
 		t.Fatalf("view = %v want Glance", m.ActiveBrowseView())
 	}
-	m = apply(t, m, key("v"))
+	m = apply(t, m, key("2"))
 	if m.ActiveBrowseView() != tui.BrowseArt {
-		t.Fatalf("v → Art, got %v", m.ActiveBrowseView())
+		t.Fatalf("2 → Art, got %v", m.ActiveBrowseView())
 	}
 	if f := m.LayoutFlags(); !f.ShowSprite || f.SpriteSize != 40 {
 		t.Fatalf("Art view show=%v size=%d want 40", f.ShowSprite, f.SpriteSize)
 	}
-	m = apply(t, m, key("v"))
+	m = apply(t, m, key("1"))
 	if m.ActiveBrowseView() != tui.BrowseGlance {
-		t.Fatalf("v cycles back to Glance, got %v", m.ActiveBrowseView())
+		t.Fatalf("1 → Glance, got %v", m.ActiveBrowseView())
 	}
 	if details.coreCalls.Load() < 1 {
 		t.Fatalf("browse should load dossier core for About, got %d", details.coreCalls.Load())
@@ -383,12 +383,28 @@ func TestEnterDossierNoRefetch(t *testing.T) {
 	}
 }
 
-func TestUnboundKeys(t *testing.T) {
+func TestSearchTypesLettersIncludingR(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52}, key("r"), key("/"))
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52}, key("r"), key("/"), key("a"))
+	if m.Query() != "r/a" {
+		t.Fatalf("letters must type into search, got %q", m.Query())
+	}
+}
+
+func TestEscClearsThenQuits(t *testing.T) {
+	details := &fakeDetails{}
+	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details, Prefill: "char"})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52}, key("esc"))
 	if m.Query() != "" {
-		t.Fatalf("unbound keys mutated query: %q", m.Query())
+		t.Fatalf("first esc clears search, got %q", m.Query())
+	}
+	if m.Quitting() {
+		t.Fatal("first esc must not quit while clearing")
+	}
+	m = apply(t, m, key("esc"))
+	if !m.Quitting() {
+		t.Fatal("second esc on empty search must quit")
 	}
 }
 

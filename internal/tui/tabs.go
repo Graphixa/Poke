@@ -29,7 +29,7 @@ func (v BrowseView) Prev() BrowseView {
 	return BrowseView((int(v) + int(browseViewCount) - 1) % int(browseViewCount))
 }
 
-// DialogSection is a detail section inside the Enter/i overlay (full dossier).
+// DialogSection is a detail section inside the Enter overlay (full dossier).
 type DialogSection int
 
 const (

@@ -268,14 +268,17 @@ func newHelpModel() help.Model {
 	h.ShortSeparator = " • "
 	h.Styles = help.DefaultDarkStyles()
 	p := style.CurrentPalette()
-	muted := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Placeholders)).Faint(true)
-	h.Styles.ShortKey = muted
-	h.Styles.ShortDesc = muted
-	h.Styles.ShortSeparator = muted
-	h.Styles.FullKey = muted
-	h.Styles.FullDesc = muted
-	h.Styles.FullSeparator = muted
-	h.Styles.Ellipsis = muted
+	// FontGet-style: keys stand out (bold primary), descriptions stay readable.
+	keySty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Primary)).Bold(true)
+	descSty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Components))
+	sepSty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Placeholders))
+	h.Styles.ShortKey = keySty
+	h.Styles.ShortDesc = descSty
+	h.Styles.ShortSeparator = sepSty
+	h.Styles.FullKey = keySty
+	h.Styles.FullDesc = descSty
+	h.Styles.FullSeparator = sepSty
+	h.Styles.Ellipsis = sepSty
 	return h
 }
 

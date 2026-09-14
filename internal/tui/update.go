@@ -256,10 +256,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleDialogKey(msg)
 	}
 
-	if key.Matches(msg, m.keys.Unbound) {
-		return m, nil
-	}
-
 	if key.Matches(msg, m.keys.Help) {
 		m.showHelp = true
 		m.glanceHoldID = 0
@@ -268,13 +264,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if key.Matches(msg, m.keys.Enter) {
 		return m.openDialog()
-	}
-
-	if key.Matches(msg, m.keys.Info) {
-		if m.queryValue() == "" {
-			return m.openDialog()
-		}
-		return m.updateSearch(msg)
 	}
 
 	if key.Matches(msg, m.keys.Quit) {
@@ -286,11 +275,26 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.updateSearch(msg)
 	}
 
-	if key.Matches(msg, m.keys.ViewCycle) {
-		return m.cycleBrowseView()
+	// Digits switch views only when the filter is empty so "25" / "#25" still type.
+	if key.Matches(msg, m.keys.ViewGlance) {
+		if m.queryValue() == "" {
+			return m.setBrowseView(BrowseGlance)
+		}
+		return m.updateSearch(msg)
+	}
+	if key.Matches(msg, m.keys.ViewArt) {
+		if m.queryValue() == "" {
+			return m.setBrowseView(BrowseArt)
+		}
+		return m.updateSearch(msg)
 	}
 
 	if key.Matches(msg, m.keys.Clear) {
+		if m.queryValue() == "" {
+			m.quitting = true
+			m.glanceHoldID = 0
+			return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
+		}
 		m.clearQuery()
 		return m, m.syncSelectionLoads()
 	}
@@ -375,10 +379,13 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 	return m, m.ensureDossierLoad()
 }
 
-func (m Model) cycleBrowseView() (tea.Model, tea.Cmd) {
+func (m Model) setBrowseView(v BrowseView) (tea.Model, tea.Cmd) {
+	if m.browseView == v {
+		return m, nil
+	}
 	prevShow := m.layout().ShowSprite
 	prevSide := m.currentSpriteSide()
-	m.browseView = m.browseView.Next()
+	m.browseView = v
 	m.markNativeOverlayDirty()
 	m.notifyWarmer()
 	return m, m.handleSpriteLayoutChange(prevShow, prevSide)

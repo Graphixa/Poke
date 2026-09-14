@@ -139,7 +139,7 @@ func Browse(d BrowseData) string {
 	}
 
 	if d.ShowDialog {
-		d.FooterHint = "Tab section • ↑↓ scroll • Esc close"
+		d.FooterHint = "tab section • ↑/↓ scroll • esc close"
 		d.WarmHint = ""
 	}
 	base := renderBrowseBase(d, fr)

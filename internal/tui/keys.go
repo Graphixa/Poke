@@ -3,24 +3,23 @@ package tui
 import "charm.land/bubbles/v2/key"
 
 // keyMap holds browse key bindings (Charm bubbles/key pattern).
+// Letter keys are not used as hotkeys — they type into the always-on list filter.
 type keyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	TabNext   key.Binding
-	TabPrev   key.Binding
-	PageUp    key.Binding
-	PageDown  key.Binding
-	Home      key.Binding
-	End       key.Binding
-	Clear     key.Binding
-	Help      key.Binding
-	Info      key.Binding
-	Enter     key.Binding
-	ViewCycle key.Binding
-	Quit      key.Binding
-	ForceQuit key.Binding
-	// Unbound keys that must not reach the search field.
-	Unbound key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	TabNext    key.Binding
+	TabPrev    key.Binding
+	PageUp     key.Binding
+	PageDown   key.Binding
+	Home       key.Binding
+	End        key.Binding
+	Clear      key.Binding
+	Help       key.Binding
+	Enter      key.Binding
+	ViewGlance key.Binding
+	ViewArt    key.Binding
+	Quit       key.Binding
+	ForceQuit  key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -59,23 +58,23 @@ func defaultKeyMap() keyMap {
 		),
 		Clear: key.NewBinding(
 			key.WithKeys("esc"),
-			key.WithHelp("esc", "clear / close"),
+			key.WithHelp("esc", "clear / quit"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
 		),
-		Info: key.NewBinding(
-			key.WithKeys("i"),
-			key.WithHelp("i", "details"),
-		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "details"),
 		),
-		ViewCycle: key.NewBinding(
-			key.WithKeys("v"),
-			key.WithHelp("v", "view"),
+		ViewGlance: key.NewBinding(
+			key.WithKeys("1"),
+			key.WithHelp("1", "glance"),
+		),
+		ViewArt: key.NewBinding(
+			key.WithKeys("2"),
+			key.WithHelp("2", "art"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q"),
@@ -85,9 +84,6 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("ctrl+c"),
 			key.WithHelp("ctrl+c", "quit"),
 		),
-		Unbound: key.NewBinding(
-			key.WithKeys("r", "/"),
-		),
 	}
 }
 
@@ -96,8 +92,9 @@ func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter")),
 		k.Up,
-		k.ViewCycle,
 		k.Enter,
+		k.ViewGlance,
+		k.ViewArt,
 		k.Clear,
 		k.Quit,
 	}
@@ -107,16 +104,16 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
-			key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter list (incl. q)")),
+			key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter list (incl. letters)")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("backspace", "delete from search")),
 			k.Clear,
 			k.Up,
 			k.Down,
 		},
 		{
-			k.ViewCycle,
+			k.ViewGlance,
+			k.ViewArt,
 			k.Enter,
-			k.Info,
 			k.PageUp,
 			k.PageDown,
 		},

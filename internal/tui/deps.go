@@ -14,7 +14,7 @@ type LevelUpMove struct {
 }
 
 // DetailSource loads dossier data for the Enter/detail overlay and browse glance About.
-// Browse highlight may call LoadDossierCore only; extras load on Enter/i.
+// Browse highlight may call LoadDossierCore only; extras load on Enter.
 type DetailSource interface {
 	LoadDossierCore(ctx context.Context, speciesID int, slug string) (domain.Dossier, bool, error)
 	LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error)

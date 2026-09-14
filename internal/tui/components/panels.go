@@ -252,9 +252,9 @@ func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	if hint != "" {
 		leftText = " " + hint
 	} else if verbose {
-		leftText = " Type to filter • ↑↓ move • v view • Enter/i details • Esc clear • q quit"
+		leftText = " type filter • ↑/↓ move • enter details • 1 glance • 2 art • esc clear/quit • q quit"
 	} else {
-		leftText = " type • ↑↓ • v view • Enter/i • Esc • q"
+		leftText = " type • ↑/↓ • enter • 1 • 2 • esc • q"
 	}
 	left := textwidth.PadRight(textwidth.Truncate(leftText, leftW), leftW)
 	return footerSty().Render(left + right)
@@ -285,13 +285,13 @@ func HelpOverlay(body string, width, height int) string {
 		body = strings.Join([]string{
 			"Browse help",
 			"",
-			"Type to filter • ↑/↓ move • v view",
-			"Enter/i details • Esc clear • q quit",
+			"type filter • ↑/↓ move • 1 glance • 2 art",
+			"enter details • esc clear/quit • q quit",
 			"",
-			"Press Esc or ? to close",
+			"Press esc or ? to close",
 		}, "\n")
 	} else {
-		body = "Browse help\n\n" + body + "\n\nPress Esc or ? to close"
+		body = "Browse help\n\n" + body + "\n\nPress esc or ? to close"
 	}
 	styleCard := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

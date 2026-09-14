@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -82,7 +84,7 @@ func (m Model) browseData() views.BrowseData {
 		DialogOff:     m.dialogVP.YOffset(),
 	}
 	if m.showDialog {
-		data.FooterHint = "Tab section • ↑↓ scroll • Esc close"
+		data.FooterHint = "tab section • ↑/↓ scroll • esc close"
 	}
 
 	rightID, _ := m.glanceDisplayID()
@@ -121,6 +123,18 @@ func (m Model) browseData() views.BrowseData {
 	}
 	if !m.showDialog && m.warmRight != "" && m.showsWarmHintInView() {
 		data.WarmHint = m.warmRight
+	}
+	if !m.showDialog {
+		hintW := m.width
+		if strings.TrimSpace(data.WarmHint) != "" {
+			hintW = m.width - components.FooterRightWidth
+		}
+		if hintW < 10 {
+			hintW = m.width
+		}
+		h := m.help
+		h.SetWidth(max(1, hintW-1))
+		data.FooterHint = h.ShortHelpView(m.keys.ShortHelp())
 	}
 	data.ImageState = int(m.imageState)
 	return data
