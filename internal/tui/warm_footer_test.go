@@ -12,13 +12,22 @@ import (
 )
 
 func TestFooterSplitFixedWidthRight(t *testing.T) {
-	left := components.FooterSplit(false, 80, "", "")
-	if len(left) < 40 {
-		t.Fatalf("footer too short: %q", left)
+	left := components.FooterSplit(true, 80, "", "")
+	if !strings.Contains(left, "Enter/i details") {
+		t.Fatalf("empty status must give help the full width: %q", left)
 	}
-	withBar := components.FooterSplit(false, 80, "", "Artwork ██████░░░░ 5/10")
+	if w := lipgloss.Width(left); w != 80 {
+		t.Fatalf("footer width=%d want 80", w)
+	}
+	withBar := components.FooterSplit(true, 80, "", "Image Cache ██████░░░░ 5/10")
 	if withBar == left {
-		t.Fatal("expected different footer with artwork progress")
+		t.Fatal("expected different footer with cache progress")
+	}
+	if strings.Contains(withBar, "Enter/i details") && !strings.Contains(withBar, "Image Cache") {
+		t.Fatalf("with status, right segment should appear: %q", withBar)
+	}
+	if w := lipgloss.Width(withBar); w != 80 {
+		t.Fatalf("footer with bar width=%d want 80", w)
 	}
 }
 

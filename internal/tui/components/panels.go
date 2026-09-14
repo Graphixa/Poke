@@ -226,19 +226,27 @@ func Footer(verbose bool, width int, warmHint string) string {
 // FooterRightWidth is the fixed character width of the browse footer status segment.
 const FooterRightWidth = 42
 
-// FooterSplit renders active-view keys on the left and a fixed-width status on the right.
+// FooterSplit renders active-view keys on the left and an optional fixed-width
+// status on the right. When rightStatus is empty, the help line uses the full
+// terminal width (no phantom reserved column).
 func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
-	footerRightWidth := FooterRightWidth
 	right := strings.TrimSpace(rightStatus)
-	right = textwidth.Truncate(right, footerRightWidth)
-	if w := textwidth.Width(right); w < footerRightWidth {
-		right = strings.Repeat(" ", footerRightWidth-w) + right
+	footerRightWidth := 0
+	if right != "" {
+		footerRightWidth = FooterRightWidth
+		right = textwidth.Truncate(right, footerRightWidth)
+		if w := textwidth.Width(right); w < footerRightWidth {
+			right = strings.Repeat(" ", footerRightWidth-w) + right
+		}
 	}
 
-	leftW := width - footerRightWidth
-	if leftW < 10 {
-		leftW = width
-		right = ""
+	leftW := width
+	if footerRightWidth > 0 {
+		leftW = width - footerRightWidth
+		if leftW < 10 {
+			leftW = width
+			right = ""
+		}
 	}
 	var leftText string
 	if hint != "" {
