@@ -287,33 +287,35 @@ func TestBrowseListVeryNarrowPrioritizesSelectedName(t *testing.T) {
 }
 
 func TestDialogOverlaySnapshot(t *testing.T) {
+	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Locations", "Pokédex", "Biology"}
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 40,
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 4, DisplayName: "Charmander"},
 		ShowSprite:  true, VerboseFooter: true,
 		BrowseView: 0,
-		ViewLabels: []string{"Sprite"},
+		ViewLabels: []string{"Glance", "Art"},
 		BodySize:   sprite.MaxFrameSize,
 		LeftWidth:  70, RightWidth: 49,
 		ShowDialog:    true,
 		DialogSection: 0,
-		DialogLabels:  []string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
-		DialogLines:   []string{"Height  0.6 m"},
-		FooterHint:    "tab section • ↑/↓ scroll • esc close",
+		DialogLabels:  labels,
+		DialogLines:   []string{"Fire · Lizard Pokémon", "Height    0.6 m"},
+		FooterHint:    "↑/↓ section • PgUp/PgDn scroll • esc close",
 	})
-	for _, want := range []string{"Pokedex", "Charmander", "#004", "> Summary", "Height", "tab section", "esc close"} {
-		if !strings.Contains(out, want) {
+	plain := stripANSI(out)
+	for _, want := range []string{"Charmander", "#004", "> Overview", "Height", "↑/↓ section", "esc close"} {
+		if !strings.Contains(out, want) && !strings.Contains(plain, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "Enter/i") {
-		t.Fatalf("dialog must replace the browse footer:\n%s", out)
+	if strings.Contains(plain, "Pokedex\n") && strings.Contains(plain, "> Bulbasaur") {
+		t.Fatalf("full-screen dossier must not show browse list underneath:\n%s", plain)
 	}
-	if strings.Count(out, "esc close") != 1 {
+	if strings.Count(plain, "esc close") != 1 {
 		t.Fatalf("dialog must render one command footer:\n%s", out)
 	}
-	if strings.Contains(stripANSI(out), "[ Summary ]") {
+	if strings.Contains(plain, "[ Overview ]") {
 		t.Fatal("dialog must use the vertical rail, not the horizontal switcher")
 	}
 }
@@ -343,77 +345,51 @@ func TestBrowseSpriteNoSwitcher(t *testing.T) {
 	}
 }
 
-func TestDialogInsetLeavesBrowseVisible(t *testing.T) {
-	background := strings.TrimSuffix(strings.Repeat(strings.Repeat("b", 120)+"\n", 40), "\n")
-	rendered := components.OverlayDialog(
-		background,
+func TestDossierFrameFillsTerminal(t *testing.T) {
+	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Locations", "Pokédex", "Biology"}
+	out := stripANSI(components.DossierFrame(
 		"Charmander #004",
 		0,
-		[]string{"Summary", "Stats", "Evolution", "Moves"},
+		labels,
 		[]string{"Height  0.6 m"},
 		0,
 		120,
 		40,
-	)
-	out := stripANSI(rendered)
+		" ↑/↓ section • esc close",
+	))
 	lines := strings.Split(out, "\n")
-	if len(lines) < 4 || !strings.Contains(lines[2], "bbbbbbb╭") {
-		t.Fatalf("expected 7-column and 2-row browse peek around card:\n%s", out)
+	if len(lines) < 2 {
+		t.Fatalf("expected card + footer:\n%s", out)
 	}
-	if !strings.Contains(out, "> Summary") || !strings.Contains(out, "  Stats") {
+	if !strings.HasPrefix(lines[0], "╭─") || !strings.Contains(lines[0], "Charmander") {
+		t.Fatalf("expected full-frame title border:\n%s", lines[0])
+	}
+	if !strings.Contains(out, "> Overview") || !strings.Contains(out, "  Stats") {
 		t.Fatalf("expected vertical section rail:\n%s", out)
 	}
-
-	const left, top, cardW, cardH = 7, 2, 106, 36
-	assertBlankDialogRow(t, lines[top+1], left, cardW)
-	assertBlankDialogRow(t, lines[top+cardH-2], left, cardW)
-	firstContent := []rune(lines[top+2])
-	split := -1
-	for i := left + 1; i < left+cardW-1; i++ {
-		if firstContent[i] == '│' {
-			split = i
-			break
-		}
+	// No dimmed browse peek: first content row should start at the card edge.
+	if strings.Contains(lines[0], "bbbb") {
+		t.Fatalf("dossier must not composite over browse:\n%s", out)
 	}
-	if split < 0 {
-		t.Fatalf("dialog content row lacks rail divider: %q", lines[top+2])
-	}
-	if firstContent[left+1] != ' ' || firstContent[split-1] != ' ' || firstContent[split+1] != ' ' {
-		t.Fatalf("dialog content row lacks explicit side/divider padding: %q", lines[top+2])
-	}
-	for _, line := range lines[top+2 : top+cardH-2] {
-		cells := []rune(line)
-		if cells[left] != '│' || cells[left+1] != ' ' || cells[left+cardW-2] != ' ' || cells[left+cardW-1] != '│' {
-			t.Fatalf("dialog content row lacks one-column inner padding: %q", line)
-		}
-	}
-}
-
-func assertBlankDialogRow(t *testing.T, line string, left, cardW int) {
-	t.Helper()
-	cells := []rune(line)
-	if len(cells) < left+cardW || cells[left] != '│' || cells[left+cardW-1] != '│' {
-		t.Fatalf("malformed dialog padding row: %q", line)
-	}
-	for _, cell := range cells[left+1 : left+cardW-1] {
-		if cell != ' ' {
-			t.Fatalf("expected blank dialog padding row: %q", line)
-		}
+	footer := lines[len(lines)-1]
+	if !strings.Contains(footer, "esc close") {
+		t.Fatalf("footer should be on dossier frame: %q", footer)
 	}
 }
 
 func TestDialogNarrowUsesStackedPager(t *testing.T) {
-	out := stripANSI(components.OverlayDialog(
-		"",
+	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Locations", "Pokédex", "Biology"}
+	out := stripANSI(components.DossierFrame(
 		"Charmander #004",
 		3,
-		[]string{"Summary", "Stats", "Evolution", "Moves", "Locations", "Abilities", "Flavour", "Breeding", "Training", "Forms", "Meta"},
-		[]string{"Lvl Move Type Cat Pow Acc"},
+		labels,
+		[]string{"Lvl Move Type Cat Pow Acc PP"},
 		0,
-		80,
+		70,
 		30,
+		"",
 	))
-	if !strings.Contains(out, "‹  4/11  Moves  ›") {
+	if !strings.Contains(out, "‹  4/7  Moves  ›") {
 		t.Fatalf("expected stacked pager at narrow width:\n%s", out)
 	}
 	if strings.Contains(out, "> Moves") {

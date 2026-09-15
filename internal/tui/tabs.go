@@ -29,36 +29,28 @@ func (v BrowseView) Prev() BrowseView {
 	return BrowseView((int(v) + int(browseViewCount) - 1) % int(browseViewCount))
 }
 
-// DialogSection is a detail section inside the Enter overlay (full dossier).
+// DialogSection is a detail section in the full-screen dossier.
 type DialogSection int
 
 const (
-	DialogSummary DialogSection = iota
+	DialogOverview DialogSection = iota
 	DialogStats
 	DialogEvolution
 	DialogMoves
 	DialogLocations
-	DialogAbilities
-	DialogFlavour
-	DialogBreeding
-	DialogTraining
-	DialogForms
-	DialogMeta
+	DialogPokedex
+	DialogBiology
 	dialogSectionCount
 )
 
 var dialogSectionLabels = [...]string{
-	DialogSummary:   "Summary",
+	DialogOverview:  "Overview",
 	DialogStats:     "Stats",
 	DialogEvolution: "Evolution",
 	DialogMoves:     "Moves",
 	DialogLocations: "Locations",
-	DialogAbilities: "Abilities",
-	DialogFlavour:   "Flavour",
-	DialogBreeding:  "Breeding",
-	DialogTraining:  "Training",
-	DialogForms:     "Forms",
-	DialogMeta:      "Meta",
+	DialogPokedex:   "Pokédex",
+	DialogBiology:   "Biology",
 }
 
 func (s DialogSection) Label() string {
@@ -82,7 +74,7 @@ func (s DialogSection) NeedsLazyLoad() bool {
 	return false
 }
 
-// AllDialogSectionLabels returns labels in cycle order for the dialog switcher.
+// AllDialogSectionLabels returns labels in cycle order for the dossier rail.
 func AllDialogSectionLabels() []string {
 	out := make([]string, int(dialogSectionCount))
 	for i := DialogSection(0); i < dialogSectionCount; i++ {

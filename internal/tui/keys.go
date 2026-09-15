@@ -92,7 +92,7 @@ func defaultKeyMap() keyMap {
 	}
 }
 
-// DialogShortHelp returns footer bindings for the dossier overlay.
+// DialogShortHelp returns footer bindings for the full-screen dossier.
 // Rail: ↑/↓ move the section list. Stacked: ↑/↓ scroll; ←/→ still change
 // sections but stay off the short footer.
 func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {

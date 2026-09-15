@@ -50,21 +50,18 @@ func SpriteSizeCue(width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, mutedSty().Render(msg))
 }
 
-const (
-	dialogWidePadX    = 7
-	dialogWidePadY    = 2
-	dialogMinBodyWide = 56
-)
+const dialogMinBodyWide = 56
 
-// DialogGeom is the inset card geometry used by both render and key handling.
+// DialogGeom is the dossier frame geometry used by both render and key handling.
 type DialogGeom struct {
 	Stacked bool
 	BodyH   int
+	BodyW   int // usable body column width (right pane or full stacked width)
 	InnerW  int
 }
 
-// DialogLayout returns whether the dossier uses the stacked pager vs side rail,
-// and the body viewport height — same math as OverlayDialog.
+// DialogLayout returns whether the dossier uses the stacked pager vs side rail.
+// termH is the full terminal height; one row is reserved for the footer.
 func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 	if termW < 20 {
 		termW = 20
@@ -72,102 +69,73 @@ func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 	if termH < 10 {
 		termH = 10
 	}
-	padX, padY := dialogInsets(termW, termH)
-	dialogW := termW - 2*padX
-	dialogH := termH - 2*padY
-	if dialogW < 40 {
-		dialogW = min(termW, 40)
+	frameH := termH - 1 // footer
+	if frameH < 8 {
+		frameH = termH
 	}
-	if dialogH < 12 {
-		dialogH = min(termH, 12)
-	}
+	dialogW := termW
+	dialogH := frameH
 	innerW := dialogW - 4
 	if innerW < 20 {
 		innerW = 20
 	}
 	railW := dialogRailWidth(sectionLabels)
 	stacked := innerW-railW-3 < dialogMinBodyWide
-	h := dialogH - 4
+	h := dialogH - 4 // border + vertical padding
 	if stacked {
-		h = dialogH - 6
+		h = dialogH - 6 // pager + divider
 	}
 	if h < 1 {
 		h = 1
 	}
-	return DialogGeom{Stacked: stacked, BodyH: h, InnerW: innerW}
+	bodyW := innerW
+	if !stacked {
+		bodyW = innerW - railW - 3
+		if bodyW < 20 {
+			bodyW = 20
+		}
+	}
+	return DialogGeom{Stacked: stacked, BodyH: h, BodyW: bodyW, InnerW: innerW}
 }
 
-// OverlayDialog composites an inset detail dialog over a dimmed background.
-func OverlayDialog(background, title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int) string {
+// DossierFrame renders a full-terminal dossier (title card + footer), not an overlay.
+func DossierFrame(title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int, footer string) string {
 	if termW < 20 {
 		termW = 20
 	}
 	if termH < 10 {
 		termH = 10
 	}
-	padX, padY := dialogInsets(termW, termH)
-	dialogW := termW - 2*padX
-	dialogH := termH - 2*padY
-	if dialogW < 40 {
-		dialogW = min(termW, 40)
-		padX = maxInt(0, (termW-dialogW)/2)
+	geom := DialogLayout(termW, termH, sectionLabels)
+	frameH := termH - 1
+	if frameH < 8 {
+		frameH = termH
 	}
-	if dialogH < 12 {
-		dialogH = min(termH, 12)
-		padY = maxInt(0, (termH-dialogH)/2)
-	}
-
-	innerW := dialogW - 4
-	if innerW < 20 {
-		innerW = 20
-	}
-	inner := renderDialogInner(section, sectionLabels, bodyLines, bodyOff, innerW, dialogH)
+	inner := renderDossierInner(section, sectionLabels, bodyLines, bodyOff, geom, frameH)
 
 	card := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.BorderColor()).
 		Padding(1, 0).
-		Width(dialogW).
-		Height(dialogH).
+		Width(termW).
+		Height(frameH).
 		Render(inner)
+	card = stampDialogTitle(card, title, termW)
 
-	// Integrate title on top border when possible.
-	card = stampDialogTitle(card, title, dialogW)
-
-	dimmed := lipgloss.NewStyle().Faint(true).Render(background)
-	bgLayer := lipgloss.NewLayer(dimmed)
-	dlgLayer := lipgloss.NewLayer(card).X(padX).Y(padY).Z(1)
-	return lipgloss.NewCompositor(bgLayer, dlgLayer).Render()
+	if footer == "" {
+		return card
+	}
+	footer = textwidth.PadRight(textwidth.Truncate(footer, termW), termW)
+	return card + "\n" + footerSty().Render(footer)
 }
 
-func dialogInsets(termW, termH int) (int, int) {
-	padX := dialogWidePadX
-	switch {
-	case termW < 80:
-		padX = 2
-	case termW < 90:
-		padX = 4
-	case termW < 100:
-		padX = 6
-	}
-	padY := dialogWidePadY
-	if termH < 18 {
-		padY = 1
-	}
-	return padX, padY
-}
-
-func renderDialogInner(section int, labels, bodyLines []string, bodyOff, innerW, dialogH int) string {
-	railW := dialogRailWidth(labels)
-	// The rendered rows own their horizontal padding. This keeps it visible
-	// after the card is joined and clipped instead of relying on style width.
+func renderDossierInner(section int, labels, bodyLines []string, bodyOff int, geom DialogGeom, frameH int) string {
+	innerW := geom.InnerW
 	wrapRow := func(row string) string {
 		return " " + textwidth.PadRight(textwidth.Truncate(row, innerW), innerW) + " "
 	}
-	// Reserve one cell on either side of the divider.
-	stacked := innerW-railW-3 < dialogMinBodyWide
-	if stacked {
-		bodyH := maxInt(1, dialogH-6)
+	if geom.Stacked {
+		bodyH := geom.BodyH
 		pager := dialogSectionPager(section, labels, innerW)
 		divider := lipgloss.NewStyle().
 			Foreground(style.BorderColor()).
@@ -180,9 +148,10 @@ func renderDialogInner(section int, labels, bodyLines []string, bodyOff, innerW,
 		return strings.Join(lines, "\n")
 	}
 
-	bodyH := maxInt(1, dialogH-4)
+	railW := dialogRailWidth(labels)
+	bodyH := geom.BodyH
 	rail := dialogSectionRail(section, labels, railW, bodyH)
-	bodyW := innerW - railW - 3
+	bodyW := geom.BodyW
 	body := clipLines(bodyLines, bodyOff, bodyH, bodyW)
 	separator := lipgloss.NewStyle().
 		Foreground(style.BorderColor()).
@@ -192,6 +161,7 @@ func renderDialogInner(section int, labels, bodyLines []string, bodyOff, innerW,
 	for i, line := range lines {
 		lines[i] = " " + line + " "
 	}
+	_ = frameH
 	return strings.Join(lines, "\n")
 }
 
@@ -263,7 +233,6 @@ func stampDialogTitle(card, title string, width int) string {
 		label = textwidth.Truncate(label, maxLabel)
 	}
 	border := lipgloss.NewStyle().Foreground(style.BorderColor())
-	// Match RenderCombinedFrame: primary, bold title text on the themed border.
 	titleSt := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
 	prefix := border.Render("╭─") + titleSt.Render(label) + border.Render("─")
 	remain := tw - lipgloss.Width(prefix) - 1

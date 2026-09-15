@@ -210,7 +210,7 @@ func NewModel(opts Options) Model {
 		lruIDs:        nil,
 		imageState:    ImageBlank,
 		browseView:    BrowseGlance,
-		dialogSection: DialogSummary,
+		dialogSection: DialogOverview,
 		keys:          defaultKeyMap(),
 		help:          newHelpModel(),
 		search:        newSearchInput(),

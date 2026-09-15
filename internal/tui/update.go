@@ -369,7 +369,7 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 	}
 	m.showDialog = true
 	m.glanceHoldID = 0
-	m.dialogSection = DialogSummary
+	m.dialogSection = DialogOverview
 	m.dialogVP.GotoTop()
 	m.syncDialogViewport()
 	_ = sel

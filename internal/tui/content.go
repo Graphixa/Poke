@@ -18,6 +18,10 @@ func primaryText(s string) string {
 	return lipgloss.NewStyle().Foreground(tuistyle.PrimaryColor()).Render(s)
 }
 
+func boldPrimary(s string) string {
+	return lipgloss.NewStyle().Foreground(tuistyle.PrimaryColor()).Bold(true).Render(s)
+}
+
 func (m Model) browseViewLines() []string {
 	// Browse is sprite-only; text detail lives in the Enter dialog.
 	return nil
@@ -25,33 +29,6 @@ func (m Model) browseViewLines() []string {
 
 func formatStatsBars(p domain.Pokemon) []string {
 	return components.StatsBars(p.Stats)
-}
-
-func formatBrowseSummaryLines(p domain.Pokemon, s domain.Species) []string {
-	abilities, hidden := splitAbilityNames(p.Abilities)
-	ability := strings.Join(abilities, " / ")
-	if ability == "" {
-		ability = "—"
-	}
-	hiddenLabel := hidden
-	if hiddenLabel == "" {
-		hiddenLabel = "—"
-	}
-	lines := []string{
-		fmt.Sprintf("Height  %-12s  Weight  %s", formatHeight(p.HeightDecimeter), formatWeight(p.WeightHectogram)),
-		fmt.Sprintf("Ability %-12s  Hidden  %s", ability, hiddenLabel),
-		"",
-	}
-	if summary := latestSummary(s); summary != "" {
-		lines = append(lines, wrapWords(summary, 48)...)
-		lines = append(lines, "")
-	}
-	gen := output.TitleFromSlug(s.Generation)
-	if gen == "" {
-		gen = "—"
-	}
-	lines = append(lines, gen)
-	return lines
 }
 
 func splitAbilityNames(abilities []domain.AbilitySlot) (normal []string, hidden string) {
@@ -74,19 +51,6 @@ func formatWeight(hg int) string {
 	return fmt.Sprintf("%.1f kg", float64(hg)/10)
 }
 
-func formatBrowseEvolutionLines(tree domain.EvolutionTree) []string {
-	lines := formatEvolutionLines(tree)
-	// Drop the verbose "Trigger source" line for the glance view.
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Trigger source:") {
-			continue
-		}
-		out = append(out, line)
-	}
-	return out
-}
-
 func (m Model) dialogContentLines() []string {
 	sel, ok := m.selected()
 	if !ok {
@@ -103,9 +67,10 @@ func (m Model) dialogContentLines() []string {
 		return []string{"Loading…"}
 	}
 
+	bodyW := m.dialogGeom().BodyW
 	switch m.dialogSection {
-	case DialogSummary:
-		return formatBrowseSummaryLines(r.Pokemon, r.Species)
+	case DialogOverview:
+		return formatOverviewLines(r.Pokemon, r.Species, bodyW)
 	case DialogStats:
 		return formatStatsBars(r.Pokemon)
 	case DialogEvolution:
@@ -115,7 +80,7 @@ func (m Model) dialogContentLines() []string {
 		if r.EvolutionErr != nil {
 			return []string{usererr.Message(r.EvolutionErr)}
 		}
-		return formatBrowseEvolutionLines(r.Evolution)
+		return formatEvolutionLines(r.Evolution, r.Species.Slug, r.Pokemon.DisplayName)
 	case DialogMoves:
 		if !r.HasMoves && r.loadingExtras {
 			return []string{"Loading…"}
@@ -123,7 +88,7 @@ func (m Model) dialogContentLines() []string {
 		if r.MovesErr != nil {
 			return []string{usererr.Message(r.MovesErr)}
 		}
-		return formatMoveLines(r.Moves)
+		return formatMoveLines(r.Moves, bodyW)
 	case DialogLocations:
 		if !r.HasEncounters && r.loadingExtras {
 			return []string{"Loading…"}
@@ -132,98 +97,117 @@ func (m Model) dialogContentLines() []string {
 			return []string{usererr.Message(r.EncountersErr)}
 		}
 		return formatEncounterLines(r.Encounters)
-	case DialogAbilities:
-		return formatAbilityDialogLines(r.Pokemon)
-	case DialogFlavour:
+	case DialogPokedex:
 		return formatFlavourLines(r.Species)
-	case DialogBreeding:
-		return formatBreedingLines(r.Species)
-	case DialogTraining:
-		return formatTrainingLines(r.Species)
-	case DialogForms:
-		return formatFormsLines(r.Species)
-	case DialogMeta:
-		return formatMetaLines(r.Pokemon, r.Species)
+	case DialogBiology:
+		return formatBiologyLines(r.Species)
 	default:
 		return nil
 	}
 }
 
-func formatAbilityDialogLines(p domain.Pokemon) []string {
-	if len(p.Abilities) == 0 {
-		return []string{"No abilities."}
+func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int) []string {
+	if bodyW < 24 {
+		bodyW = 24
 	}
-	sorted := sortAbilitySlots(p.Abilities)
-	lines := make([]string, 0, len(sorted))
-	for _, a := range sorted {
-		lines = append(lines, components.AbilitySlotCell(a))
+	types := tuistyle.TypeSummary(pokemonTypeNames(p))
+	genus := strings.TrimSpace(s.Genus)
+	if genus == "" {
+		genus = "—"
 	}
+	head := types + " · " + genus
+
+	abilities, hidden := splitAbilityNames(p.Abilities)
+	ability := strings.Join(abilities, " / ")
+	if ability == "" {
+		ability = "—"
+	}
+	if hidden == "" {
+		hidden = "—"
+	}
+
+	wrapW := bodyW
+	if wrapW > 56 {
+		wrapW = 56
+	}
+
+	lines := []string{head, ""}
+	if bodyW >= 52 {
+		lines = append(lines,
+			factPair("Height", formatHeight(p.HeightDecimeter), "Weight", formatWeight(p.WeightHectogram)),
+			factPair("Ability", ability, "Hidden", hidden),
+			factPair("Base Exp", fmt.Sprintf("%d", p.BaseExperience), "Catch", fmt.Sprintf("%d", s.CaptureRate)),
+			"",
+		)
+	} else {
+		lines = append(lines,
+			factLine("Height", formatHeight(p.HeightDecimeter)),
+			factLine("Weight", formatWeight(p.WeightHectogram)),
+			factLine("Ability", ability),
+			factLine("Hidden", hidden),
+			factLine("Base Exp", fmt.Sprintf("%d", p.BaseExperience)),
+			factLine("Catch", fmt.Sprintf("%d", s.CaptureRate)),
+			"",
+		)
+	}
+	if summary := latestSummary(s); summary != "" {
+		lines = append(lines, wrapWords(summary, wrapW)...)
+		lines = append(lines, "")
+	}
+	gen := output.TitleFromSlug(s.Generation)
+	if gen == "" {
+		gen = "—"
+	}
+	lines = append(lines, gen)
 	return lines
 }
 
-func sortAbilitySlots(abilities []domain.AbilitySlot) []domain.AbilitySlot {
-	sorted := append([]domain.AbilitySlot(nil), abilities...)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Slot != sorted[j].Slot {
-			return sorted[i].Slot < sorted[j].Slot
-		}
-		return sorted[i].Name < sorted[j].Name
-	})
-	return sorted
+func factLine(label, value string) string {
+	return primaryText(fmt.Sprintf("%-10s", label)) + " " + value
 }
 
-func formatBreedingLines(s domain.Species) []string {
-	return []string{
-		fmt.Sprintf("Gender rate:  %s", formatGenderRate(s.GenderRate)),
-		fmt.Sprintf("Legendary:    %s", yesNo(s.IsLegendary)),
-		fmt.Sprintf("Mythical:     %s", yesNo(s.IsMythical)),
+func factPair(l1, v1, l2, v2 string) string {
+	left := primaryText(fmt.Sprintf("%-10s", l1)) + " " + fmt.Sprintf("%-14s", v1)
+	right := primaryText(fmt.Sprintf("%-10s", l2)) + " " + v2
+	return left + "  " + right
+}
+
+func formatBiologyLines(s domain.Species) []string {
+	lines := []string{
+		factLine("Gender", formatGenderRate(s.GenderRate)),
+		factLine("Legendary", yesNo(s.IsLegendary)),
+		factLine("Mythical", yesNo(s.IsMythical)),
+		"",
+		factLine("Growth", dash(output.TitleFromSlug(s.GrowthRate))),
+		factLine("Capture", fmt.Sprintf("%d", s.CaptureRate)),
+		factLine("Happiness", fmt.Sprintf("%d", s.BaseHappiness)),
+		"",
+		factLine("Habitat", dash(output.TitleFromSlug(s.Habitat))),
+		factLine("Shape", dash(output.TitleFromSlug(s.Shape))),
+		factLine("Colour", dash(output.TitleFromSlug(s.Color))),
+		"",
+		primaryText("Forms"),
 	}
-}
-
-func formatTrainingLines(s domain.Species) []string {
-	return []string{
-		fmt.Sprintf("Growth rate:    %s", dash(output.TitleFromSlug(s.GrowthRate))),
-		fmt.Sprintf("Capture rate:   %d", s.CaptureRate),
-		fmt.Sprintf("Base happiness: %d", s.BaseHappiness),
-	}
-}
-
-func formatFormsLines(s domain.Species) []string {
 	if len(s.Varieties) == 0 {
-		return []string{"No alternate forms listed."}
+		lines = append(lines, "  —")
+		return lines
 	}
-	var lines []string
 	for _, v := range s.Varieties {
 		name := output.TitleFromSlug(v.Slug)
 		if v.IsDefault {
-			lines = append(lines, name+"  (default)")
+			lines = append(lines, "  "+name+"  (default)")
 		} else {
-			lines = append(lines, name)
+			lines = append(lines, "  "+name)
 		}
 	}
 	return lines
 }
 
-func formatMetaLines(p domain.Pokemon, s domain.Species) []string {
-	lines := []string{
-		fmt.Sprintf("Height:   %s", formatHeight(p.HeightDecimeter)),
-		fmt.Sprintf("Weight:   %s", formatWeight(p.WeightHectogram)),
-		fmt.Sprintf("Base Exp: %d", p.BaseExperience),
-		"",
-	}
-	lines = append(lines, formatInfoLines(s)...)
-	return lines
-}
-
-func formatEvolutionLines(tree domain.EvolutionTree) []string {
+func formatEvolutionLines(tree domain.EvolutionTree, currentSlug, currentName string) []string {
 	var lines []string
-	writeEvoNode(&lines, tree.Root, true)
+	writeEvoNode(&lines, tree.Root, true, currentSlug, currentName)
 	if len(lines) == 0 {
 		return []string{"No evolution data."}
-	}
-	rootName := tree.Root.DisplayName
-	if rootName == "" {
-		rootName = output.TitleFromSlug(tree.Root.SpeciesSlug)
 	}
 	finalName := evolutionFinalName(tree.Root)
 	lines = append(lines, "")
@@ -233,8 +217,6 @@ func formatEvolutionLines(tree domain.EvolutionTree) []string {
 		lines = append(lines, "Stage: Basic")
 	}
 	lines = append(lines, "Final evolution: "+primaryText(finalName))
-	lines = append(lines, "Trigger source: evolution-chain")
-	_ = rootName
 	return lines
 }
 
@@ -246,18 +228,35 @@ func evolutionFinalName(node domain.EvolutionNode) string {
 		}
 		return name
 	}
-	// Prefer the last branch's deepest leaf (linear chains).
 	last := node.Children[len(node.Children)-1].Target
 	return evolutionFinalName(last)
 }
 
-func writeEvoNode(lines *[]string, node domain.EvolutionNode, isRoot bool) {
+func evoSpeciesLabel(node domain.EvolutionNode, currentSlug, currentName string) string {
 	name := node.DisplayName
 	if name == "" {
 		name = output.TitleFromSlug(node.SpeciesSlug)
 	}
+	if isCurrentSpecies(node, currentSlug, currentName) {
+		return boldPrimary(name)
+	}
+	return primaryText(name)
+}
+
+func isCurrentSpecies(node domain.EvolutionNode, currentSlug, currentName string) bool {
+	if currentSlug != "" && strings.EqualFold(node.SpeciesSlug, currentSlug) {
+		return true
+	}
+	if currentName != "" && strings.EqualFold(node.DisplayName, currentName) {
+		return true
+	}
+	return false
+}
+
+func writeEvoNode(lines *[]string, node domain.EvolutionNode, isRoot bool, currentSlug, currentName string) {
+	name := evoSpeciesLabel(node, currentSlug, currentName)
 	if isRoot && len(node.Children) == 0 {
-		*lines = append(*lines, primaryText(name)+" (no evolutions)")
+		*lines = append(*lines, name+" (no evolutions)")
 		return
 	}
 	for _, branch := range node.Children {
@@ -265,12 +264,9 @@ func writeEvoNode(lines *[]string, node domain.EvolutionNode, isRoot bool) {
 		if label == "" {
 			label = "Evolution"
 		}
-		target := branch.Target.DisplayName
-		if target == "" {
-			target = output.TitleFromSlug(branch.Target.SpeciesSlug)
-		}
-		*lines = append(*lines, fmt.Sprintf("%s ── %s ──► %s", primaryText(name), label, primaryText(target)))
-		writeEvoNode(lines, branch.Target, false)
+		target := evoSpeciesLabel(branch.Target, currentSlug, currentName)
+		*lines = append(*lines, fmt.Sprintf("%s ── %s ──► %s", name, label, target))
+		writeEvoNode(lines, branch.Target, false, currentSlug, currentName)
 	}
 }
 
@@ -358,6 +354,13 @@ func formatEncounterLines(rows []domain.Encounter) []string {
 				level,
 				e.Chance,
 			))
+			if len(e.Conditions) > 0 {
+				conds := make([]string, 0, len(e.Conditions))
+				for _, c := range e.Conditions {
+					conds = append(conds, output.TitleFromSlug(c))
+				}
+				lines = append(lines, "    "+strings.Join(conds, ", "))
+			}
 		}
 		lines = append(lines, "")
 	}
@@ -367,33 +370,57 @@ func formatEncounterLines(rows []domain.Encounter) []string {
 	return lines
 }
 
-func formatMoveLines(rows []LevelUpMove) []string {
+func formatMoveLines(rows []LevelUpMove, bodyW int) []string {
 	if len(rows) == 0 {
 		return []string{"No level-up moves available."}
 	}
-	header := fmt.Sprintf("%-5s %-16s %-10s %-8s %5s %5s", "Lvl", "Move", "Type", "Cat", "Pow", "Acc")
+	// Lvl + Move + Type + Cat + Pow = 48; Acc +6; PP +5.
+	const baseW, accCol, ppCol = 48, 6, 5
+	showAcc, showPP := true, true
+	need := baseW + accCol + ppCol
+	if bodyW > 0 && bodyW < need {
+		showAcc = false
+		need -= accCol
+	}
+	if bodyW > 0 && bodyW < need {
+		showPP = false
+	}
+
+	header := fmt.Sprintf("%-5s %-16s %-10s %-8s %5s", "Lvl", "Move", "Type", "Cat", "Pow")
+	if showAcc {
+		header += fmt.Sprintf(" %5s", "Acc")
+	}
+	if showPP {
+		header += fmt.Sprintf(" %4s", "PP")
+	}
 	lines := []string{primaryText(header)}
 	for _, row := range rows {
 		pow := "—"
 		if row.Move.Power != nil {
 			pow = fmt.Sprintf("%d", *row.Move.Power)
 		}
-		acc := "—"
-		if row.Move.Accuracy != nil {
-			acc = fmt.Sprintf("%d", *row.Move.Accuracy)
-		}
 		name := row.Move.DisplayName
 		if name == "" {
 			name = output.TitleFromSlug(row.Move.Slug)
 		}
-		lines = append(lines, fmt.Sprintf("%-5d %-16s %-10s %-8s %5s %5s",
+		line := fmt.Sprintf("%-5d %-16s %-10s %-8s %5s",
 			row.Level,
 			truncate(name, 16),
 			truncate(output.TitleFromSlug(row.Move.Type), 10),
 			truncate(output.TitleFromSlug(row.Move.DamageClass), 8),
 			pow,
-			acc,
-		))
+		)
+		if showAcc {
+			acc := "—"
+			if row.Move.Accuracy != nil {
+				acc = fmt.Sprintf("%d", *row.Move.Accuracy)
+			}
+			line += fmt.Sprintf(" %5s", acc)
+		}
+		if showPP {
+			line += fmt.Sprintf(" %4d", row.Move.PP)
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }
@@ -437,26 +464,10 @@ func formatFlavourLines(s domain.Species) []string {
 	return lines
 }
 
-func formatInfoLines(s domain.Species) []string {
-	return []string{
-		fmt.Sprintf("Generation:    %s", output.TitleFromSlug(s.Generation)),
-		fmt.Sprintf("Habitat:       %s", dash(output.TitleFromSlug(s.Habitat))),
-		fmt.Sprintf("Shape:         %s", dash(output.TitleFromSlug(s.Shape))),
-		fmt.Sprintf("Colour:        %s", dash(output.TitleFromSlug(s.Color))),
-		fmt.Sprintf("Growth rate:   %s", dash(output.TitleFromSlug(s.GrowthRate))),
-		fmt.Sprintf("Capture rate:  %d", s.CaptureRate),
-		fmt.Sprintf("Base happiness: %d", s.BaseHappiness),
-		fmt.Sprintf("Gender rate:   %s", formatGenderRate(s.GenderRate)),
-		fmt.Sprintf("Legendary:     %s", yesNo(s.IsLegendary)),
-		fmt.Sprintf("Mythical:      %s", yesNo(s.IsMythical)),
-	}
-}
-
 func formatGenderRate(rate int) string {
 	if rate < 0 {
 		return "Genderless"
 	}
-	// PokeAPI: eighths female; -1 genderless.
 	female := float64(rate) / 8 * 100
 	return fmt.Sprintf("%.1f%% female", female)
 }

@@ -254,12 +254,13 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("browse must not load extras, got %d", details.extrasCalls.Load())
 	}
 
+	selectedBefore, _ := m.SelectedID()
 	m = apply(t, m, key("enter"))
 	if !m.DialogVisible() {
 		t.Fatal("enter should open dialog")
 	}
-	if m.ActiveDialogSection() != tui.DialogSummary {
-		t.Fatalf("section = %v", m.ActiveDialogSection())
+	if m.ActiveDialogSection() != tui.DialogOverview {
+		t.Fatalf("section = %v want Overview", m.ActiveDialogSection())
 	}
 	if details.coreCalls.Load() != 1 {
 		t.Fatalf("core loads = %d want 1", details.coreCalls.Load())
@@ -277,12 +278,12 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("left section = %v want Stats", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("shift+tab"), key("shift+tab"))
-	if m.ActiveDialogSection() != tui.DialogMeta {
-		t.Fatalf("shift-tab wrap section = %v want Meta", m.ActiveDialogSection())
+	if m.ActiveDialogSection() != tui.DialogBiology {
+		t.Fatalf("shift-tab wrap section = %v want Biology", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("tab"))
-	if m.ActiveDialogSection() != tui.DialogSummary {
-		t.Fatalf("tab wrap section = %v want Summary", m.ActiveDialogSection())
+	if m.ActiveDialogSection() != tui.DialogOverview {
+		t.Fatalf("tab wrap section = %v want Overview", m.ActiveDialogSection())
 	}
 
 	// Wide rail: ↑/↓ move the section list (body scroll is PgUp/PgDn).
@@ -291,12 +292,15 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("rail down section = %v want Stats", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("up"))
-	if m.ActiveDialogSection() != tui.DialogSummary {
-		t.Fatalf("rail up section = %v want Summary", m.ActiveDialogSection())
+	if m.ActiveDialogSection() != tui.DialogOverview {
+		t.Fatalf("rail up section = %v want Overview", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("esc"))
 	if m.DialogVisible() {
 		t.Fatal("esc should close dialog")
+	}
+	if id, ok := m.SelectedID(); !ok || id != selectedBefore {
+		t.Fatalf("esc must preserve selection: got %d ok=%v want %d", id, ok, selectedBefore)
 	}
 
 	m = apply(t, m, key("?"))

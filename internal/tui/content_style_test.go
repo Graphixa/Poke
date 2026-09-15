@@ -12,13 +12,14 @@ func TestEvolutionStylesNamesOnly(t *testing.T) {
 	level := 16
 	tree := domain.EvolutionTree{Root: domain.EvolutionNode{
 		DisplayName: "Bulbasaur",
+		SpeciesSlug: "bulbasaur",
 		Children: []domain.EvolutionBranch{{
 			Conditions: []domain.EvolutionCondition{{MinimumLevel: &level}},
-			Target:     domain.EvolutionNode{DisplayName: "Ivysaur"},
+			Target:     domain.EvolutionNode{DisplayName: "Ivysaur", SpeciesSlug: "ivysaur"},
 		}},
 	}}
 
-	line := formatEvolutionLines(tree)[0]
+	line := formatEvolutionLines(tree, "", "")[0]
 	want := primaryText("Bulbasaur") + " ── Level 16 ──► " + primaryText("Ivysaur")
 	if line != want {
 		t.Fatalf("evolution line:\n got %q\nwant %q", line, want)
@@ -29,7 +30,29 @@ func TestEvolutionStylesNamesOnly(t *testing.T) {
 	}
 }
 
-func TestMoveHeaderIsStyledButRowsArePlain(t *testing.T) {
+func TestEvolutionBoldsCurrentSpecies(t *testing.T) {
+	level := 16
+	tree := domain.EvolutionTree{Root: domain.EvolutionNode{
+		DisplayName: "Charmander",
+		SpeciesSlug: "charmander",
+		Children: []domain.EvolutionBranch{{
+			Conditions: []domain.EvolutionCondition{{MinimumLevel: &level}},
+			Target:     domain.EvolutionNode{DisplayName: "Charmeleon", SpeciesSlug: "charmeleon"},
+		}},
+	}}
+	line := formatEvolutionLines(tree, "charmander", "Charmander")[0]
+	if !strings.Contains(line, boldPrimary("Charmander")) {
+		t.Fatalf("current species should be bold: %q", line)
+	}
+	if strings.Contains(line, boldPrimary("Charmeleon")) {
+		t.Fatalf("other species should not be bold: %q", line)
+	}
+	if strings.Contains(formatEvolutionLines(tree, "charmander", "Charmander")[0], "Trigger source") {
+		t.Fatal("evolution must omit Trigger source")
+	}
+}
+
+func TestMoveHeaderIncludesPP(t *testing.T) {
 	power, accuracy := 40, 100
 	lines := formatMoveLines([]LevelUpMove{{
 		Level: 1,
@@ -39,33 +62,92 @@ func TestMoveHeaderIsStyledButRowsArePlain(t *testing.T) {
 			DamageClass: "special",
 			Power:       &power,
 			Accuracy:    &accuracy,
+			PP:          25,
 		},
-	}})
+	}}, 80)
 
-	header := "Lvl   Move             Type       Cat        Pow   Acc"
-	if lines[0] != primaryText(header) {
-		t.Fatalf("header not styled with primary: %q", lines[0])
+	wantHeader := primaryText("Lvl   Move             Type       Cat        Pow   Acc   PP")
+	if lines[0] != wantHeader {
+		t.Fatalf("header not styled with primary:\n got %q\nwant %q", lines[0], wantHeader)
 	}
 	requireANSI(t, lines[0])
 	if strings.Contains(lines[1], "\x1b[") {
 		t.Fatalf("move row should remain plain: %q", lines[1])
 	}
+	if !strings.Contains(lines[1], "25") {
+		t.Fatalf("move row should include PP: %q", lines[1])
+	}
 }
 
-func TestAbilityStylesSlotOnly(t *testing.T) {
-	line := formatAbilityDialogLines(domain.Pokemon{Abilities: []domain.AbilitySlot{{
-		Slot:     3,
-		Name:     "solar-power",
-		IsHidden: true,
-	}}})[0]
-
-	want := primaryText("Hidden") + "  Solar Power"
-	if line != want {
-		t.Fatalf("ability line:\n got %q\nwant %q", line, want)
+func TestMoveColumnsDropAccThenPPWhenNarrow(t *testing.T) {
+	power, accuracy := 40, 100
+	row := []LevelUpMove{{
+		Level: 1,
+		Move: domain.Move{
+			DisplayName: "Ember",
+			Type:        "fire",
+			DamageClass: "special",
+			Power:       &power,
+			Accuracy:    &accuracy,
+			PP:          25,
+		},
+	}}
+	mid := formatMoveLines(row, 55)
+	if strings.Contains(mid[0], "Acc") || !strings.Contains(mid[0], "PP") {
+		t.Fatalf("mid width should drop Acc keep PP: %q", mid[0])
 	}
-	requireANSI(t, primaryText("Hidden"))
-	if strings.Contains(line, primaryText("Solar Power")) {
-		t.Fatalf("ability name should remain plain: %q", line)
+	narrow := formatMoveLines(row, 40)
+	if strings.Contains(narrow[0], "Acc") || strings.Contains(narrow[0], "PP") {
+		t.Fatalf("narrow width should drop Acc and PP: %q", narrow[0])
+	}
+}
+
+func TestOverviewAndBiologyLabels(t *testing.T) {
+	p := domain.Pokemon{
+		DisplayName:     "Charmander",
+		HeightDecimeter: 6,
+		WeightHectogram: 85,
+		BaseExperience:  62,
+		Types:           []domain.TypeSlot{{Name: "fire"}},
+		Abilities: []domain.AbilitySlot{
+			{Slot: 1, Name: "blaze"},
+			{Slot: 3, Name: "solar-power", IsHidden: true},
+		},
+	}
+	s := domain.Species{
+		Genus:         "Lizard Pokémon",
+		Generation:    "generation-i",
+		CaptureRate:   45,
+		GenderRate:    1,
+		GrowthRate:    "medium-slow",
+		BaseHappiness: 50,
+		Habitat:       "mountain",
+		Shape:         "upright",
+		Color:         "red",
+		Varieties:     []domain.Variety{{Slug: "charmander", IsDefault: true}},
+		FlavorTextEntries: []domain.FlavorText{{
+			Language: "en", Version: "red", VersionOrder: 1,
+			Text: "Prefers hot places.",
+		}},
+	}
+	overview := formatOverviewLines(p, s, 60)
+	joined := strings.Join(overview, "\n")
+	if !strings.Contains(joined, "Lizard Pokémon") || !strings.Contains(joined, "Blaze") {
+		t.Fatalf("overview missing types/genus/ability:\n%s", joined)
+	}
+	if !strings.Contains(joined, primaryText("Height    ")) {
+		t.Fatalf("overview Height label should be accented:\n%s", joined)
+	}
+
+	bio := formatBiologyLines(s)
+	bioJoined := strings.Join(bio, "\n")
+	for _, want := range []string{"Gender", "Growth", "Habitat", "Forms", "(default)"} {
+		if !strings.Contains(bioJoined, want) {
+			t.Fatalf("biology missing %q:\n%s", want, bioJoined)
+		}
+	}
+	if strings.Contains(bioJoined, "Egg") {
+		t.Fatalf("biology must omit egg groups until domain has them:\n%s", bioJoined)
 	}
 }
 
@@ -107,7 +189,6 @@ func TestGlanceAbilityGridStableSlots(t *testing.T) {
 	}
 }
 
-
 func TestFlavourStylesVersionOnly(t *testing.T) {
 	lines := formatFlavourLines(domain.Species{FlavorTextEntries: []domain.FlavorText{{
 		Language:     "en",
@@ -133,6 +214,7 @@ func TestLocationsStyleVersionOnly(t *testing.T) {
 		MinimumLevel: 2,
 		MaximumLevel: 3,
 		Chance:       20,
+		Conditions:   []string{"time-morning"},
 	}})
 
 	if lines[0] != primaryText("Omega Ruby") {
@@ -141,16 +223,23 @@ func TestLocationsStyleVersionOnly(t *testing.T) {
 	if strings.Contains(lines[1], "\x1b[") {
 		t.Fatalf("location data should remain plain: %q", lines[1])
 	}
+	if len(lines) < 3 || !strings.Contains(lines[2], "Morning") {
+		t.Fatalf("conditions should indent on next line: %v", lines)
+	}
 }
 
 func TestStatsStyleLabelsOnly(t *testing.T) {
-	lines := formatStatsBars(domain.Pokemon{Stats: domain.Stats{HP: 58}})
+	lines := formatStatsBars(domain.Pokemon{Stats: domain.Stats{HP: 58, Attack: 64, Defense: 58, SpecialAttack: 80, SpecialDefense: 65, Speed: 90}})
 
 	if !strings.HasPrefix(lines[0], primaryText("HP      ")) {
 		t.Fatalf("stat label not styled: %q", lines[0])
 	}
 	if strings.Contains(strings.TrimPrefix(lines[0], primaryText("HP      ")), "\x1b[") {
 		t.Fatalf("stat bar and value should remain plain: %q", lines[0])
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "Total") || !strings.Contains(joined, "415") {
+		t.Fatalf("stats should include Total sum:\n%s", joined)
 	}
 }
 

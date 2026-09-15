@@ -137,20 +137,18 @@ func Browse(d BrowseData) string {
 	if d.TooSmall {
 		return components.TooSmall(d.Width, d.Height)
 	}
-
-	if d.ShowDialog {
-		// FooterHint is set by the model (bubbles ShortHelpView); only clear warm.
-		d.WarmHint = ""
-	}
-	base := renderBrowseBase(d, fr)
 	if d.ShowDialog {
 		title := "Details"
 		if d.HasSelected {
 			title = fmt.Sprintf("%s %s", d.Selected.DisplayName, output.FormatDex(d.Selected.ID))
 		}
-		return components.OverlayDialog(base, title, d.DialogSection, d.DialogLabels, d.DialogLines, d.DialogOff, d.Width, d.Height)
+		footer := d.FooterHint
+		if footer != "" && !strings.HasPrefix(footer, " ") {
+			footer = " " + footer
+		}
+		return components.DossierFrame(title, d.DialogSection, d.DialogLabels, d.DialogLines, d.DialogOff, d.Width, d.Height, footer)
 	}
-	return base
+	return renderBrowseBase(d, fr)
 }
 
 func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
