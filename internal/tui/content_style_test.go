@@ -116,7 +116,7 @@ func TestOverviewAndBiologyLabels(t *testing.T) {
 	}
 	s := domain.Species{
 		Genus:         "Lizard Pokémon",
-		Generation:    "generation-i",
+		Generation:    "generation-iv",
 		CaptureRate:   45,
 		GenderRate:    1,
 		GrowthRate:    "medium-slow",
@@ -132,11 +132,20 @@ func TestOverviewAndBiologyLabels(t *testing.T) {
 	}
 	overview := formatOverviewLines(p, s, 60)
 	joined := strings.Join(overview, "\n")
-	if !strings.Contains(joined, "Lizard Pokémon") || !strings.Contains(joined, "Blaze") {
-		t.Fatalf("overview missing types/genus/ability:\n%s", joined)
+	if !strings.HasPrefix(overview[0], "Prefers hot places.") {
+		t.Fatalf("blurb should lead Overview:\n%s", joined)
 	}
-	if !strings.Contains(joined, primaryText("Height    ")) {
-		t.Fatalf("overview Height label should be accented:\n%s", joined)
+	if !strings.Contains(joined, primaryText("Type      ")) || !strings.Contains(joined, "Lizard Pokémon") {
+		t.Fatalf("overview missing Type/Category:\n%s", joined)
+	}
+	if strings.Contains(joined, "Blaze") || strings.Contains(joined, "Ability") {
+		t.Fatalf("overview must not list abilities:\n%s", joined)
+	}
+	if !strings.Contains(joined, primaryText("Generation")) || !strings.Contains(joined, "IV") {
+		t.Fatalf("overview Generation should be labelled Roman IV:\n%s", joined)
+	}
+	if strings.Contains(joined, "Iv") && !strings.Contains(joined, "IV") {
+		t.Fatalf("generation must not title-case to Iv:\n%s", joined)
 	}
 
 	bio := formatBiologyLines(s)

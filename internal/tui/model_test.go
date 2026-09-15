@@ -231,21 +231,17 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("selected = %d ok=%v", id, ok)
 	}
 
-	// Tab on browse is reserved (sprite variants later) — no-op.
+	// Tab cycles Glance ↔ Art (digits stay free for dex-id search).
 	m = apply(t, m, key("tab"))
-	if m.ActiveBrowseView() != tui.BrowseGlance {
-		t.Fatalf("view = %v want Glance", m.ActiveBrowseView())
-	}
-	m = apply(t, m, key("2"))
 	if m.ActiveBrowseView() != tui.BrowseArt {
-		t.Fatalf("2 → Art, got %v", m.ActiveBrowseView())
+		t.Fatalf("tab → Art, got %v", m.ActiveBrowseView())
 	}
 	if f := m.LayoutFlags(); !f.ShowSprite || f.SpriteSize != 40 {
 		t.Fatalf("Art view show=%v size=%d want 40", f.ShowSprite, f.SpriteSize)
 	}
-	m = apply(t, m, key("1"))
+	m = apply(t, m, key("tab"))
 	if m.ActiveBrowseView() != tui.BrowseGlance {
-		t.Fatalf("1 → Glance, got %v", m.ActiveBrowseView())
+		t.Fatalf("tab → Glance, got %v", m.ActiveBrowseView())
 	}
 	if details.coreCalls.Load() < 1 {
 		t.Fatalf("browse should load dossier core for About, got %d", details.coreCalls.Load())

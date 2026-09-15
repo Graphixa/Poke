@@ -28,6 +28,32 @@ func FormatDex(id int) string {
 	return fmt.Sprintf("#%03d", id)
 }
 
+// FormatGeneration turns "generation-iv" into "Generation IV".
+func FormatGeneration(slug string) string {
+	n := GenerationNumeral(slug)
+	if n == "" {
+		return ""
+	}
+	return "Generation " + n
+}
+
+// GenerationNumeral turns "generation-iv" into "IV".
+func GenerationNumeral(slug string) string {
+	s := strings.TrimSpace(strings.ToLower(slug))
+	if s == "" {
+		return ""
+	}
+	const prefix = "generation-"
+	if !strings.HasPrefix(s, prefix) {
+		return ""
+	}
+	roman := strings.TrimPrefix(s, prefix)
+	if roman == "" {
+		return ""
+	}
+	return strings.ToUpper(roman)
+}
+
 // JoinTypes formats type names for display: "Fire/Flying".
 func JoinTypes(types []string) string {
 	if len(types) == 0 {

@@ -189,6 +189,7 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		Stats:          domain.Stats{HP: 39, Attack: 52, Defense: 43, SpecialAttack: 60, SpecialDefense: 50, Speed: 65},
 		SpriteANSI:     "[sprite]",
 		ImageState:     2,
+		FooterHint:     "↑/↓ move • enter details • tab view • esc clear / quit",
 	})
 	for _, want := range []string{
 		"Pokedex",
@@ -198,8 +199,7 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 		"[sprite]",
 		"Stats",
 		"enter details",
-		"1 glance",
-		"2 art",
+		"tab view",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)

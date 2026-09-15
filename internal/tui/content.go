@@ -31,18 +31,6 @@ func formatStatsBars(p domain.Pokemon) []string {
 	return components.StatsBars(p.Stats)
 }
 
-func splitAbilityNames(abilities []domain.AbilitySlot) (normal []string, hidden string) {
-	for _, a := range abilities {
-		name := output.TitleFromSlug(a.Name)
-		if a.IsHidden {
-			hidden = name
-			continue
-		}
-		normal = append(normal, name)
-	}
-	return normal, hidden
-}
-
 func formatHeight(dm int) string {
 	return fmt.Sprintf("%.1f m", float64(dm)/10)
 }
@@ -110,55 +98,43 @@ func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int) []string
 	if bodyW < 24 {
 		bodyW = 24
 	}
-	types := tuistyle.TypeSummary(pokemonTypeNames(p))
-	genus := strings.TrimSpace(s.Genus)
-	if genus == "" {
-		genus = "—"
-	}
-	head := types + " · " + genus
-
-	abilities, hidden := splitAbilityNames(p.Abilities)
-	ability := strings.Join(abilities, " / ")
-	if ability == "" {
-		ability = "—"
-	}
-	if hidden == "" {
-		hidden = "—"
-	}
-
 	wrapW := bodyW
 	if wrapW > 56 {
 		wrapW = 56
 	}
 
-	lines := []string{head, ""}
+	var lines []string
+	if summary := latestSummary(s); summary != "" {
+		lines = append(lines, wrapWords(summary, wrapW)...)
+		lines = append(lines, "")
+	}
+
+	types := tuistyle.TypeSummary(pokemonTypeNames(p))
+	genus := strings.TrimSpace(s.Genus)
+	if genus == "" {
+		genus = "—"
+	}
+	lines = append(lines,
+		factLine("Type", types),
+		factLine("Category", genus),
+	)
+
 	if bodyW >= 52 {
 		lines = append(lines,
 			factPair("Height", formatHeight(p.HeightDecimeter), "Weight", formatWeight(p.WeightHectogram)),
-			factPair("Ability", ability, "Hidden", hidden),
 			factPair("Base Exp", fmt.Sprintf("%d", p.BaseExperience), "Catch", fmt.Sprintf("%d", s.CaptureRate)),
-			"",
 		)
 	} else {
 		lines = append(lines,
 			factLine("Height", formatHeight(p.HeightDecimeter)),
 			factLine("Weight", formatWeight(p.WeightHectogram)),
-			factLine("Ability", ability),
-			factLine("Hidden", hidden),
 			factLine("Base Exp", fmt.Sprintf("%d", p.BaseExperience)),
 			factLine("Catch", fmt.Sprintf("%d", s.CaptureRate)),
-			"",
 		)
 	}
-	if summary := latestSummary(s); summary != "" {
-		lines = append(lines, wrapWords(summary, wrapW)...)
-		lines = append(lines, "")
-	}
-	gen := output.TitleFromSlug(s.Generation)
-	if gen == "" {
-		gen = "—"
-	}
-	lines = append(lines, gen)
+
+	gen := dash(output.GenerationNumeral(s.Generation))
+	lines = append(lines, "", factLine("Generation", gen))
 	return lines
 }
 

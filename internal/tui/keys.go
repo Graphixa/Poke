@@ -18,8 +18,7 @@ type keyMap struct {
 	Clear      key.Binding
 	Help       key.Binding
 	Enter      key.Binding
-	ViewGlance key.Binding
-	ViewArt    key.Binding
+	ViewCycle  key.Binding
 	ForceQuit  key.Binding
 }
 
@@ -77,13 +76,9 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "details"),
 		),
-		ViewGlance: key.NewBinding(
-			key.WithKeys("1"),
-			key.WithHelp("1", "glance"),
-		),
-		ViewArt: key.NewBinding(
-			key.WithKeys("2"),
-			key.WithHelp("2", "art"),
+		ViewCycle: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "view"),
 		),
 		ForceQuit: key.NewBinding(
 			key.WithKeys("ctrl+c"),
@@ -115,8 +110,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Up,
 		k.Enter,
-		k.ViewGlance,
-		k.ViewArt,
+		k.ViewCycle,
 		k.Clear,
 	}
 }
@@ -131,15 +125,12 @@ func (k keyMap) FullHelp() [][]key.Binding {
 			k.Down,
 		},
 		{
-			k.ViewGlance,
-			k.ViewArt,
+			k.ViewCycle,
 			k.Enter,
 			k.PageUp,
 			k.PageDown,
 		},
 		{
-			k.TabNext,
-			k.TabPrev,
 			k.ForceQuit,
 			k.Help,
 		},

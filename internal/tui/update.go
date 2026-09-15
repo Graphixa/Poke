@@ -267,18 +267,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openDialog()
 	}
 
-	// Digits switch views only when the filter is empty so "25" / "#25" still type.
-	if key.Matches(msg, m.keys.ViewGlance) {
-		if m.queryValue() == "" {
-			return m.setBrowseView(BrowseGlance)
-		}
-		return m.updateSearch(msg)
-	}
-	if key.Matches(msg, m.keys.ViewArt) {
-		if m.queryValue() == "" {
-			return m.setBrowseView(BrowseArt)
-		}
-		return m.updateSearch(msg)
+	if key.Matches(msg, m.keys.ViewCycle) {
+		return m.setBrowseView(m.browseView.Next())
 	}
 
 	if key.Matches(msg, m.keys.Clear) {
@@ -298,11 +288,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Down) {
 		m.moveCursor(1)
 		return m, m.syncSelectionLoads()
-	}
-	// Tab on browse reserved for future sprite variants — no-op for now.
-	// TODO(sprite-variants): cycle pixel / official-artwork when assets exist.
-	if key.Matches(msg, m.keys.TabNext, m.keys.TabPrev) {
-		return m, nil
 	}
 
 	return m.updateSearch(msg)
