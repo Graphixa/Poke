@@ -119,7 +119,13 @@ func statusStyles() (err, warn, ok, muted, loading, activeTab, inactiveTab lipgl
 // TypeLabel returns a coloured type name; the text itself is the non-colour cue.
 func TypeLabel(name string) string {
 	key := strings.ToLower(strings.TrimSpace(name))
-	display := title(key)
+	return TypeLabelText(key, title(key))
+}
+
+// TypeLabelText colours display using the palette entry for name. It lets
+// compact layouts abbreviate a label without duplicating the type palette.
+func TypeLabelText(name, display string) string {
+	key := strings.ToLower(strings.TrimSpace(name))
 	if c, ok := typeColors[key]; ok {
 		return lipgloss.NewStyle().Foreground(c).Bold(true).Render(display)
 	}
@@ -181,6 +187,13 @@ func title(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// BaseColor returns the theme base colour for lipgloss backgrounds.
+func BaseColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Base)
 }
 
 // BaseRGBA returns the theme base colour as an opaque RGBA for sprite letterboxing.

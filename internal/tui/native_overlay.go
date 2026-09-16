@@ -9,100 +9,139 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Pokedex/internal/tui/style"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
-// nativeOverlayMsg signals a native-graphics paint pass via tea.Raw.
-type nativeOverlayMsg struct {
-	// followUp is true for the single delayed re-paint after a dirty paint.
-	followUp bool
-}
-
-// nativeOverlayRepaintDelay lets Bubble Tea finish a cell flush that would wipe
-// Sixel before we re-emit once. Not a perpetual refresh loop.
-const nativeOverlayRepaintDelay = 60 * time.Millisecond
+// Native graphics (Sixel/Kitty/iTerm) cannot live in Bubble Tea's cell View —
+// StyledString drops DCS. Production Run uses compositorWriter (cells-then-DCS).
+// Unit tests without a compositor still use tea.Raw + ~50ms re-assert.
 
 const (
 	decSaveCursor    = "\x1b7" // DECSC
 	decRestoreCursor = "\x1b8" // DECRC
-	// Windows Terminal: leave cursor at last sixel position, not the cell below.
-	wtSixelCursorHereOn  = "\x1b[?8452h"
-	wtSixelCursorHereOff = "\x1b[?8452l"
+
+	// Extra clear rows below the art box for hosts whose cell height is shorter
+	// than SixelCellPxH (spill into pad/border). Stays inside card chrome.
+	sixelClearSlackRows = 2
 )
 
-// markNativeOverlayDirty requests a paint on the next scheduleNativeOverlay pass.
+// Delay before post-flush overwrite. Tests set to 0 so collectRawPayloads can
+// walk paint Batches without blocking on tea.Tick.
+var nativeReassertDelay = 50 * time.Millisecond
+
+// nativeReassertMsg triggers one overwrite paint after the cell flush that
+// follows the initial Raw (see emitNativeOverlay).
+type nativeReassertMsg struct{}
+
+// nativeCompositeFlushMsg writes pending CUP+DCS after View has run. PaintNow
+// during Update placed sixel before the art reservation cells existed on WT
+// (sprite overflowing the art box until relaunch). SetNative + this flush keeps
+// cells-then-DCS order while still covering viewEquals skips.
+type nativeCompositeFlushMsg struct{}
+
 func (m *Model) markNativeOverlayDirty() {
 	m.nativeOverlayDirty = true
 }
 
-// markNativeOverlayDirtyFollowUp also schedules the single delayed re-paint
-// (used after selection/content changes that BT may wipe).
-func (m *Model) markNativeOverlayDirtyFollowUp() {
-	m.nativeOverlayDirty = true
-	m.nativeNeedsFollowUp = true
-}
-
-// dirtyNativeIfPaintChanged dirties only when the painted payload changes.
-func (m *Model) dirtyNativeIfPaintChanged(speciesID, cells int, ansi string) {
-	if speciesID == m.nativePaintSpecies && cells == m.nativePaintCells && ansi == m.nativePaintANSI {
-		return
-	}
-	m.markNativeOverlayDirtyFollowUp()
-}
-
-// scheduleNativeOverlay paints Kitty/iTerm/Sixel via tea.Raw when dirty.
-//
-// BT v2's StyledString drops DCS/graphics from View content, so we reserve blank
-// cells and paint via tea.Raw. Any later cell redraw (list move, warm footer,
-// resize) wipes the image — clear the art rect then re-emit when dirty.
 func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 	if !m.nativeOverlayDirty {
 		return m, nil
 	}
-	if m.nativePaintPending {
-		if m.nativeOverlayReady() {
-			return m, nil
-		}
-		m.nativePaintPending = false
-		m.nativeNeedsFollowUp = false
-	}
-	if !m.nativeOverlayReady() {
-		// Keep dirty while dialog/help is up so Esc restores the paint.
-		if m.showHelp || m.showDialog {
-			return m, nil
-		}
-		// Layout unknown: a cache hit before WindowSize must not drop the dirty
-		// flag or the first species never paints.
-		if m.width < 1 || m.height < 1 {
-			return m, nil
-		}
-		m.nativeOverlayDirty = false
-		// Wipe leftover Sixel when selection has no native frame (placeholder /
-		// loading). Without this, fast scroll leaves the previous species' art.
-		if m.nativePaintANSI != "" || m.nativePaintSpecies != 0 {
-			return m.emitNativeClear()
+	// Keep dirty while covered so Esc can restore — but drop pending DCS so
+	// cell flushes cannot re-tail the sprite over the dialog/help.
+	if m.showHelp || m.showDialog {
+		if m.compositor != nil {
+			m.compositor.ClearNative()
 		}
 		return m, nil
 	}
+	if m.width < 1 || m.height < 1 {
+		return m, nil
+	}
+	if !m.nativeOverlayReady() {
+		m.nativeOverlayDirty = false
+		m.nativeFollowUpPending = false
+		// Glance almost always cache-hits and overwrites in place (no clear).
+		// Art 40 often misses; the Glance miss path (space-clear then DCS) is
+		// what overpaints the hero card. Same bucket: keep last sixel.
+		if m.nativePaintCells > 0 && m.nativePaintCells == m.currentSpriteCells() && !m.imagePlaceholder {
+			return m, nil
+		}
+		return m.emitNativeClear()
+	}
 	m.nativeOverlayDirty = false
-	m.nativePaintPending = true
 	debuglog.Renderf("native overlay paint")
-	return m.emitNativeOverlay(false)
+	return m.emitNativeOverlay()
+}
+
+// coverNativeOverlay erases on-screen native graphics and drops compositor
+// pending so help/dialog cell frames cannot re-tail DCS.
+func (m Model) coverNativeOverlay() (Model, tea.Cmd) {
+	if m.compositor != nil {
+		m.compositor.ClearNative()
+	}
+	hadPaint := m.nativePaintCells > 0 || m.nativePaintANSI != "" || m.nativePaintSpecies != 0
+	if !hadPaint {
+		return m, nil
+	}
+	return m.emitNativeClear()
 }
 
 func (m Model) emitNativeClear() (Model, tea.Cmd) {
+	hadPaint := m.nativePaintCells > 0 || m.nativePaintANSI != "" || m.nativePaintSpecies != 0
 	row, col, artW, artH, ok := views.SpriteArtRegion(m.browseData())
 	m.nativePaintANSI = ""
 	m.nativePaintSpecies = 0
 	m.nativePaintCells = 0
-	m.nativePaintPending = false
-	m.nativeNeedsFollowUp = false
-	if !ok {
+	if !ok || !hadPaint {
+		if m.composite && m.compositor != nil {
+			m.compositor.ClearNative()
+		}
 		return m, nil
 	}
 	debuglog.Renderf("native overlay clear row=%d col=%d %dx%d", row, col, artW, artH)
 	seq := nativeOverlayClearSeq(row, col, artW, artH)
+	if m.composite && m.compositor != nil {
+		// Quit has no further cell flush — write clear now. Live clears can wait
+		// for the next frame via SetNativeOnce; on exit that would never run and
+		// a pending SetNative could re-paint DCS after alt-screen exit.
+		if m.quitting {
+			m.compositor.WriteDirect(seq)
+			return m, nil
+		}
+		m.compositor.SetNativeOnce(seq)
+		return m, nil
+	}
 	return m, tea.Raw(seq)
+}
+
+// wipeNativeGraphics drops pending DCS and erases the art box at the current
+// origin. Call before Quit (so alt-screen exit cannot re-tail DCS onto the main
+// buffer) and before resize (so the old CUP placement is not left behind).
+func (m *Model) wipeNativeGraphics() tea.Cmd {
+	if m.sprites != nil {
+		m.sprites.ClearNative()
+	}
+	hadPaint := m.nativePaintCells > 0 || m.nativePaintANSI != "" || m.nativePaintSpecies != 0
+	row, col, artW, artH, ok := views.SpriteArtRegion(m.browseData())
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	m.nativePaintCells = 0
+	m.nativeFollowUpPending = false
+	m.nativeOverlayDirty = false
+	if !ok || !hadPaint {
+		if m.compositor != nil {
+			m.compositor.ClearNative()
+		}
+		return nil
+	}
+	seq := nativeOverlayClearSeq(row, col, artW, artH)
+	if m.compositor != nil {
+		m.compositor.WriteDirect(seq)
+		return nil
+	}
+	return tea.Raw(seq)
 }
 
 func (m Model) nativeOverlayReady() bool {
@@ -117,77 +156,123 @@ func (m Model) nativeOverlayReady() bool {
 		return false
 	}
 	lay := m.layout()
-	if !lay.ShowSprite || lay.SpriteSize < sprite.MinFrameSize {
+	if !lay.ShowSprite || lay.SpriteSize < sprite.SmallestFrameBucket() {
 		return false
 	}
 	_, _, _, _, ok = views.SpriteArtOrigin(m.browseData())
 	return ok
 }
 
-func (m Model) emitNativeOverlay(followUp bool) (Model, tea.Cmd) {
+func (m Model) emitNativeOverlay() (Model, tea.Cmd) {
 	end := debuglog.Trace(debuglog.Render, "frame.paint")
 	defer end()
 	if !m.nativeOverlayReady() {
-		m.nativePaintPending = false
-		debuglog.Renderf("native overlay stop")
 		return m, nil
 	}
 	sel, _ := m.selected()
 	row, col, artW, artH, ok := views.SpriteArtOrigin(m.browseData())
 	if !ok {
-		m.nativePaintPending = false
 		return m, nil
 	}
-	seq := nativeOverlayPaintSeq(row, col, artW, artH, m.imageANSI)
-	debuglog.Renderf("native overlay emit row=%d col=%d %dx%d bytes=%d followUp=%v",
-		row, col, artW, artH, len(m.imageANSI), followUp)
+	// Clear only when replacing a different painted bucket. Same-bucket species
+	// scroll overwrites in place (DCS only — no clear, no flicker); the encode
+	// fits the art box because cell pixels are measured at startup, so no spill
+	// accumulates. After an explicit wipe (cells==0) the rect is already empty.
+	clearFirst := m.nativePaintCells > 0 && m.nativePaintCells != m.imageCells
+	seq := nativeOverlayPaintSeq(row, col, artW, artH, m.imageANSI, clearFirst)
+	debuglog.Renderf("native overlay emit row=%d col=%d %dx%d bytes=%d clear=%v",
+		row, col, artW, artH, len(m.imageANSI), clearFirst)
 	m.nativePaintSpecies = sel.ID
 	m.nativePaintCells = m.imageCells
 	m.nativePaintANSI = m.imageANSI
-	cmds := []tea.Cmd{tea.Raw(seq)}
-	if !followUp {
-		if m.nativeNeedsFollowUp {
-			m.nativeNeedsFollowUp = false
-			cmds = append(cmds, tea.Tick(nativeOverlayRepaintDelay, func(time.Time) tea.Msg {
-				return nativeOverlayMsg{followUp: true}
-			}))
-		} else {
-			m.nativePaintPending = false
-		}
-	} else {
-		m.nativePaintPending = false
+	if m.composite && m.compositor != nil {
+		// Defer write until after View (cells-then-DCS). Flush covers viewEquals.
+		m.compositor.SetNative(seq)
+		m.nativeFollowUpPending = false
+		return m, func() tea.Msg { return nativeCompositeFlushMsg{} }
 	}
-	return m, tea.Batch(cmds...)
+	raw := tea.Raw(seq)
+	if m.nativeFollowUpPending {
+		// This paint is the post-flush re-assert — do not chain another timer.
+		m.nativeFollowUpPending = false
+		return m, raw
+	}
+	m.nativeFollowUpPending = true
+	return m, tea.Batch(raw, tea.Tick(nativeReassertDelay, func(time.Time) tea.Msg {
+		return nativeReassertMsg{}
+	}))
 }
 
-// nativeOverlayPaintSeq space-clears the art box, then paints DCS between
-// DECSC/DECRC so the cursor is not left below the image. No footer, no extra
-// Sixel bands after the image ST.
-func nativeOverlayPaintSeq(row, col, artW, artH int, ansi string) string {
+// nativeOverlayPaintSeq paints DCS between DECSC/DECRC. clearFirst theme-spaces
+// the art box (plus slack) before CUP+DCS. Same-geometry paints overwrite in place.
+//
+// No DECSET 8452: on some Windows Terminal builds it interacted badly with
+// multi-row clears and left gaps through the sprite. Plain CUP+DCS is enough.
+func nativeOverlayPaintSeq(row, col, artW, artH int, ansi string, clearFirst bool) string {
+	artW, artH = clampArtCells(artW, artH)
 	var b strings.Builder
 	b.WriteString(decSaveCursor)
-	b.WriteString(wtSixelCursorHereOn)
-	b.WriteString(clearCellRect(row, col, artW, artH))
+	if clearFirst {
+		b.WriteString(clearCellRect(row, col, artW, artH+sixelClearSlackRows))
+	}
 	if ansi != "" && row >= 1 && col >= 1 {
 		fmt.Fprintf(&b, "\x1b[%d;%dH%s", row, col, ansi)
 	}
-	b.WriteString(wtSixelCursorHereOff)
 	b.WriteString(decRestoreCursor)
 	return b.String()
 }
 
-func nativeOverlayClearSeq(row, col, artW, artH int) string {
-	return decSaveCursor + clearCellRect(row, col, artW, artH) + decRestoreCursor
+// invalidateNativePaintGeometry forces the next ready paint to treat geometry
+// as unset (help/dialog dismiss). Does not emit Raw.
+func (m *Model) invalidateNativePaintGeometry() {
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	m.nativePaintCells = 0
+	m.nativeFollowUpPending = false
+	if m.composite && m.compositor != nil {
+		m.compositor.ClearNative()
+	}
 }
 
-// clearCellRect writes spaces over a WxH cell box via CUP (1-indexed origin).
+func nativeOverlayClearSeq(row, col, artW, artH int) string {
+	artW, artH = clampArtCells(artW, artH)
+	var b strings.Builder
+	b.WriteString(decSaveCursor)
+	b.WriteString(clearCellRect(row, col, artW, artH+sixelClearSlackRows))
+	b.WriteString(decRestoreCursor)
+	return b.String()
+}
+
+func clampArtCells(artW, artH int) (int, int) {
+	maxW, maxH := sprite.FrameSizeFor(sprite.MaxFrameSize)
+	minW, minH := sprite.FrameSizeFor(sprite.SmallestFrameBucket())
+	if artW < 1 {
+		artW = minW
+	}
+	if artH < 1 {
+		artH = minH
+	}
+	if artW > maxW {
+		artW = maxW
+	}
+	if artH > maxH {
+		artH = maxH
+	}
+	return artW, artH
+}
+
+// clearCellRect writes theme-base spaces over a WxH cell box (1-indexed CUP).
+// Unstyled spaces use the terminal default background (often black on alt-screen).
 func clearCellRect(row, col, w, h int) string {
 	if w < 1 || h < 1 || row < 1 || col < 1 {
 		return ""
 	}
-	blank := strings.Repeat(" ", w)
+	bg := style.BaseRGBA()
+	prefix := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", bg.R, bg.G, bg.B)
+	const reset = "\x1b[49m"
+	blank := prefix + strings.Repeat(" ", w) + reset
 	var b strings.Builder
-	b.Grow(h * (16 + w))
+	b.Grow(h * (24 + w))
 	for i := 0; i < h; i++ {
 		fmt.Fprintf(&b, "\x1b[%d;%dH%s", row+i, col, blank)
 	}

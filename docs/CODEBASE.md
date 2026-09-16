@@ -6,7 +6,7 @@ Repository architecture for module `github.com/Graphixa/Pokedex` (Go 1.26). Not 
 
 **Supported GOOS/GOARCH (Makefile + CI):** `linux/amd64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`. CI also builds natively on ubuntu, macos, and windows hosts.
 
-**Formatting / lint:** `gofmt` (Makefile `fmt` / `fmt-check`; CI `gofmt -l`). `go vet ./...`. No golangci-lint config. Race: `CGO_ENABLED=1 go test -race ./...` — Windows **can** run this (gcc/CGO required; recorded PASS ~197s on this tree). Linux CI (`ubuntu-latest`, `go test -race ./...`) is the merge gate.
+**Formatting / lint:** `gofmt` (Makefile `fmt` / `fmt-check`; CI prints offenders). `go vet ./...`. `staticcheck ./...` (`2026.2.1`). `gosec ./...` (`v2.29.0`; excludes G104/G115/G301/G304/G306/G404). No golangci-lint. Race: `CGO_ENABLED=1 go test -race ./...` — Windows **can** run this (gcc/CGO required; recorded PASS ~197s on this tree). Linux CI (`ubuntu-latest`, `go test -race ./...`) is the merge gate.
 
 ---
 
@@ -101,32 +101,41 @@ Consent: `config.Setup.ArtworkMode` (`off|blocking|background`) + `SpriteHD`. Br
 ### 4. Native image-cache construction
 
 1. `openBrowse` detects native image (`spriteimage` + `DetectCapabilities`). If native and sprites on, constructs `nativewarm.Service`.
-2. TUI `notifyWarmer` calls `NativeWarmer.EnsureStarted(ctx, cells)` after first layout. Bucket is `ClampFrameSide` of available cells (`24|32|40` only).
-3. Single worker: disk audit (`HasNativeFile`) then opportunistic encode of the active bucket only. `SetCells` switches bucket; old gzip files stay on disk.
-4. Encode: `Engine.NativeWarmRender` → mem LRU (decompressed) → async `persistQueue` gzip to `cache/native/<key>.sixel.gz`.
-5. Progress: `nativewarm.Progress` (Done/Total/Cells; message `"Building image cache"`). `app` maps it to `tui.WarmStageNative`. TUI footer shows only native (`formatWarmFooterRight` ignores others). Native progress counts persisted/readable `.sixel.gz` frames.
+2. TUI `notifyWarmer` calls `SetBuckets(BrowseWarmBuckets())` then `EnsureStarted(ctx, focusCells)`. Browse warm phases are **glance then hero** (`16` then `40`). Intermediate buckets `24|32` remain valid encode sizes for stepped Art layout / dossier helpers.
+3. Single worker: disk audit (`HasNativeFile`) then opportunistic encode of the **active phase** bucket. `SetBuckets` sets phase order; `SetCells` sets **focus** (Prioritize prefers focus, then other phase sizes) without abandoning the scan phase. Old gzip files stay on disk.
+4. Encode: `Engine.NativeWarmRender` → mem LRU (decompressed) → async `persistQueue` gzip to `cache/native/<key>.sixel.gz`. Keys include pixel size from `SixelCellPxW/H` (10×20) × frame cells, so 16×8 and 40×20 are distinct artefacts.
+5. Progress: `nativewarm.Progress` (Done/Total/Cells; message `"Building image cache"`). Phase completion emits `Done>=Total` for the finished bucket before advancing (so the footer can clear or reset); the next phase does **not** emit a sticky `0/N` when that bucket is already warm. `app` maps progress to `tui.WarmStageNative`. Footer shows only native.
 6. Completeness is reconstructed from content-addressed `.sixel.gz` files (`HasNativeFile` / nativewarm disk audit). There is no aggregate image-completion coordinator or Pokémon-level completion manifest. `native/manifest.json` (`NativeManifest`) is a small version/protocol stamp used by compatibility and acceptance-audit tooling — not a Done/Total authority. `scripts/acceptance_audit.go` reads the stamp, then counts exact files on disk.
 
 Read path for a paint: mem LRU → gunzip disk → cold encode.
 
 ### 5. Sprite rendering
 
-1. Selection change → `bumpSelection` clears native overlay, increments `selectionGen`.
-2. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` (mem/disk, no PNG/HTTP). Hit applies immediately.
-3. Miss → `coldsched.Scheduler` latest-selection-wins. `RenderCold` decodes PNG, resizes, encodes (sixel/chafa/halfblock).
-4. Fallback chain: Kitty/iTerm/Sixel (`image`) → chafa → halfblock → placeholder.
-5. Native frames paint via `tea.Raw` overlay (`native_overlay.go`) because Bubble Tea v2 `StyledString` drops DCS. Footer progress also uses `tea.Raw` (`footer_raw.go`) to avoid wiping sixel.
-6. Chafa-only terminals may run `warm.Service` (`Stage:"sprites_render"`). Native terminals do not start it (CPU contention).
+**Native paint (cells-then-DCS):** Glance/Art keep cell-buffer truth for chafa/halfblock. Native (Sixel/Kitty/iTerm) reserves blank themed cells; `compositorWriter` on `tea.WithOutput` appends CUP+DCS **after** each completed cell frame so shared art/stats rows cannot punch mid-sprite. Warm progress stays in the View footer.
+
+**Manual RC (Windows Terminal):** `poke` — scroll warm + cold list; Image Cache progress visible; open dialog and toggle Art; mid-band through sprite must stay gone.
+
+1. Selection change → `bumpSelection` blanks image VM, `ClearNative()`, clears paint identity (`nativePaintANSI` / species) but **keeps** `nativePaintCells` as a geometry token, marks FollowUp dirty. `glanceHoldID` may keep previous **text/stats** until the new selection is commit-ready (sprite ready **and** About can fill — or no snapshot / new core settled with error); it does **not** sticky-preserve prior graphics. About uses a **last-good snapshot** (`glanceAbout*`) so cold fast scroll survives hold-ID churn and `resources` LRU eviction — not only `resources[glanceHoldID].HasCore`. List cursor moves immediately; art shows themed blank reservation (no spinner). Stats stay put via `browseStats` / held core; About must not blank between two species that had/have core.
+2. Not-ready dirty → `emitNativeClear` (themed space-clear art rect, zeros geometry) — **only when a frame was actually painted** (skipped on startup / already-clear), and **spaces only**: no solid-Sixel `ClearNativeRegion` fill (encoding an opaque rect per uncached selection was pure lag; a cell write already erases Sixel on WT). Ready dirty → immediate `emitNativeOverlay`: **same cell bucket** overwrites in place (DCS only); **first paint / size change / post-wipe** space-clears then DCS. View-changing dirties set `nativeNeedsFollowUp` so the first paint also arms one ~60ms insurance re-paint — not a defer-first 16ms wait.
+   - **Browse dossier-core arrival** repaints the overlay **once, in place** via `markNativeOverlayDirty` (no `FollowUp`) and only while a native sprite is active. Core adds genus/About cells outside the art box; the Sixel payload is unchanged, so it must not arm a second, delayed ~60ms redraw (that late re-paint per newly-browsed species read as "much slower"). `origin/main` did not repaint on core at all; this is the minimal safe version.
+3. Stable-frame gate (`nativeOverlayReady`): native image ready for the selected species and sprite shown. Text hold does **not** block Raw — sixel may paint while held About remains; text commits when sprite+About are ready together.
+4. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` at `currentSpriteCells()` (Glance `16` or Art `40`). Hit applies immediately; cell art appears in View on apply; native marks FollowUp for immediate Raw + insurance.
+5. Miss → `coldsched.Scheduler` latest-selection-wins. Right-pane text may stay on the held species until sprite **and** About commit policy allow (no spinner).
+6. Fallback chain: Kitty/iTerm/Sixel (`image`) → chafa → halfblock → placeholder. Cell art in View is buffer-safe; native frames use reservation + Raw.
+7. Native paint seq: DECSC → (optional theme space-clear + slack) → CUP + `?8452h` + DCS + `?8452l` → DECRC. Space-clear only on geometry/identity wipe; same-geometry paints overwrite. Help/dialog dismiss invalidates geometry so restore clears. Footer progress uses `tea.Raw` (`footer_raw.go`) while native graphics are on screen for the selection.
+
+**Manual RC (Windows Terminal):** scroll a warm list — same-bucket overwrite (no pre-DCS space-clear flash); immediate Raw + ~60ms insurance. Cold neighbor: previous glance **text** held until sprite+About commit; **About** keeps last-good snapshot through cold fast scroll (10+ Downs through uncached species) until the selection gains core — must not blank after leaving the last warm mon; sixel may paint while text lags. Dossier/help dismiss still space-clears then restores art. No spinner tick churn.
+8. Chafa-only terminals may run `warm.Service` with the same `[16,40]` phase policy. Native terminals do not start chafa warm (CPU contention).
 
 ### 6. TUI event processing
 
 `Model.Update` → `update` → `scheduleNativeOverlay`.
 
-Message kinds: `tea.WindowSizeMsg`, keys, `spinner.TickMsg`, `spriteMsg`, `coldFrameMsg`, dossier core/extras, `warmProgressMsg`, `nativeOverlayMsg`, `tea.RawMsg` (ack after overlay write).
+Message kinds: `tea.WindowSizeMsg`, keys, `spriteMsg`, `coldFrameMsg`, dossier core/extras, `warmProgressMsg`, `nativeOverlayMsg`, `tea.RawMsg` (ack after overlay write).
 
-Warm channel: `listenWarmProgress` is a recusive tea.Cmd on `<-chan WarmProgress`. Closed channel clears footer.
+Warm channel: `listenWarmProgress` is a recursive tea.Cmd on `<-chan WarmProgress`. Closed channel clears footer.
 
-Keys: typing filters; `q` quits only when search empty; `Ctrl+C` always quits; Enter/`i` opens dialog (dossier load).
+Keys: typing filters; `v` cycles Glance/Art browse views; `q` quits only when search empty; `Ctrl+C` always quits; Enter/`i` opens dialog (dossier load).
 
 ### 7. Shutdown
 
@@ -437,7 +446,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `engine.go`
 
-- Orchestrates resolve → mode → mem/disk → cold encode. Native warming uses the active bucket through `NativeWarmRender`; the unused multi-bucket API was removed in Slice I.
+- Orchestrates resolve → mode → mem/disk → cold encode. Native warming uses phased browse buckets (`SetBuckets` / active phase + focus `SetCells`) through `NativeWarmRender`.
 - **Concurrency:** `sync.Once` mem caches; persist queue goroutine.
 
 #### `native_cache.go` / `memcache.go` / `cache.go` / `persistqueue.go`
@@ -446,7 +455,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `source.go` / `asset.go` / `cdn.go` / `resolver.go` / `options.go` / `frame.go` / `resize.go` / `imageprep.go`
 
-- PNG resolve (named store → HTTP), asset refs, CDN URLs, mode fallback, typed `RenderMode`/`ColorMode`/`SpriteSource`, 24/32/40 buckets, resize quality.
+- PNG resolve (named store → HTTP), asset refs, CDN URLs, mode fallback, typed `RenderMode`/`ColorMode`/`SpriteSource`, frame buckets `{16,24,32,40}` (browse warm phases `16` then `40`), resize quality.
 
 #### `capabilities.go` / `activity.go` / `metrics.go` / `renderer.go`
 
@@ -528,7 +537,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `native_overlay.go` / `footer_raw.go` / `warm_footer.go`
 
-- Raw sixel paint and raw footer patch. Footer **only** renders native stage.
+- Snappy immediate Raw when ready; same-geometry overwrite (no space-clear); clear+DCS on geometry/identity wipe; `nativeNeedsFollowUp` → one ~60ms insurance. Not-ready → immediate clear. No stdout wrap. Footer **only** renders native stage via Raw while graphics on screen.
 
 #### `image.go` / `resources.go` / `content.go` / `view.go` / `layout.go` / `frame.go` / `keys.go` / `tabs.go` / `run.go`
 

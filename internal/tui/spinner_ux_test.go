@@ -23,39 +23,36 @@ func newSpinnerModel(sprites tui.SpriteRenderer) tui.Model {
 	return updated.(tui.Model)
 }
 
-func TestSpinnerOnlyOnTrueColdMiss(t *testing.T) {
+func TestLoadingOnlyOnTrueColdMiss(t *testing.T) {
 	cached := &fakeSprites{cached: "WARM", native: true, ansi: "COLD"}
 	m := newSpinnerModel(cached)
 	_ = m.EnsureSelectionLoadsForTest()
-	if m.ImageSpinnerForTest() {
-		t.Fatal("cache hit must not show spinner")
+	if m.ImageStateForTest() == int(tui.ImageLoading) {
+		t.Fatal("cache hit must not enter loading")
 	}
 
 	updated, _ := m.Update(tui.WarmProgressNativeMsgForTest(3, 10, 32))
 	m = updated.(tui.Model)
-	if m.ImageSpinnerForTest() {
-		t.Fatal("background native warm progress alone must not show spinner")
+	if m.ImageStateForTest() == int(tui.ImageLoading) && !m.HasSpriteANSI() {
+		t.Fatal("background native warm progress alone must not force cold loading")
 	}
 
 	cold := &fakeSprites{ansi: "COLD", block: make(chan struct{})}
 	m = newSpinnerModel(cold)
 	_ = m.ForceSpriteLoadForTest()
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("true cold miss must show spinner")
-	}
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
 		t.Fatalf("image state=%d want loading on cold miss", m.ImageStateForTest())
 	}
 
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(4, 10, 32))
 	m = updated.(tui.Model)
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("spinner must remain for active cold miss while background warms")
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("loading must remain for active cold miss while background warms")
 	}
 	close(cold.block)
 }
 
-func TestSpinnerNotShownForNativeMemoryHit(t *testing.T) {
+func TestLoadingNotShownForNativeMemoryHit(t *testing.T) {
 	block := make(chan struct{})
 	sprites := &memHitSprites{fakeSprites: fakeSprites{ansi: "NATIVE", native: true, block: block}}
 	m := newSpinnerModel(sprites)
@@ -63,28 +60,28 @@ func TestSpinnerNotShownForNativeMemoryHit(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected cold render to populate mem cache")
 	}
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("cold miss must show spinner before mem is warm")
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("cold miss must be loading before mem is warm")
 	}
 	var model tea.Model = m
 	close(block)
 	drainCmds(t, &model, cmd)
 	m = model.(tui.Model)
-	if m.ImageSpinnerForTest() {
-		t.Fatal("completed render must clear spinner")
+	if m.ImageStateForTest() == int(tui.ImageLoading) {
+		t.Fatal("completed render must clear loading")
 	}
 
 	updated, _ := m.Update(key("down"))
 	m = updated.(tui.Model)
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("cold neighbor must show spinner")
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("cold neighbor must enter loading")
 	}
 
 	updated, _ = m.Update(key("up"))
 	m = updated.(tui.Model)
 	_ = m.EnsureSelectionLoadsForTest()
-	if m.ImageSpinnerForTest() {
-		t.Fatal("native memory hit must not show spinner")
+	if m.ImageStateForTest() == int(tui.ImageLoading) {
+		t.Fatal("native memory hit must not stay loading")
 	}
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("image state=%d want ready on mem hit", m.ImageStateForTest())
@@ -121,7 +118,7 @@ func (m *memHitSprites) RenderCold(ctx context.Context, pokemon domain.Pokemon, 
 	return res
 }
 
-func TestSpinnerNotShownForNativeDiskHit(t *testing.T) {
+func TestLoadingNotShownForNativeDiskHit(t *testing.T) {
 	sprites := &fakeSprites{
 		cached:     "DISK",
 		native:     true,
@@ -130,8 +127,8 @@ func TestSpinnerNotShownForNativeDiskHit(t *testing.T) {
 	}
 	m := newSpinnerModel(sprites)
 	_ = m.EnsureSelectionLoadsForTest()
-	if m.ImageSpinnerForTest() {
-		t.Fatal("native disk hit must not show spinner")
+	if m.ImageStateForTest() == int(tui.ImageLoading) {
+		t.Fatal("native disk hit must not enter loading")
 	}
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("image state=%d want ready on disk hit", m.ImageStateForTest())
@@ -144,7 +141,7 @@ func TestSpinnerNotShownForNativeDiskHit(t *testing.T) {
 	}
 }
 
-func TestStaleCompletionDoesNotClearNewerSpinner(t *testing.T) {
+func TestStaleCompletionDoesNotClearNewerLoading(t *testing.T) {
 	block := make(chan struct{})
 	sprites := &fakeSprites{ansi: "ART", block: block, native: true}
 	m := newSpinnerModel(sprites)
@@ -161,8 +158,8 @@ func TestStaleCompletionDoesNotClearNewerSpinner(t *testing.T) {
 	if nextID == firstID {
 		t.Fatal("expected selection to move")
 	}
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("new selection cold miss must show spinner")
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("new selection cold miss must be loading")
 	}
 
 	cells := m.CurrentSpriteCells()
@@ -170,8 +167,8 @@ func TestStaleCompletionDoesNotClearNewerSpinner(t *testing.T) {
 	stale := tui.ColdFrameMsgForTest(gen, firstID, cells, "STALE", false, true, "artwork")
 	updated, _ = m.Update(stale)
 	m = updated.(tui.Model)
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("stale completion must not clear newer selection spinner")
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("stale completion must not clear newer selection loading")
 	}
 	if m.HasSpriteANSI() && m.ImageSpeciesIDForTest() == firstID {
 		t.Fatal("stale frame must not paint for prior selection")
@@ -181,15 +178,15 @@ func TestStaleCompletionDoesNotClearNewerSpinner(t *testing.T) {
 	current := tui.ColdFrameMsgForTest(gen, nextID, cells, "FRESH", false, true, "artwork")
 	updated, _ = m.Update(current)
 	m = updated.(tui.Model)
-	if m.ImageSpinnerForTest() {
-		t.Fatal("current completion must clear spinner")
+	if m.ImageStateForTest() == int(tui.ImageLoading) {
+		t.Fatal("current completion must clear loading")
 	}
 	if !m.HasSpriteANSI() {
 		t.Fatal("expected current frame to paint")
 	}
 }
 
-func TestCurrentCompletionClearsSpinner(t *testing.T) {
+func TestCurrentCompletionClearsLoading(t *testing.T) {
 	block := make(chan struct{})
 	started := make(chan struct{}, 1)
 	sprites := &fakeSprites{ansi: "ART", block: block, started: started, native: true}
@@ -198,8 +195,8 @@ func TestCurrentCompletionClearsSpinner(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected cold load")
 	}
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("cold miss must show spinner immediately")
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("cold miss must enter loading immediately")
 	}
 
 	go func() { _ = cmd() }()
@@ -208,8 +205,8 @@ func TestCurrentCompletionClearsSpinner(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("render did not start")
 	}
-	if !m.ImageSpinnerForTest() {
-		t.Fatal("spinner must remain while encode is in flight")
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		t.Fatal("loading must remain while encode is in flight")
 	}
 
 	id, _ := m.SelectedID()
@@ -218,8 +215,8 @@ func TestCurrentCompletionClearsSpinner(t *testing.T) {
 	updated, _ := m.Update(tui.ColdFrameMsgForTest(gen, id, cells, "ART", false, true, "artwork"))
 	m = updated.(tui.Model)
 	close(block)
-	if m.ImageSpinnerForTest() {
-		t.Fatal("current completion must clear spinner")
+	if m.ImageStateForTest() == int(tui.ImageLoading) {
+		t.Fatal("current completion must clear loading")
 	}
 	if !m.HasSpriteANSI() {
 		t.Fatal("expected frame to paint after completion")

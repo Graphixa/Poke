@@ -78,8 +78,8 @@ func (r Renderer) renderLib(ctx context.Context, src image.Image, opts sprite.Re
 			sampleSide *= 2
 		}
 	}
-	// Square artwork: downsample then Prepare; non-square: CropAndPrepare then Resize.
-	scaled := sprite.PrepareEncodeSrc(src, sampleSide, sampleSide, opts.Source, bg, threshold, 1)
+	// Crop-to-content then fit (never stretch the Pokémon into the mosaic grid).
+	scaled := sprite.PrepareEncodeSrc(src, sampleSide, sampleSide, opts.Source, bg, threshold, 0)
 
 	if err := ctx.Err(); err != nil {
 		return sprite.Frame{}, err

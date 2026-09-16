@@ -37,82 +37,178 @@ func centreSwitcher(active int, labels []string, width int) string {
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, line)
 }
 
-// SpriteSizeCue tells the user the terminal is too small for the fixed sprite frame.
+// SpriteSizeCue tells the user the terminal is too small for the sprite frame.
 func SpriteSizeCue(width, height int) string {
+	minSide := sprite.SmallestFrameBucket()
 	if width < 1 {
-		width = sprite.MinFrameSize
+		width = minSide
 	}
 	if height < 1 {
-		height = sprite.MinFrameSize / sprite.CellAspectY
+		height = minSide / sprite.CellAspectY
 	}
-	msg := fmt.Sprintf("Widen / taller terminal\nfor %d×%d sprite", sprite.MinFrameSize, sprite.MinFrameSize/sprite.CellAspectY)
+	msg := fmt.Sprintf("Widen / taller terminal\nfor %d×%d sprite", minSide, minSide/sprite.CellAspectY)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, mutedSty().Render(msg))
 }
 
-const (
-	dialogPadX = 3
-	dialogPadY = 1
-)
+const dialogMinBodyWide = 56
 
-// OverlayDialog composites a near-fullscreen detail dialog over a dimmed background.
-func OverlayDialog(background, title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int) string {
+// DialogGeom is the dossier frame geometry used by both render and key handling.
+type DialogGeom struct {
+	Stacked bool
+	BodyH   int
+	BodyW   int // usable body column width (right pane or full stacked width)
+	InnerW  int
+}
+
+// DialogLayout returns whether the dossier uses the stacked pager vs side rail.
+// termH is the full terminal height; one row is reserved for the footer.
+func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 	if termW < 20 {
 		termW = 20
 	}
 	if termH < 10 {
 		termH = 10
 	}
-	padX, padY := dialogPadX, dialogPadY
-	dialogW := termW - 2*padX
-	dialogH := termH - 2*padY
-	if dialogW < 40 {
-		dialogW = min(termW, 40)
-		padX = maxInt(0, (termW-dialogW)/2)
+	frameH := termH - 1 // footer
+	if frameH < 8 {
+		frameH = termH
 	}
-	if dialogH < 12 {
-		dialogH = min(termH, 12)
-		padY = maxInt(0, (termH-dialogH)/2)
-	}
-
+	dialogW := termW
+	dialogH := frameH
 	innerW := dialogW - 4
 	if innerW < 20 {
 		innerW = 20
 	}
-	switcher := DialogSectionSwitcher(section, sectionLabels, innerW)
-	divider := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", maxInt(1, innerW)))
-	footer := mutedSty().Render("Tab section · ↑↓ scroll · Esc close")
-
-	headerH := 4 // title row + switcher + divider + footer spacing accounted below
-	bodyH := dialogH - headerH - 3
-	if bodyH < 4 {
-		bodyH = 4
+	railW := dialogRailWidth(sectionLabels)
+	stacked := innerW-railW-3 < dialogMinBodyWide
+	h := dialogH - 4 // border + vertical padding
+	if stacked {
+		h = dialogH - 6 // pager + divider
 	}
-	body := clipLines(bodyLines, bodyOff, bodyH, innerW)
+	if h < 1 {
+		h = 1
+	}
+	bodyW := innerW
+	if !stacked {
+		bodyW = innerW - railW - 3
+		if bodyW < 20 {
+			bodyW = 20
+		}
+	}
+	return DialogGeom{Stacked: stacked, BodyH: h, BodyW: bodyW, InnerW: innerW}
+}
 
-	var inner strings.Builder
-	inner.WriteString(switcher)
-	inner.WriteByte('\n')
-	inner.WriteString(divider)
-	inner.WriteByte('\n')
-	inner.WriteString(body)
-	inner.WriteByte('\n')
-	inner.WriteString(footer)
+// DossierFrame renders a full-terminal dossier (title card + footer), not an overlay.
+func DossierFrame(title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int, footer string) string {
+	if termW < 20 {
+		termW = 20
+	}
+	if termH < 10 {
+		termH = 10
+	}
+	geom := DialogLayout(termW, termH, sectionLabels)
+	frameH := termH - 1
+	if frameH < 8 {
+		frameH = termH
+	}
+	inner := renderDossierInner(section, sectionLabels, bodyLines, bodyOff, geom, frameH)
 
 	card := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.BorderColor()).
-		Padding(0, 1).
-		Width(dialogW).
-		Height(dialogH).
-		Render(inner.String())
+		Padding(1, 0).
+		Width(termW).
+		Height(frameH).
+		Render(inner)
+	card = stampDialogTitle(card, title, termW)
 
-	// Integrate title on top border when possible.
-	card = stampDialogTitle(card, title, dialogW)
+	if footer == "" {
+		return card
+	}
+	footer = textwidth.PadRight(textwidth.Truncate(footer, termW), termW)
+	return card + "\n" + footerSty().Render(footer)
+}
 
-	dimmed := lipgloss.NewStyle().Faint(true).Render(background)
-	bgLayer := lipgloss.NewLayer(dimmed)
-	dlgLayer := lipgloss.NewLayer(card).X(padX).Y(padY).Z(1)
-	return lipgloss.NewCompositor(bgLayer, dlgLayer).Render()
+func renderDossierInner(section int, labels, bodyLines []string, bodyOff int, geom DialogGeom, frameH int) string {
+	innerW := geom.InnerW
+	wrapRow := func(row string) string {
+		return " " + textwidth.PadRight(textwidth.Truncate(row, innerW), innerW) + " "
+	}
+	if geom.Stacked {
+		bodyH := geom.BodyH
+		pager := dialogSectionPager(section, labels, innerW)
+		divider := lipgloss.NewStyle().
+			Foreground(style.BorderColor()).
+			Render(strings.Repeat("─", maxInt(1, innerW)))
+		body := clipLines(bodyLines, bodyOff, bodyH, innerW)
+		lines := []string{wrapRow(pager), wrapRow(divider)}
+		for _, line := range strings.Split(body, "\n") {
+			lines = append(lines, wrapRow(line))
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	railW := dialogRailWidth(labels)
+	bodyH := geom.BodyH
+	rail := dialogSectionRail(section, labels, railW, bodyH)
+	bodyW := geom.BodyW
+	body := clipLines(bodyLines, bodyOff, bodyH, bodyW)
+	separator := lipgloss.NewStyle().
+		Foreground(style.BorderColor()).
+		Render(strings.Repeat("│\n", bodyH-1) + "│")
+	content := lipgloss.JoinHorizontal(lipgloss.Top, rail, " ", separator, " ", body)
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = " " + line + " "
+	}
+	_ = frameH
+	return strings.Join(lines, "\n")
+}
+
+func dialogRailWidth(labels []string) int {
+	width := 16
+	for _, label := range labels {
+		if w := textwidth.Width(label) + 4; w > width {
+			width = w
+		}
+	}
+	if width > 22 {
+		width = 22
+	}
+	return width
+}
+
+func dialogSectionRail(active int, labels []string, width, height int) string {
+	lines := make([]string, 0, height)
+	for i, label := range labels {
+		prefix := "  "
+		sty := lipgloss.NewStyle().Foreground(style.SecondaryColor())
+		if i == active {
+			prefix = "> "
+			sty = lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
+		}
+		line := textwidth.PadRight(textwidth.Truncate(prefix+label, width), width)
+		lines = append(lines, sty.Render(line))
+	}
+	for len(lines) < height {
+		lines = append(lines, strings.Repeat(" ", width))
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func dialogSectionPager(active int, labels []string, width int) string {
+	if len(labels) == 0 {
+		return strings.Repeat(" ", width)
+	}
+	if active < 0 || active >= len(labels) {
+		active = 0
+	}
+	pager := fmt.Sprintf("‹  %d/%d  %s  ›", active+1, len(labels), labels[active])
+	pager = textwidth.Truncate(pager, width)
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, boldSty().Render(pager))
 }
 
 func stampDialogTitle(card, title string, width int) string {
@@ -137,7 +233,7 @@ func stampDialogTitle(card, title string, width int) string {
 		label = textwidth.Truncate(label, maxLabel)
 	}
 	border := lipgloss.NewStyle().Foreground(style.BorderColor())
-	titleSt := boldSty()
+	titleSt := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
 	prefix := border.Render("╭─") + titleSt.Render(label) + border.Render("─")
 	remain := tw - lipgloss.Width(prefix) - 1
 	if remain < 0 {

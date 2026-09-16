@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
-	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -15,6 +14,8 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/coldsched"
 	"github.com/Graphixa/Pokedex/internal/search"
+	"github.com/Graphixa/Pokedex/internal/textwidth"
+	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
@@ -29,6 +30,10 @@ type Options struct {
 	Context  context.Context
 	// DisableSprite forces the sprite panel off regardless of terminal size.
 	DisableSprite bool
+	// ListTypes includes coloured type labels in browse list rows.
+	ListTypes bool
+	// BrowseEntries maps species ID → browse.json row (stats + About; optional).
+	BrowseEntries map[int]domain.BrowseEntry
 	// DossierWarmer pre-assembles dossier core or full dossiers in the background.
 	DossierWarmer DossierWarmer
 	// Warmer is an optional priority sprite prewarm service.
@@ -47,6 +52,7 @@ type Options struct {
 type SpriteWarmer interface {
 	Prioritize(speciesID int)
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+	SetBuckets(buckets []int)
 	SetCells(cells int)
 	Snapshot() (done, total int)
 	NoteActivity()
@@ -66,6 +72,7 @@ type NativeWarmer interface {
 	EnsureStarted(ctx context.Context, cells int)
 	Prioritize(speciesID int)
 	SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int)
+	SetBuckets(buckets []int)
 	SetCells(cells int)
 	Snapshot() (done, total int)
 	NoteActivity()
@@ -109,9 +116,12 @@ type Model struct {
 	help   help.Model
 	search textinput.Model
 
-	filtered []domain.SpeciesSummary
-	cursor   int
-	listOff  int
+	filtered  []domain.SpeciesSummary
+	cursor    int
+	listOff   int
+	listTypes bool
+
+	browseEntries map[int]domain.BrowseEntry
 
 	browseView    BrowseView
 	dialogSection DialogSection
@@ -123,7 +133,6 @@ type Model struct {
 	lruIDs       []int
 
 	imageState       ImageState
-	imageSpinner     bool
 	imageANSI        string
 	imageNative      bool
 	imageKind        string
@@ -131,22 +140,29 @@ type Model struct {
 	imageSpeciesID   int
 	imagePlaceholder bool
 	imageLoading     bool
-	spinner          spinner.Model
 
-	spriteCancel        context.CancelFunc
-	spriteReqID         int
-	spriteLoadSpecies   int
-	coldSched           *coldsched.Scheduler
-	coldFrameCh         chan coldFrameMsg
-	dossierCancel       context.CancelFunc
-	dossierLoadCtx      context.Context
-	dossierLoadSpecies  int
-	nativePaintPending  bool
-	nativeOverlayDirty  bool
-	nativeNeedsFollowUp bool
-	nativePaintSpecies  int
-	nativePaintCells    int
-	nativePaintANSI     string
+	spriteCancel          context.CancelFunc
+	spriteReqID           int
+	spriteLoadSpecies     int
+	coldSched             *coldsched.Scheduler
+	coldFrameCh           chan coldFrameMsg
+	dossierCancel         context.CancelFunc
+	dossierLoadCtx        context.Context
+	dossierLoadSpecies    int
+	nativeOverlayDirty    bool
+	nativeFollowUpPending bool // armed until post-flush overwrite fires (Raw path)
+	nativePaintSpecies    int
+	nativePaintCells      int
+	nativePaintANSI       string
+	glanceHoldID          int // text hold until sprite commit-ready (does not block sixel)
+	// Last-good Abilities so cold fast scroll does not blank the card when the
+	// new species has neither browse.json abilities nor dossier core yet.
+	glanceAbilitiesSnap []domain.AbilitySlot
+	glanceAbilitiesOK   bool
+
+	// composite: cells-then-DCS via compositorWriter; no tea.Raw sprites.
+	composite  bool
+	compositor *compositorWriter
 
 	warmer           SpriteWarmer
 	dossierWarmer    DossierWarmer
@@ -193,9 +209,8 @@ func NewModel(opts Options) Model {
 		resources:     make(map[int]*resourceCache),
 		lruIDs:        nil,
 		imageState:    ImageBlank,
-		spinner:       spinner.New(),
-		browseView:    BrowseSprite,
-		dialogSection: DialogSummary,
+		browseView:    BrowseGlance,
+		dialogSection: DialogOverview,
 		keys:          defaultKeyMap(),
 		help:          newHelpModel(),
 		search:        newSearchInput(),
@@ -207,6 +222,8 @@ func NewModel(opts Options) Model {
 		warmEvents:    opts.WarmEvents,
 		onUIReady:     opts.OnUIReady,
 		pokemonSrc:    opts.Pokemon,
+		listTypes:     opts.ListTypes,
+		browseEntries: opts.BrowseEntries,
 	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)
@@ -252,14 +269,17 @@ func newHelpModel() help.Model {
 	h.ShortSeparator = " • "
 	h.Styles = help.DefaultDarkStyles()
 	p := style.CurrentPalette()
-	muted := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Placeholders)).Faint(true)
-	h.Styles.ShortKey = muted
-	h.Styles.ShortDesc = muted
-	h.Styles.ShortSeparator = muted
-	h.Styles.FullKey = muted
-	h.Styles.FullDesc = muted
-	h.Styles.FullSeparator = muted
-	h.Styles.Ellipsis = muted
+	// FontGet-style: keys stand out (bold primary), descriptions stay readable.
+	keySty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Primary)).Bold(true)
+	descSty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Components))
+	sepSty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Placeholders))
+	h.Styles.ShortKey = keySty
+	h.Styles.ShortDesc = descSty
+	h.Styles.ShortSeparator = sepSty
+	h.Styles.FullKey = keySty
+	h.Styles.FullDesc = descSty
+	h.Styles.FullSeparator = sepSty
+	h.Styles.Ellipsis = sepSty
 	return h
 }
 
@@ -285,7 +305,20 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m *Model) layout() LayoutFlags {
-	return layoutFor(m.width, m.height, m.layoutTh)
+	return layoutFor(m.width, m.height, m.layoutTh, m.listColumn(), m.browseView)
+}
+
+func (m *Model) listColumn() listColumnSpec {
+	spec := listColumnSpec{ShowTypes: m.listTypes}
+	if m.index == nil {
+		return spec
+	}
+	for _, s := range m.index.All() {
+		if w := textwidth.Width(s.DisplayName); w > spec.MaxNameWidth {
+			spec.MaxNameWidth = w
+		}
+	}
+	return spec
 }
 
 func (m *Model) queryValue() string {
@@ -394,7 +427,6 @@ func (m *Model) moveCursor(delta int) {
 	if m.cursor >= len(m.filtered) {
 		m.cursor = len(m.filtered) - 1
 	}
-	m.browseView = BrowseSprite
 	m.dialogVP.GotoTop()
 	m.ensureListVisible()
 }
@@ -408,27 +440,20 @@ func (m *Model) clearQuery() {
 	m.dialogVP.GotoTop()
 }
 
-func (m *Model) canQuitWithQ() bool {
-	return m.queryValue() == ""
-}
-
 func (m *Model) bumpSelection() {
 	end := debuglog.Trace(debuglog.Render, "selection.changed")
 	defer end()
 	m.selectionGen++
-	m.browseView = BrowseSprite
 	m.showDialog = false
 	m.dialogVP.GotoTop()
 	m.setImageBlank()
 	m.cancelSprite()
 	m.cancelDossier()
-	m.nativePaintPending = false
-	m.nativeNeedsFollowUp = false
-	if m.sprites != nil {
-		m.sprites.ClearNative()
-	}
-	// Dirty overlay so scheduleNativeOverlay wipes previous species graphics.
-	m.markNativeOverlayDirtyFollowUp()
+	// Keep nativePaintCells so a same-bucket ready paint can overwrite in place.
+	// Do not ClearNative here — that flashes Kitty/WT; View reservation + Raw handle it.
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	m.markNativeOverlayDirty()
 }
 
 func (m *Model) ensureResource(id int) *resourceCache {
@@ -448,15 +473,17 @@ func (m *Model) ensureResource(id int) *resourceCache {
 func (m *Model) syncDialogViewport() {
 	lines := m.dialogContentLines()
 	m.dialogVP.SetContentLines(lines)
-	if m.dialogVP.Height() < 1 {
-		m.dialogVP.SetHeight(m.dialogPageSize())
-	}
+	m.dialogVP.SetHeight(m.dialogPageSize())
 }
 
 func (m *Model) dialogPageSize() int {
-	h := m.height - 8
-	if h < 6 {
-		h = 6
-	}
-	return h
+	return m.dialogGeom().BodyH
+}
+
+func (m *Model) dialogGeom() components.DialogGeom {
+	return components.DialogLayout(m.width, m.height, AllDialogSectionLabels())
+}
+
+func (m *Model) dialogStacked() bool {
+	return m.dialogGeom().Stacked
 }

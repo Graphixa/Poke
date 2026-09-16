@@ -1,15 +1,19 @@
 package tui
 
 import (
+	"bytes"
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/tui/components"
+	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
 // Exported accessors for model/layout tests.
 
 func (m Model) Query() string                      { return m.queryValue() }
-func (m Model) CanQuitWithQ() bool                 { return m.canQuitWithQ() }
 func (m Model) HelpVisible() bool                  { return m.showHelp }
 func (m Model) DialogVisible() bool                { return m.showDialog }
 func (m Model) Quitting() bool                     { return m.quitting }
@@ -105,27 +109,100 @@ func WarmProgressNativeMsgForTest(done, total, cells int) warmProgressMsg {
 	return warmProgressMsg{Done: done, Total: total, Message: "Building image cache", Stage: WarmStageNative, Cells: cells}
 }
 
-func (m Model) NativePaintPendingForTest() bool { return m.nativePaintPending }
-
 // NativePaintANSIForTest returns the last painted native sequence (test helper).
 func (m Model) NativePaintANSIForTest() string { return m.nativePaintANSI }
+
+// GlanceHoldIDForTest returns the right-pane hold species (0 if none).
+func (m Model) GlanceHoldIDForTest() int { return m.glanceHoldID }
+
+// DropResourceForTest removes a species from the detail LRU (simulates eviction).
+func (m *Model) DropResourceForTest(id int) {
+	delete(m.resources, id)
+	out := m.lruIDs[:0]
+	for _, existing := range m.lruIDs {
+		if existing != id {
+			out = append(out, existing)
+		}
+	}
+	m.lruIDs = out
+}
+
+// BrowseSelectedNameForTest returns the name shown in the glance header.
+func (m Model) BrowseSelectedNameForTest() string {
+	return m.browseData().Selected.DisplayName
+}
+
+// BrowseAbilitiesReadyForTest reports whether browseData exposes the Abilities card.
+func (m Model) BrowseAbilitiesReadyForTest() bool {
+	return m.browseData().HasCore
+}
+
+// BrowseAbilitiesTextForTest returns the glance Abilities grid (joined lines).
+func (m Model) BrowseAbilitiesTextForTest() string {
+	d := m.browseData()
+	inner := views.GlanceRightInnerWidth() - 2 - 2
+	return strings.Join(components.GlanceAbilityGrid(d.Abilities, inner), "\n")
+}
 
 // NativeOverlayDirtyForTest reports whether a native re-paint is requested.
 func (m Model) NativeOverlayDirtyForTest() bool { return m.nativeOverlayDirty }
 
-// NativeOverlayFollowUpForTest builds the single delayed re-paint message.
-func NativeOverlayFollowUpForTest() nativeOverlayMsg {
-	return nativeOverlayMsg{followUp: true}
+// NativeFollowUpPendingForTest reports whether a post-flush overwrite is armed.
+func (m Model) NativeFollowUpPendingForTest() bool { return m.nativeFollowUpPending }
+
+// NativeReassertMsgForTest is the post-flush overwrite tick message.
+func NativeReassertMsgForTest() tea.Msg { return nativeReassertMsg{} }
+
+// NativeCompositeFlushMsgForTest is the post-View DCS flush (composite path).
+func NativeCompositeFlushMsgForTest() tea.Msg { return nativeCompositeFlushMsg{} }
+
+// InstantNativeReassertForTest sets the post-flush delay to 0 (Tick returns promptly).
+func InstantNativeReassertForTest() { nativeReassertDelay = 0 }
+
+// AttachCompositorForTest enables composite paint into buf (cells-then-DCS path).
+func (m *Model) AttachCompositorForTest(buf *bytes.Buffer) {
+	m.composite = true
+	m.compositor = newCompositorWriter(buf)
 }
+
+// CompositorPendingForTest returns the pending native tail (test helper).
+func (m Model) CompositorPendingForTest() string {
+	if m.compositor == nil {
+		return ""
+	}
+	m.compositor.mu.Lock()
+	defer m.compositor.mu.Unlock()
+	return string(m.compositor.pending)
+}
+
+// CompositorWriteFrameForTest writes a completed cell frame through the compositor.
+func (m *Model) CompositorWriteFrameForTest(p []byte) {
+	if m.compositor != nil {
+		_, _ = m.compositor.Write(p)
+	}
+}
+
+// NativePaintCellsForTest reports the last painted cell bucket token.
+func (m Model) NativePaintCellsForTest() int { return m.nativePaintCells }
 
 // ClearCellRectForTest exports clearCellRect for overlay tests.
 func ClearCellRectForTest(row, col, w, h int) string {
 	return clearCellRect(row, col, w, h)
 }
 
-// NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite.
+// BrowseDataForTest exposes the browse view model for layout/overlay tests.
+func (m Model) BrowseDataForTest() views.BrowseData { return m.browseData() }
+
+// NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite
+// with a leading space-clear (geometry change).
 func NativeOverlayPaintSeqForTest(row, col, artW, artH int, ansi string) string {
-	return nativeOverlayPaintSeq(row, col, artW, artH, ansi)
+	return nativeOverlayPaintSeq(row, col, artW, artH, ansi, true)
+}
+
+// NativeOverlayPaintOnlySeqForTest paints DCS without a leading space-clear
+// (same-geometry overwrite path).
+func NativeOverlayPaintOnlySeqForTest(row, col, artW, artH int, ansi string) string {
+	return nativeOverlayPaintSeq(row, col, artW, artH, ansi, false)
 }
 
 // BrowseWarmHintForTest returns the warm status shown in the browse footer (right segment).
@@ -181,14 +258,15 @@ func (m Model) HeaderLoading() bool {
 // EnsureDossierLoadForTest runs ensureDossierLoad (for dialog race tests).
 func (m *Model) EnsureDossierLoadForTest() tea.Cmd { return m.ensureDossierLoad() }
 
+// CancelDossierForTest clears an in-flight dossier load (for tests that discard cmds).
+func (m *Model) CancelDossierForTest() { m.cancelDossier() }
+
 // EnsureSelectionLoadsForTest runs the selected-species sprite load only.
 func (m *Model) EnsureSelectionLoadsForTest() tea.Cmd { return m.beginSpriteLoad() }
 
 func (m Model) ResourceCountForTest() int { return len(m.resources) }
 
 func (m Model) ImageStateForTest() int { return int(m.imageState) }
-
-func (m Model) ImageSpinnerForTest() bool { return m.imageSpinner }
 
 func (m Model) ImageSpeciesIDForTest() int { return m.imageSpeciesID }
 

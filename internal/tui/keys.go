@@ -3,9 +3,12 @@ package tui
 import "charm.land/bubbles/v2/key"
 
 // keyMap holds browse key bindings (Charm bubbles/key pattern).
+// Letter keys are not used as hotkeys — they type into the always-on list filter.
 type keyMap struct {
 	Up        key.Binding
 	Down      key.Binding
+	Left      key.Binding
+	Right     key.Binding
 	TabNext   key.Binding
 	TabPrev   key.Binding
 	PageUp    key.Binding
@@ -14,12 +17,9 @@ type keyMap struct {
 	End       key.Binding
 	Clear     key.Binding
 	Help      key.Binding
-	Info      key.Binding
 	Enter     key.Binding
-	Quit      key.Binding
+	ViewCycle key.Binding
 	ForceQuit key.Binding
-	// Unbound keys that must not reach the search field.
-	Unbound key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -31,6 +31,14 @@ func defaultKeyMap() keyMap {
 		Down: key.NewBinding(
 			key.WithKeys("down"),
 			key.WithHelp("↑/↓", "move"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("left"),
+			key.WithHelp("←/→", "section"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("right"),
+			key.WithHelp("←/→", "section"),
 		),
 		TabNext: key.NewBinding(
 			key.WithKeys("tab"),
@@ -58,43 +66,52 @@ func defaultKeyMap() keyMap {
 		),
 		Clear: key.NewBinding(
 			key.WithKeys("esc"),
-			key.WithHelp("esc", "clear / close"),
+			key.WithHelp("esc", "clear / quit"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
 		),
-		Info: key.NewBinding(
-			key.WithKeys("i"),
-			key.WithHelp("i", "details"),
-		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "details"),
 		),
-		Quit: key.NewBinding(
-			key.WithKeys("q"),
-			key.WithHelp("q", "quit"),
+		ViewCycle: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "view"),
 		),
 		ForceQuit: key.NewBinding(
 			key.WithKeys("ctrl+c"),
 			key.WithHelp("ctrl+c", "quit"),
 		),
-		Unbound: key.NewBinding(
-			key.WithKeys("r", "/"),
-		),
+	}
+}
+
+// DialogShortHelp returns footer bindings for the full-screen dossier.
+// Rail: ↑/↓ move the section list. Stacked: ↑/↓ scroll; ←/→ still change
+// sections but stay off the short footer.
+func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {
+	if stacked {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "section")),
+			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "scroll")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+		}
+	}
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "section")),
+		key.NewBinding(key.WithKeys("pgup"), key.WithHelp("PgUp/PgDn", "scroll")),
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
 	}
 }
 
 // ShortHelp implements help.KeyMap for the footer strip.
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter")),
 		k.Up,
-		k.TabNext,
 		k.Enter,
+		k.ViewCycle,
 		k.Clear,
-		k.Quit,
 	}
 }
 
@@ -102,22 +119,18 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
-			key.NewBinding(key.WithKeys("type"), key.WithHelp("type", "filter list (incl. q)")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("backspace", "delete from search")),
 			k.Clear,
 			k.Up,
 			k.Down,
 		},
 		{
-			k.TabNext,
-			k.TabPrev,
+			k.ViewCycle,
 			k.Enter,
-			k.Info,
 			k.PageUp,
 			k.PageDown,
 		},
 		{
-			k.Quit,
 			k.ForceQuit,
 			k.Help,
 		},

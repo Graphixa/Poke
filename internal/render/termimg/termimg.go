@@ -23,14 +23,12 @@ const (
 
 var (
 	initOnce sync.Once
-	active   Protocol
 )
 
 // Init applies the one-time TERMIMG_BYPASS_DETECTION workaround for the
 // session-selected protocol. Subsequent calls are no-ops.
 func Init(p Protocol) {
 	initOnce.Do(func() {
-		active = p
 		if p == ProtocolNone {
 			return
 		}
@@ -48,12 +46,12 @@ func Init(p Protocol) {
 	})
 }
 
-// RenderKitty encodes src with the Kitty protocol.
+// RenderKitty encodes src with the Kitty protocol, fitting the cell box.
 func RenderKitty(src stdimage.Image, cellsW, cellsH int) (string, error) {
 	return renderNative(src, cellsW, cellsH, termimg.Kitty)
 }
 
-// RenderITerm encodes src with the iTerm2 protocol.
+// RenderITerm encodes src with the iTerm2 protocol, fitting the cell box.
 func RenderITerm(src stdimage.Image, cellsW, cellsH int) (string, error) {
 	return renderNative(src, cellsW, cellsH, termimg.ITerm2)
 }

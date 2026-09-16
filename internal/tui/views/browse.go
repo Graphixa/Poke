@@ -62,11 +62,13 @@ func init() {
 type BrowseData struct {
 	Width, Height int
 
-	Query      string
-	SearchView string
-	Rows       []components.ListRow
-	ListOff    int
-	ListRows   int
+	Query       string
+	SearchView  string
+	Rows        []components.ListRow
+	ListOff     int
+	ListRows    int
+	ListTypes   bool
+	ListNameCol int // padded name column; 0 derives from visible rows
 
 	Selected    domain.SpeciesSummary
 	HasSelected bool
@@ -91,6 +93,12 @@ type BrowseData struct {
 	HeaderLoading bool
 	HeaderErr     string
 
+	// Glance cards (C3).
+	HasBrowseStats bool
+	Stats          domain.Stats
+	HasCore        bool // bottom Abilities card has data (browse.json or dossier)
+	Abilities      []domain.AbilitySlot
+
 	ShowHelp bool
 	HelpBody string
 
@@ -100,12 +108,12 @@ type BrowseData struct {
 	DialogLines   []string
 	DialogOff     int
 
-	SpriteANSI    string
-	SpriteNative  bool
-	ImageState    int // 0 blank, 1 loading, 2 ready, 3 unavailable
-	SpriteSpinner string
+	SpriteANSI   string
+	SpriteNative bool
+	ImageState   int // 0 blank, 1 loading, 2 ready, 3 unavailable
 
-	WarmHint string
+	WarmHint   string
+	FooterHint string
 
 	Frame *FrameRenderer
 }
@@ -129,20 +137,22 @@ func Browse(d BrowseData) string {
 	if d.TooSmall {
 		return components.TooSmall(d.Width, d.Height)
 	}
-
-	base := renderBrowseBase(d, fr)
 	if d.ShowDialog {
 		title := "Details"
 		if d.HasSelected {
 			title = fmt.Sprintf("%s %s", d.Selected.DisplayName, output.FormatDex(d.Selected.ID))
 		}
-		return components.OverlayDialog(base, title, d.DialogSection, d.DialogLabels, d.DialogLines, d.DialogOff, d.Width, d.Height)
+		footer := d.FooterHint
+		if footer != "" && !strings.HasPrefix(footer, " ") {
+			footer = " " + footer
+		}
+		return components.DossierFrame(title, d.DialogSection, d.DialogLabels, d.DialogLines, d.DialogOff, d.Width, d.Height, footer)
 	}
-	return base
+	return renderBrowseBase(d, fr)
 }
 
 func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
-	footer := components.FooterSplit(d.VerboseFooter, d.Width, d.WarmHint)
+	footer := components.FooterSplit(d.VerboseFooter, d.Width, d.FooterHint, d.WarmHint)
 	footerH := 1
 	margin := 0
 	title := "Pokedex"
@@ -154,7 +164,7 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 			search := renderSearch(d, d.Width)
 			listH := bodyH - 1
 			visible := visibleRows(d.Rows, d.ListOff, listH)
-			body = search + "\n" + components.List(visible, d.Width, listH, abbreviate)
+			body = search + "\n" + components.List(visible, d.Width, listH, d.ListTypes, d.ListNameCol, abbreviate)
 		} else {
 			body = renderRight(d, d.Width, bodyH)
 		}
@@ -204,7 +214,7 @@ func renderLeft(d BrowseData, width, height int) string {
 		listH = 3
 	}
 	visible := visibleRows(d.Rows, d.ListOff, listH)
-	list := components.List(visible, width, listH, abbreviate)
+	list := components.List(visible, width, listH, d.ListTypes, d.ListNameCol, abbreviate)
 	col := lipgloss.JoinVertical(lipgloss.Left, search, sep, list)
 	colLines := strings.Split(col, "\n")
 	if len(colLines) > height {
@@ -226,42 +236,260 @@ func renderRight(d BrowseData, width, height int) string {
 	}
 
 	header := renderHeader(d, width)
-	headerBlock := countLines(header) + 1 // trailing gap under header
-	bodyAvail := height - headerBlock
+	const headerRows = glanceHeaderRows
+	bodyAvail := height - headerRows
 	if bodyAvail < 3 {
 		bodyAvail = 3
 	}
 
-	body := renderViewBody(d, width, bodyAvail)
-
-	used := headerBlock + countLines(body)
-	spacerN := height - used
-	if spacerN < 0 {
-		spacerN = 0
+	blank := strings.Repeat(" ", width)
+	lines := strings.Split(header, "\n")
+	if len(lines) > headerRows {
+		lines = lines[:headerRows]
+	}
+	for len(lines) < headerRows {
+		lines = append(lines, blank)
 	}
 
-	var b strings.Builder
-	b.WriteString(header)
-	b.WriteByte('\n')
-	b.WriteByte('\n')
-	b.WriteString(body)
-	for i := 0; i < spacerN; i++ {
-		b.WriteByte('\n')
-		b.WriteString(strings.Repeat(" ", width))
+	if d.BrowseView == 1 {
+		g := ComputeHeroArt(width, height)
+		body := renderHeroBody(d, width, bodyAvail, g)
+		bodyLines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+		need := len(bodyLines)
+		if need > bodyAvail {
+			need = bodyAvail
+		}
+		lines = append(lines, bodyLines[:need]...)
+		for len(lines) < height {
+			lines = append(lines, blank)
+		}
+		if len(lines) > height {
+			lines = lines[:height]
+		}
+		return strings.Join(lines, "\n")
 	}
-	col := b.String()
-	lines := strings.Split(col, "\n")
+
+	g := ComputeGlance(width, height, d.HasCore)
+
+	body := renderGlanceBody(d, width, bodyAvail, g)
+	bodyLines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	// Prefer keeping glance cards (including About) over trailing blank pad when
+	// the body is somehow taller than bodyAvail — truncate blanks, not cards.
+	need := len(bodyLines)
+	if need > bodyAvail {
+		need = bodyAvail
+	}
+	lines = append(lines, bodyLines[:need]...)
+	for len(lines) < height {
+		lines = append(lines, blank)
+	}
 	if len(lines) > height {
-		col = strings.Join(lines[:height], "\n")
+		lines = lines[:height]
 	}
-	return col
+	return strings.Join(lines, "\n")
 }
 
-func countLines(s string) int {
-	if s == "" {
-		return 0
+func renderGlanceBody(d BrowseData, width, bodyH int, g GlanceLayout) string {
+	if !g.ShowSprite {
+		if g.ShowStats {
+			return renderGlanceTextCards(d, width, bodyH, g)
+		}
+		cueW, cueH := sprite.FrameSizeFor(sprite.SmallestFrameBucket())
+		return padBlock(components.SpriteSizeCue(cueW, cueH), width, bodyH)
 	}
-	return strings.Count(s, "\n") + 1
+
+	artInner := renderArtInner(d, g.ArtW, g.ArtH)
+	// Inner box = card minus borders; padArtInCard centres sprite with content pad.
+	artBody := padArtInCard(artInner, g.ArtW, g.ArtH, g.ArtCardW-2, g.ArtCardH-2)
+	artCard := components.InnerCard("", g.ArtCardW, g.ArtCardH, strings.Split(artBody, "\n"))
+
+	tileW := g.ArtCardW
+	var upper string
+	if g.ShowStats {
+		statsCard := components.InnerCard("Stats", g.StatsW, g.StatsH, GlanceStatsBody(glanceStatsLines(d)))
+		upper = joinHorizontalTop(artCard, statsCard, g.UpperH, g.ArtCardW+glanceCardGap+g.StatsW, g.ArtCardW, g.StatsW, glanceCardGap)
+		tileW = g.ArtCardW + glanceCardGap + g.StatsW
+	} else {
+		upper = artCard
+	}
+
+	if !g.ShowAbout || g.AboutH < glanceMinAboutH {
+		return padBlock(upper, width, bodyH)
+	}
+
+	aboutW := tileW
+	if aboutW > width {
+		aboutW = width
+	}
+	aboutInner := aboutW - 2 - 2*glanceContentPad
+	aboutBody := GlanceStatsBody(components.GlanceAbilityGrid(d.Abilities, aboutInner))
+	aboutCard := components.InnerCard("Abilities", aboutW, g.AboutH, aboutBody)
+	combined := strings.TrimRight(upper, "\n") + "\n" + aboutCard
+	return padBlock(combined, width, bodyH)
+}
+
+func renderHeroBody(d BrowseData, width, bodyH int, g GlanceLayout) string {
+	if !g.ShowSprite {
+		cueW, cueH := sprite.FrameSizeFor(HeroBucket)
+		return padBlock(components.SpriteSizeCue(cueW, cueH), width, bodyH)
+	}
+	artInner := renderArtInner(d, g.ArtW, g.ArtH)
+	artBody := padArtInCard(artInner, g.ArtW, g.ArtH, g.ArtCardW-2, g.ArtCardH-2)
+	artCard := components.InnerCard("", g.ArtCardW, g.ArtCardH, strings.Split(artBody, "\n"))
+	return placeBlock(artCard, width, bodyH, g.ArtCardX, g.ArtCardY, g.ArtCardW)
+}
+
+// placeBlock puts block at (x,y) inside a width×height canvas of spaces.
+func placeBlock(block string, width, height, x, y, blockW int) string {
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	src := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	out := make([]string, height)
+	blank := strings.Repeat(" ", width)
+	padL := strings.Repeat(" ", x)
+	for i := 0; i < height; i++ {
+		if i < y || i-y >= len(src) {
+			out[i] = blank
+			continue
+		}
+		line := padL + src[i-y]
+		for lipgloss.Width(line) < width {
+			line += " "
+		}
+		if lipgloss.Width(line) > width && !strings.Contains(line, "\x1b") {
+			line = lipgloss.NewStyle().MaxWidth(width).Render(line)
+		}
+		_ = blockW
+		out[i] = line
+	}
+	return strings.Join(out, "\n")
+}
+
+func renderGlanceTextCards(d BrowseData, width, bodyH int, g GlanceLayout) string {
+	statsW := g.StatsW
+	if statsW > width {
+		statsW = width
+	}
+	statsCard := components.InnerCard("Stats", statsW, g.StatsH, GlanceStatsBody(glanceStatsLines(d)))
+	upper := statsCard
+	if !g.ShowAbout || g.AboutH < glanceMinAboutH {
+		return padBlock(upper, width, bodyH)
+	}
+	aboutInner := statsW - 2 - 2*glanceContentPad
+	aboutCard := components.InnerCard("Abilities", statsW, g.AboutH, GlanceStatsBody(components.GlanceAbilityGrid(d.Abilities, aboutInner)))
+	return padBlock(strings.TrimRight(upper, "\n")+"\n"+aboutCard, width, bodyH)
+}
+
+func glanceStatsLines(d BrowseData) []string {
+	if d.HasBrowseStats || d.HasCore {
+		return components.StatsBars(d.Stats)
+	}
+	return []string{"—"}
+}
+
+func renderArtInner(d BrowseData, artW, artH int) string {
+	// Loading/blank: empty themed reservation until the frame is ready (pop-in).
+	// No spinner — ticks would churn View and wipe native graphics.
+	ready := d.ImageState == 2 || (d.ImageState == 0 && (d.SpriteANSI != "" || d.SpriteNative))
+	if d.ShowSprite && d.SpriteNative && ready {
+		return components.SpritePanel("", artW, artH, true)
+	}
+	if d.ShowSprite && d.SpriteANSI != "" && ready {
+		return components.SpritePanel(d.SpriteANSI, artW, artH, false)
+	}
+	if d.ShowSprite {
+		return components.SpritePanel("", artW, artH, true)
+	}
+	return components.SpriteSizeCue(artW, artH)
+}
+
+// padArtInCard centres the art WxH block inside the card's inner box.
+func padArtInCard(art string, artW, artH, innerW, innerH int) string {
+	left := (innerW - artW) / 2
+	if left < 0 {
+		left = 0
+	}
+	top := (innerH - artH) / 2
+	if top < 0 {
+		top = 0
+	}
+	padL := strings.Repeat(" ", left)
+	lines := strings.Split(art, "\n")
+	out := make([]string, 0, innerH)
+	for i := 0; i < top; i++ {
+		out = append(out, strings.Repeat(" ", innerW))
+	}
+	for _, line := range lines {
+		row := padL + line
+		// Avoid measuring ANSI/native payloads with lipgloss — only pad plain rows.
+		if !strings.Contains(line, "\x1b") {
+			for lipgloss.Width(row) < innerW {
+				row += " "
+			}
+		}
+		out = append(out, row)
+	}
+	for len(out) < innerH {
+		out = append(out, strings.Repeat(" ", innerW))
+	}
+	if len(out) > innerH {
+		out = out[:innerH]
+	}
+	return strings.Join(out, "\n")
+}
+
+func joinHorizontalTop(left, right string, height, totalW, leftW, rightW, gap int) string {
+	leftLines := strings.Split(strings.TrimRight(left, "\n"), "\n")
+	rightLines := strings.Split(strings.TrimRight(right, "\n"), "\n")
+	gapStr := strings.Repeat(" ", gap)
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		l, r := "", ""
+		if i < len(leftLines) {
+			l = leftLines[i]
+		} else {
+			l = strings.Repeat(" ", leftW)
+		}
+		if i < len(rightLines) {
+			r = rightLines[i]
+		} else {
+			r = strings.Repeat(" ", rightW)
+		}
+		for lipgloss.Width(l) < leftW {
+			l += " "
+		}
+		for lipgloss.Width(r) < rightW {
+			r += " "
+		}
+		line := l + gapStr + r
+		for lipgloss.Width(line) < totalW {
+			line += " "
+		}
+		out[i] = line
+	}
+	return strings.Join(out, "\n")
+}
+
+func padBlock(block string, width, height int) string {
+	lines := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	out := make([]string, height)
+	blank := strings.Repeat(" ", width)
+	for i := 0; i < height; i++ {
+		if i < len(lines) {
+			line := lines[i]
+			for lipgloss.Width(line) < width {
+				line += " "
+			}
+			out[i] = line
+		} else {
+			out[i] = blank
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func renderHeader(d BrowseData, width int) string {
@@ -298,147 +526,6 @@ func boldName(name string) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(style.PrimaryColor()).Render(name)
 }
 
-func renderViewBody(d BrowseData, width, maxH int) string {
-	// Text views use the full right pane — not the sprite's art box.
-	if d.BrowseView != 0 {
-		h := maxH
-		if h < 1 {
-			h = 1
-		}
-		return renderTextBody(d.ViewLines, width, h)
-	}
-
-	side := d.BodySize
-	if side < sprite.MinFrameSize {
-		side = sprite.MinFrameSize
-	}
-	artW, artH := sprite.FrameSizeFor(side)
-	outerW, outerH := sprite.OuterFor(side)
-	if outerW > width {
-		outerW = width
-		artW = outerW - 2*sprite.FramePadX
-		if artW < 1 {
-			artW = outerW
-		}
-		artH = artW / sprite.CellAspectY
-		if artH < 1 {
-			artH = 1
-		}
-		outerH = artH + 2*sprite.FramePadY
-	}
-	if outerH > maxH && maxH > 0 {
-		// Prefer keeping pad; shrink art if the pane is shorter than the outer box.
-		artH = maxH - 2*sprite.FramePadY
-		if artH < 1 {
-			artH = maxH
-			outerH = maxH
-		} else {
-			outerH = maxH
-			artW = artH * sprite.CellAspectY
-			if artW+2*sprite.FramePadX > outerW {
-				artW = outerW - 2*sprite.FramePadX
-			}
-			if artW < 1 {
-				artW = 1
-			}
-		}
-	}
-
-	var inner string
-	ready := d.ImageState == 2 || (d.ImageState == 0 && (d.SpriteANSI != "" || d.SpriteNative))
-	if d.ShowSprite && d.ImageState == 1 && d.SpriteSpinner != "" {
-		inner = components.SpritePlaceholder(d.SpriteSpinner, artW, artH)
-	} else if d.ShowSprite && d.SpriteNative && ready {
-		inner = components.SpritePanel("", artW, artH, true)
-	} else if d.ShowSprite && d.SpriteANSI != "" && ready {
-		inner = components.SpritePanel(d.SpriteANSI, artW, artH, false)
-	} else if d.ShowSprite {
-		inner = components.SpritePanel("", artW, artH, true)
-	} else {
-		inner = components.SpriteSizeCue(artW, artH)
-	}
-
-	body := padFrame(inner, artW, artH, outerW, outerH, d.SpriteNative)
-	if d.SpriteNative {
-		return centerNativeBlock(body, width, outerW)
-	}
-	if lipgloss.Width(body) < width {
-		return lipgloss.PlaceHorizontal(width, lipgloss.Center, body)
-	}
-	return body
-}
-
-// centerNativeBlock left-pads a reserved native sprite box without measuring
-// escape sequences (lipgloss width/PlaceHorizontal can corrupt DCS payloads).
-func centerNativeBlock(body string, paneW, outerW int) string {
-	if outerW >= paneW || paneW < 1 {
-		return body
-	}
-	left := (paneW - outerW) / 2
-	if left < 1 {
-		return body
-	}
-	pad := strings.Repeat(" ", left)
-	lines := strings.Split(body, "\n")
-	for i := range lines {
-		lines[i] = pad + lines[i]
-	}
-	return strings.Join(lines, "\n")
-}
-
-// spriteArtGeometry mirrors renderViewBody sizing for the browse sprite box.
-func spriteArtGeometry(d BrowseData, width, maxH int) (artW, artH, outerW, outerH, padX, padY, centerLeft int) {
-	side := d.BodySize
-	if side < sprite.MinFrameSize {
-		side = sprite.MinFrameSize
-	}
-	artW, artH = sprite.FrameSizeFor(side)
-	outerW, outerH = sprite.OuterFor(side)
-	if outerW > width {
-		outerW = width
-		artW = outerW - 2*sprite.FramePadX
-		if artW < 1 {
-			artW = outerW
-		}
-		artH = artW / sprite.CellAspectY
-		if artH < 1 {
-			artH = 1
-		}
-		outerH = artH + 2*sprite.FramePadY
-	}
-	if outerH > maxH && maxH > 0 {
-		artH = maxH - 2*sprite.FramePadY
-		if artH < 1 {
-			artH = maxH
-			outerH = maxH
-		} else {
-			outerH = maxH
-			artW = artH * sprite.CellAspectY
-			if artW+2*sprite.FramePadX > outerW {
-				artW = outerW - 2*sprite.FramePadX
-			}
-			if artW < 1 {
-				artW = 1
-			}
-		}
-	}
-	padX = (outerW - artW) / 2
-	padY = (outerH - artH) / 2
-	if padX < 0 {
-		padX = 0
-	}
-	if padY < 0 {
-		padY = 0
-	}
-	if outerW < width {
-		centerLeft = (width - outerW) / 2
-		if centerLeft < 0 {
-			centerLeft = 0
-		}
-	}
-	return artW, artH, outerW, outerH, padX, padY, centerLeft
-}
-
 // SpriteArtOrigin returns the 1-indexed terminal CUP row/col of the sprite art
 // box for native overlay painting, plus the art cell size for clearing.
 // ok is false when the sprite is not shown or native art is not active.
@@ -460,7 +547,7 @@ func spriteArtRegion(d BrowseData, requireNative bool) (row, col, artW, artH int
 	if requireNative && !d.SpriteNative {
 		return 0, 0, 0, 0, false
 	}
-	if d.TooSmall || d.OnePane || d.ShowHelp || d.ShowDialog || d.BrowseView != 0 {
+	if d.TooSmall || d.OnePane || d.ShowHelp || d.ShowDialog {
 		return 0, 0, 0, 0, false
 	}
 	if d.Width < 1 || d.Height < 1 {
@@ -485,126 +572,25 @@ func spriteArtRegion(d BrowseData, requireNative bool) (row, col, artW, artH int
 		innerH = 5
 	}
 
-	// Header is always two lines (title + types/genus) plus one gap line.
-	headerBlock := 3
-	bodyAvail := innerH - headerBlock
-	if bodyAvail < 3 {
-		bodyAvail = 3
+	var g GlanceLayout
+	if d.BrowseView == 1 {
+		g = ComputeHeroArt(rightContentW, innerH)
+	} else {
+		g = ComputeGlance(rightContentW, innerH, d.HasCore)
 	}
-	aw, ah, _, _, padX, padY, centerLeft := spriteArtGeometry(d, rightContentW, bodyAvail)
-
-	// Combined frame: row 1 = top border; content rows start at 2.
-	// Right pane content starts at column leftW+2 (after left border, left
-	// content, and the centre separator).
-	row = 2 + headerBlock + padY
-	col = leftW + 2 + centerLeft + padX
-	if row < 1 || col < 1 || aw < 1 || ah < 1 {
+	if !g.ShowSprite {
 		return 0, 0, 0, 0, false
 	}
-	return row, col, aw, ah, true
-}
 
-func padFrame(inner string, artW, artH, outerW, outerH int, native bool) string {
-	if outerW <= artW && outerH <= artH {
-		return inner
+	// Combined frame: row 1 = top border; content starts at 2.
+	// Header (2) then art card; sprite inset by pad (+ hero body offset).
+	row = 2 + glanceHeaderRows + g.ArtCardY + 1 + g.ArtPadY // +1 for art card top border
+	col = leftW + 2 + g.ArtCardX + 1 + g.ArtPadX            // +1 for art card left border
+	artW, artH = g.ArtW, g.ArtH
+	if row < 1 || col < 1 || artW < 1 || artH < 1 {
+		return 0, 0, 0, 0, false
 	}
-	padX := (outerW - artW) / 2
-	padY := (outerH - artH) / 2
-	if padX < 0 {
-		padX = 0
-	}
-	if padY < 0 {
-		padY = 0
-	}
-	blank := strings.Repeat(" ", outerW)
-	if native {
-		return padNativeFrame(inner, artW, artH, outerW, outerH, padX, padY, blank)
-	}
-	innerLines := strings.Split(inner, "\n")
-	out := make([]string, 0, outerH)
-	for i := 0; i < padY; i++ {
-		out = append(out, blank)
-	}
-	sidePad := strings.Repeat(" ", padX)
-	for i := 0; i < artH; i++ {
-		line := ""
-		if i < len(innerLines) {
-			line = innerLines[i]
-		}
-		for lipgloss.Width(line) < artW {
-			line += " "
-		}
-		if lipgloss.Width(line) > artW {
-			line = lipgloss.NewStyle().MaxWidth(artW).Render(line)
-		}
-		out = append(out, sidePad+line+strings.Repeat(" ", max(0, outerW-padX-lipgloss.Width(line))))
-	}
-	for len(out) < outerH {
-		out = append(out, blank)
-	}
-	if len(out) > outerH {
-		out = out[:outerH]
-	}
-	return strings.Join(out, "\n")
-}
-
-// padNativeFrame pads around a native sprite block without MaxWidth-clipping
-// the graphics sequence embedded on the first art line.
-func padNativeFrame(inner string, artW, artH, outerW, outerH, padX, padY int, blank string) string {
-	innerLines := strings.Split(inner, "\n")
-	out := make([]string, 0, outerH)
-	for i := 0; i < padY; i++ {
-		out = append(out, blank)
-	}
-	sidePad := strings.Repeat(" ", padX)
-	rightPad := strings.Repeat(" ", max(0, outerW-padX-artW))
-	for i := 0; i < artH; i++ {
-		line := ""
-		if i < len(innerLines) {
-			line = innerLines[i]
-		}
-		if i == 0 {
-			// First line may start with an opaque escape sequence + artW spaces.
-			// Do not measure or clip the sequence; keep side padding around the reserved box.
-			out = append(out, sidePad+line+rightPad)
-			continue
-		}
-		// Remaining reservation lines are plain spaces of artW.
-		if lipgloss.Width(line) < artW {
-			line += strings.Repeat(" ", artW-lipgloss.Width(line))
-		}
-		out = append(out, sidePad+line+rightPad)
-	}
-	for len(out) < outerH {
-		out = append(out, blank)
-	}
-	if len(out) > outerH {
-		out = out[:outerH]
-	}
-	return strings.Join(out, "\n")
-}
-
-func renderTextBody(lines []string, width, height int) string {
-	out := make([]string, 0, height)
-	for i := 0; i < height; i++ {
-		if i < len(lines) {
-			out = append(out, padLine(lines[i], width))
-		} else {
-			out = append(out, strings.Repeat(" ", width))
-		}
-	}
-	return strings.Join(out, "\n")
-}
-
-func padLine(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w < width {
-		return s + strings.Repeat(" ", width-w)
-	}
-	if w > width {
-		return lipgloss.NewStyle().MaxWidth(width).Render(s)
-	}
-	return s
+	return row, col, artW, artH, true
 }
 
 func visibleRows(rows []components.ListRow, off, count int) []components.ListRow {
@@ -622,23 +608,29 @@ func visibleRows(rows []components.ListRow, off, count int) []components.ListRow
 }
 
 func abbreviate(types []string, maxW int) string {
+	if len(types) == 0 {
+		return style.TypeSummary(types)
+	}
 	joined := output.JoinTypes(types)
 	if maxW <= 0 || len(joined) <= maxW {
-		return joined
+		return style.TypeSummary(types)
 	}
 	if len(types) < 2 {
-		return truncate(joined, maxW)
+		return style.TypeLabelText(types[0], truncate(joined, maxW))
 	}
 	first := output.TitleFromSlug(types[0])
 	second := output.TitleFromSlug(types[1])
 	if len([]rune(second)) > 4 {
 		second = string([]rune(second)[:4])
 	}
-	out := first + "/" + second
-	if len(out) > maxW {
-		return truncate(out, maxW)
+	if len(first)+1+len(second) <= maxW {
+		return style.TypeLabelText(types[0], first) + "/" + style.TypeLabelText(types[1], second)
 	}
-	return out
+	if len(first)+1 >= maxW {
+		return style.TypeLabelText(types[0], truncate(first, maxW))
+	}
+	second = truncate(second, maxW-len(first)-1)
+	return style.TypeLabelText(types[0], first) + "/" + style.TypeLabelText(types[1], second)
 }
 
 func truncate(s string, n int) string {

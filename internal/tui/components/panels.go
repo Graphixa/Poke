@@ -52,7 +52,7 @@ type ListRow struct {
 }
 
 // List renders the filtered species list. Empty lists show a plain-text cue.
-func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int) string) string {
+func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbreviateTypes func([]string, int) string) string {
 	if height < 1 {
 		height = 1
 	}
@@ -68,6 +68,17 @@ func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int)
 		}
 		return strings.Join(lines, "\n")
 	}
+	if nameCol < 1 {
+		for _, row := range rows {
+			if w := textwidth.Width(row.Summary.DisplayName); w > nameCol {
+				nameCol = w
+			}
+		}
+		nameCol += 3
+		if nameCol < 8 {
+			nameCol = 8
+		}
+	}
 	lines := make([]string, 0, height)
 	for i := 0; i < height; i++ {
 		if i >= len(rows) {
@@ -79,27 +90,59 @@ func List(rows []ListRow, width, height int, abbreviateTypes func([]string, int)
 		if row.Selected {
 			marker = "> "
 		}
-		nameWidth := width/2 - 1
-		if nameWidth < 8 {
-			nameWidth = 8
+		dex := output.FormatDex(row.Summary.ID)
+		rightW := textwidth.Width(dex) + 1 // one column of padding after right-aligned ID
+		available := width - len(marker)
+		if available < 8+rightW {
+			name := textwidth.Truncate(row.Summary.DisplayName, available)
+			lines = append(lines, textwidth.PadRight(marker+name, width))
+			continue
 		}
-		typeBudget := width - nameWidth - 8 - len(marker)
-		if typeBudget < 4 {
-			typeBudget = 4
+		col := nameCol
+		if col > available-rightW-1 {
+			col = available - rightW - 1
 		}
-		types := ""
-		if abbreviateTypes != nil {
-			types = abbreviateTypes(row.Summary.Types, typeBudget)
-		} else {
-			types = style.TypeSummary(row.Summary.Types)
+		if col < 1 {
+			col = 1
 		}
-		line := fmt.Sprintf("%s%s %s  %s",
-			marker,
-			textwidth.PadRight(textwidth.Truncate(row.Summary.DisplayName, nameWidth), nameWidth),
-			output.FormatDex(row.Summary.ID),
-			types,
-		)
-		lines = append(lines, textwidth.PadRight(textwidth.Truncate(line, width), width))
+		namePart := marker + textwidth.PadRight(textwidth.Truncate(row.Summary.DisplayName, col), col)
+		midW := width - textwidth.Width(namePart) - rightW
+		if midW < 0 {
+			midW = 0
+		}
+		mid := strings.Repeat(" ", midW)
+		if showTypes && midW >= 4 {
+			typeBudget := midW
+			types := ""
+			if abbreviateTypes != nil {
+				types = abbreviateTypes(row.Summary.Types, typeBudget)
+			} else {
+				types = textwidth.Truncate(style.TypeSummary(row.Summary.Types), typeBudget)
+			}
+			tw := textwidth.Width(types)
+			if tw > midW {
+				types = textwidth.Truncate(types, midW)
+				tw = textwidth.Width(types)
+			}
+			if types != "" {
+				leftGap := (midW - tw) / 2
+				if leftGap < 0 {
+					leftGap = 0
+				}
+				rightGap := midW - tw - leftGap
+				if rightGap < 0 {
+					rightGap = 0
+				}
+				mid = strings.Repeat(" ", leftGap) + types + strings.Repeat(" ", rightGap)
+			}
+		}
+		line := namePart + mid + dex + " "
+		if textwidth.Width(line) < width {
+			line = textwidth.PadRight(line, width)
+		} else if textwidth.Width(line) > width {
+			line = textwidth.Truncate(line, width)
+		}
+		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -155,11 +198,13 @@ func SpritePanel(ansi string, width, height int, native bool) string {
 }
 
 // nativeSpritePanel reserves a WxH cell box without measuring or clipping the
-// graphics sequence (MaxWidth would corrupt DCS/Kitty payloads).
+// graphics sequence (MaxWidth would corrupt DCS/Kitty payloads). Spaces use the
+// theme base background so a cell flush is not terminal-default black.
 func nativeSpritePanel(seq string, width, height int) string {
+	blank := lipgloss.NewStyle().Background(style.BaseColor()).Render(strings.Repeat(" ", width))
 	lines := make([]string, height)
 	for i := range lines {
-		lines[i] = strings.Repeat(" ", width)
+		lines[i] = blank
 	}
 	if seq != "" {
 		lines[0] = seq + lines[0]
@@ -175,31 +220,41 @@ func Header(name string, id int, width int) string {
 
 // Footer renders the compact hint line (wireframe wording).
 func Footer(verbose bool, width int, warmHint string) string {
-	return FooterSplit(verbose, width, warmHint)
+	return FooterSplit(verbose, width, "", warmHint)
 }
 
 // FooterRightWidth is the fixed character width of the browse footer status segment.
 const FooterRightWidth = 42
 
-// FooterSplit renders help keys on the left and a fixed-width status on the right.
-func FooterSplit(verbose bool, width int, rightStatus string) string {
-	footerRightWidth := FooterRightWidth
+// FooterSplit renders active-view keys on the left and an optional fixed-width
+// status on the right. When rightStatus is empty, the help line uses the full
+// terminal width (no phantom reserved column).
+func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	right := strings.TrimSpace(rightStatus)
-	right = textwidth.Truncate(right, footerRightWidth)
-	if w := textwidth.Width(right); w < footerRightWidth {
-		right = strings.Repeat(" ", footerRightWidth-w) + right
+	footerRightWidth := 0
+	if right != "" {
+		footerRightWidth = FooterRightWidth
+		right = textwidth.Truncate(right, footerRightWidth)
+		if w := textwidth.Width(right); w < footerRightWidth {
+			right = strings.Repeat(" ", footerRightWidth-w) + right
+		}
 	}
 
-	leftW := width - footerRightWidth
-	if leftW < 10 {
-		leftW = width
-		right = ""
+	leftW := width
+	if footerRightWidth > 0 {
+		leftW = width - footerRightWidth
+		if leftW < 10 {
+			leftW = width
+			right = ""
+		}
 	}
 	var leftText string
-	if verbose {
-		leftText = " Type to filter • ↑↓ move • Enter/i details • Esc clear • q quit"
+	if hint != "" {
+		leftText = " " + hint
+	} else if verbose {
+		leftText = " ↑/↓ move • enter details • 1 glance • 2 art • esc clear/quit"
 	} else {
-		leftText = " type • ↑↓ • Enter/i • Esc • q"
+		leftText = " ↑/↓ • enter • 1 • 2 • esc"
 	}
 	left := textwidth.PadRight(textwidth.Truncate(leftText, leftW), leftW)
 	return footerSty().Render(left + right)
@@ -209,20 +264,6 @@ func footerSty() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(style.SecondaryColor())
 }
 
-func padRight(s string, w int) string {
-	if len(s) >= w {
-		return s
-	}
-	return s + strings.Repeat(" ", w-len(s))
-}
-
-func padLeft(s string, w int) string {
-	if len(s) >= w {
-		return s
-	}
-	return strings.Repeat(" ", w-len(s)) + s
-}
-
 // HelpOverlay renders the keybinding help card.
 // body is typically bubbles/help FullHelpView output; a built-in fallback is used when empty.
 func HelpOverlay(body string, width, height int) string {
@@ -230,13 +271,13 @@ func HelpOverlay(body string, width, height int) string {
 		body = strings.Join([]string{
 			"Browse help",
 			"",
-			"Type to filter • ↑/↓ move",
-			"Enter/i details • Esc clear • q quit",
+			"↑/↓ move • 1 glance • 2 art",
+			"enter details • esc clear/quit",
 			"",
-			"Press Esc or ? to close",
+			"Press esc or ? to close",
 		}, "\n")
 	} else {
-		body = "Browse help\n\n" + body + "\n\nPress Esc or ? to close"
+		body = "Browse help\n\n" + body + "\n\nPress esc or ? to close"
 	}
 	styleCard := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

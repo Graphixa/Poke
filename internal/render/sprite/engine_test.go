@@ -331,8 +331,8 @@ func TestCacheKeyRoundTrip(t *testing.T) {
 	if hash != "abc" || src != sprite.SourcePixel || mode != "chafa" || w != 24 || h != 24 || colorMode != sprite.ColorTrueColor || bgHash != "010203" || ver != sprite.AlgorithmVersion+"-"+sprite.ChafaRenderVersion {
 		t.Fatalf("parsed unexpected: %s %s %s %dx%d %s %s %s", hash, src, mode, w, h, colorMode, bgHash, ver)
 	}
-	if sprite.ClampFrameSide(21) != sprite.MinFrameSize {
-		t.Fatalf("clamp 21 = %d want %d", sprite.ClampFrameSide(21), sprite.MinFrameSize)
+	if sprite.ClampFrameSide(21) != sprite.SmallestFrameBucket() {
+		t.Fatalf("clamp 21 = %d want %d", sprite.ClampFrameSide(21), sprite.SmallestFrameBucket())
 	}
 	if sprite.ClampFrameSide(45) != sprite.MaxFrameSize {
 		t.Fatalf("clamp 45 = %d want %d", sprite.ClampFrameSide(45), sprite.MaxFrameSize)

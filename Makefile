@@ -1,21 +1,36 @@
-.PHONY: fmt fmt-check vet test race build cross-build check release-check verify-archives
+.PHONY: fmt fmt-check vet staticcheck gosec test race build cross-build check release-check verify-archives
 
 GO ?= go
 PKGS := ./...
 CROSS_DIR := .cross-build
 GORELEASER ?= goreleaser
+STATICCHECK ?= staticcheck
+GOSEC ?= gosec
+STATICCHECK_VERSION := 2026.2.1
+GOSEC_VERSION := v2.29.0
+GO_SRC := $$(find cmd internal pkg scripts -name '*.go' -type f)
 
 # Prefer Git Bash on Windows when `bash` is not on PATH.
 BASH ?= $(shell command -v bash 2>/dev/null || command -v "C:/Program Files/Git/bin/bash.exe" 2>/dev/null || echo bash)
 
 fmt:
-	gofmt -w $$(find cmd internal pkg -name '*.go' -type f)
+	gofmt -w $(GO_SRC)
 
 fmt-check:
-	@test -z "$$(gofmt -l $$(find cmd internal pkg -name '*.go' -type f))"
+	@files=$$(gofmt -l $(GO_SRC)); \
+	if [ -n "$$files" ]; then echo "gofmt needed on:"; echo "$$files"; exit 1; fi
 
 vet:
 	$(GO) vet $(PKGS)
+
+staticcheck:
+	@$(GO) install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
+	$(STATICCHECK) $(PKGS)
+
+# G104/G115/G301/G304/G306/G404: local CLI noise (Close-on-err, color casts, user-dir perms, path opens, math/rand pick).
+gosec:
+	@$(GO) install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+	$(GOSEC) -exclude=G104,G115,G301,G304,G306,G404 $(PKGS)
 
 test:
 	$(GO) test $(PKGS)
@@ -34,7 +49,7 @@ cross-build:
 	GOOS=darwin GOARCH=arm64 $(GO) build -o $(CROSS_DIR)/poke-darwin-arm64 ./cmd/poke
 	GOOS=windows GOARCH=amd64 $(GO) build -o $(CROSS_DIR)/poke-windows-amd64.exe ./cmd/poke
 
-check: fmt-check vet race cross-build
+check: fmt-check vet staticcheck gosec race cross-build
 
 # Validates Goreleaser config, builds snapshot archives (no publish), checks poke+pokedex names.
 release-check:

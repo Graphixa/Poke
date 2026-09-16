@@ -95,6 +95,7 @@ type Render struct {
 
 type TUI struct {
 	ShowSprite bool `yaml:"show_sprite"`
+	ListTypes  bool `yaml:"list_types"`
 }
 
 // Theme selects the TUI colour palette (FontGet-compatible YAML themes).
@@ -126,7 +127,10 @@ func Default() Config {
 			SpriteHD:      "auto",
 			SixelColors:   DefaultSixelColors,
 		},
-		TUI:   TUI{ShowSprite: true},
+		TUI: TUI{
+			ShowSprite: true,
+			ListTypes:  false,
+		},
 		Theme: Theme{Name: "catppuccin"},
 		Network: Network{
 			Timeout:        Duration{10 * time.Second},
@@ -489,7 +493,7 @@ type CommandRunner interface {
 type ExecRunner struct{}
 
 func (ExecRunner) Run(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) // #nosec G204 -- user $VISUAL/$EDITOR or platform default
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -7,6 +7,7 @@ import (
 	"container/heap"
 	"context"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,19 +67,22 @@ type Config struct {
 type Service struct {
 	cfg Config
 
-	mu       sync.Mutex
-	pq       priorityQueue
-	seq      int64
-	queued   map[int]bool // species currently in queue
-	done     map[int]bool // species successfully warmed for current cells
-	cells    int
-	wake     chan struct{}
-	started  atomic.Bool
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	doneN    atomic.Int64
-	totalN   atomic.Int64
-	activity sprite.ActivityGate
+	mu         sync.Mutex
+	pq         priorityQueue
+	seq        int64
+	queued     map[int]bool // species currently in queue (any cells)
+	done       map[int]bool // species successfully warmed for current phase cells
+	buckets    []int
+	phase      int
+	cells      int // phase scan target
+	focusCells int // Prioritize focus
+	wake       chan struct{}
+	started    atomic.Bool
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	doneN      atomic.Int64
+	totalN     atomic.Int64
+	activity   sprite.ActivityGate
 }
 
 // New creates a warm service. Call Start to begin workers.
@@ -92,7 +96,7 @@ func New(cfg Config) *Service {
 			cfg.Workers = 4
 		}
 	}
-	if cfg.Cells < sprite.MinFrameSize {
+	if cfg.Cells < sprite.SmallestFrameBucket() {
 		cfg.Cells = sprite.MaxFrameSize
 	}
 	cfg.Cells = sprite.ClampFrameSide(cfg.Cells)
@@ -100,11 +104,13 @@ func New(cfg Config) *Service {
 		cfg.Mode = ModeAllPixel
 	}
 	return &Service{
-		cfg:    cfg,
-		queued: make(map[int]bool),
-		done:   make(map[int]bool),
-		cells:  cfg.Cells,
-		wake:   make(chan struct{}, 1),
+		cfg:        cfg,
+		queued:     make(map[int]bool),
+		done:       make(map[int]bool),
+		buckets:    []int{cfg.Cells},
+		cells:      cfg.Cells,
+		focusCells: cfg.Cells,
+		wake:       make(chan struct{}, 1),
 	}
 }
 
@@ -140,8 +146,30 @@ func (s *Service) Stop() {
 	s.wg.Wait()
 }
 
-// SetCells updates the frame bucket for subsequent jobs. Marks prior work stale
-// when the bucket changes so warm can refill.
+// SetBuckets configures warm phase order (e.g. 16 then 40).
+func (s *Service) SetBuckets(buckets []int) {
+	if s == nil {
+		return
+	}
+	norm := sprite.NormalizeBuckets(buckets)
+	if len(norm) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if slices.Equal(s.buckets, norm) {
+		return
+	}
+	s.buckets = norm
+	s.phase = 0
+	s.focusCells = norm[0]
+	s.applyPhaseLocked(norm[0])
+	s.signal()
+}
+
+// SetCells updates the focus bucket for Prioritize. With multiple warm phases
+// it does not abandon the current phase; with a single bucket it switches the
+// scan target (legacy).
 func (s *Service) SetCells(cells int) {
 	if s == nil {
 		return
@@ -149,36 +177,54 @@ func (s *Service) SetCells(cells int) {
 	cells = sprite.ClampFrameSide(cells)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.focusCells = cells
+	if len(s.buckets) > 1 {
+		s.signal()
+		return
+	}
+	if len(s.buckets) == 0 {
+		s.buckets = []int{cells}
+	} else {
+		s.buckets[0] = cells
+	}
 	if cells == s.cells {
 		return
 	}
-	s.cells = cells
-	s.done = make(map[int]bool)
-	s.doneN.Store(0)
-	if s.cfg.Mode == ModeAllPixel {
-		// Re-queue background after size change.
-		for _, sum := range s.cfg.Index {
-			if s.queued[sum.ID] {
-				continue
-			}
-			s.pushLocked(job{speciesID: sum.ID, priority: PriorityBackground})
-		}
-		s.totalN.Store(int64(len(s.cfg.Index)))
-	}
+	s.applyPhaseLocked(cells)
 	s.signal()
 }
 
-// Prioritize bumps the selected species to P0.
+func (s *Service) applyPhaseLocked(cells int) {
+	s.cells = cells
+	s.done = make(map[int]bool)
+	s.doneN.Store(0)
+	s.pq = nil
+	s.queued = make(map[int]bool)
+	if s.cfg.Mode == ModeAllPixel {
+		for _, sum := range s.cfg.Index {
+			s.pushLocked(job{speciesID: sum.ID, cells: cells, priority: PriorityBackground})
+		}
+		s.totalN.Store(int64(len(s.cfg.Index)))
+	}
+}
+
+// Prioritize bumps the selected species to P0 for the focus bucket, then other phases.
 func (s *Service) Prioritize(speciesID int) {
 	if s == nil || speciesID < 1 || s.cfg.Mode == ModeOff {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done[speciesID] {
-		return
+	focus := s.focusCells
+	if focus < sprite.SmallestFrameBucket() {
+		focus = s.cells
 	}
-	s.pushLocked(job{speciesID: speciesID, priority: PrioritySelected})
+	s.pushLocked(job{speciesID: speciesID, cells: focus, priority: PrioritySelected})
+	for _, b := range s.buckets {
+		if b != focus {
+			s.pushLocked(job{speciesID: speciesID, cells: b, priority: PrioritySelected})
+		}
+	}
 	s.signal()
 }
 
@@ -222,13 +268,13 @@ func (s *Service) SetNeighbors(selectedID int, radius int) {
 		if i := idx - d; i >= 0 {
 			id := s.cfg.Index[i].ID
 			if !s.done[id] {
-				s.pushLocked(job{speciesID: id, priority: PriorityNeighbor})
+				s.pushLocked(job{speciesID: id, cells: s.cells, priority: PriorityNeighbor})
 			}
 		}
 		if i := idx + d; i < len(s.cfg.Index) {
 			id := s.cfg.Index[i].ID
 			if !s.done[id] {
-				s.pushLocked(job{speciesID: id, priority: PriorityNeighbor})
+				s.pushLocked(job{speciesID: id, cells: s.cells, priority: PriorityNeighbor})
 			}
 		}
 	}
@@ -252,13 +298,13 @@ func (s *Service) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, rad
 		if i := cursor - d; i >= 0 {
 			id := list[i].ID
 			if !s.done[id] {
-				s.pushLocked(job{speciesID: id, priority: PriorityNeighbor})
+				s.pushLocked(job{speciesID: id, cells: s.cells, priority: PriorityNeighbor})
 			}
 		}
 		if i := cursor + d; i < len(list) {
 			id := list[i].ID
 			if !s.done[id] {
-				s.pushLocked(job{speciesID: id, priority: PriorityNeighbor})
+				s.pushLocked(job{speciesID: id, cells: s.cells, priority: PriorityNeighbor})
 			}
 		}
 	}
@@ -272,7 +318,7 @@ func (s *Service) enqueueAll(priority int) {
 		if s.done[sum.ID] || s.queued[sum.ID] {
 			continue
 		}
-		s.pushLocked(job{speciesID: sum.ID, priority: priority})
+		s.pushLocked(job{speciesID: sum.ID, cells: s.cells, priority: priority})
 	}
 	s.totalN.Store(int64(len(s.cfg.Index)))
 	s.signal()
@@ -324,7 +370,11 @@ func (s *Service) pop() (job, bool) {
 	var skipped []job
 	for s.pq.Len() > 0 {
 		j := heap.Pop(&s.pq).(job)
-		if s.done[j.speciesID] {
+		if j.cells == 0 {
+			j.cells = s.cells
+		}
+		// Phase completion only tracks phase cells; off-phase selected jobs still run.
+		if j.cells == s.cells && s.done[j.speciesID] {
 			delete(s.queued, j.speciesID)
 			continue
 		}
@@ -349,11 +399,14 @@ func (s *Service) runJob(ctx context.Context, j job) {
 		s.requeue(j)
 		return
 	}
-	cells := s.cells
+	cells := j.cells
+	if cells < sprite.SmallestFrameBucket() {
+		cells = s.cells
+	}
 	poke, err := s.cfg.Loader.Pokemon(ctx, j.speciesID)
 	if err != nil || poke.Sprites.FrontDefault == "" {
 		debuglog.Renderf("warm skip species=%d err=%v", j.speciesID, err)
-		s.markDone(j.speciesID)
+		s.markDone(j.speciesID, cells)
 		s.report(j.speciesID)
 		return
 	}
@@ -364,24 +417,28 @@ func (s *Service) runJob(ctx context.Context, j job) {
 	if res.UsePlaceholder && res.Backend != "chafa" {
 		debuglog.Renderf("warm placeholder species=%d", j.speciesID)
 	}
-	s.markDone(j.speciesID)
+	s.markDone(j.speciesID, cells)
 	s.report(j.speciesID)
 }
 
 func (s *Service) requeue(j job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done[j.speciesID] {
+	if j.cells == s.cells && s.done[j.speciesID] {
 		return
 	}
 	s.pushLocked(j)
 }
 
-func (s *Service) markDone(speciesID int) {
+func (s *Service) markDone(speciesID, cells int) {
 	s.mu.Lock()
-	if !s.done[speciesID] {
+	if cells == s.cells && !s.done[speciesID] {
 		s.done[speciesID] = true
 		s.doneN.Add(1)
+		if int(s.doneN.Load()) >= int(s.totalN.Load()) && s.phase+1 < len(s.buckets) {
+			s.phase++
+			s.applyPhaseLocked(s.buckets[s.phase])
+		}
 	}
 	s.mu.Unlock()
 }
@@ -410,6 +467,7 @@ func (s *Service) Snapshot() (done, total int) {
 
 type job struct {
 	speciesID int
+	cells     int
 	priority  int
 	seq       int64
 }

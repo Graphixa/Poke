@@ -98,6 +98,10 @@ func (w warmPokemonLoader) Pokemon(ctx context.Context, speciesID int) (domain.P
 }
 
 func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
+	return h.runBrowse(ctx, req)
+}
+
+func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	debuglog.StartupMark("startup.browse_enter")
 	svc, err := h.Services()
 	if err != nil {
@@ -141,6 +145,13 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 	img := spriteimage.New()
 	_, _ = spritechafa.Detect()
 	caps := sprite.DetectCapabilities(img.Available())
+	if caps.NativeImage {
+		// Measure real cell pixels before the engine/warmers exist so every
+		// sixel encode fits the art box (overpaint fix). Fallback: 10×20.
+		if pxW, pxH, ok := queryCellPixelSize(); ok {
+			sprite.SetCellPixelSize(pxW, pxH)
+		}
+	}
 	debuglog.StartupMark("startup.capabilities_ready")
 	debuglog.Renderf("render.backend.selected native=%v protocol=%q term_program=%q wt_session=%v",
 		caps.NativeImage, img.ProtocolName(), os.Getenv("TERM_PROGRAM"), os.Getenv("WT_SESSION") != "")
@@ -201,6 +212,14 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		Prefill:       req.Prefill,
 		Context:       runCtx,
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
+		ListTypes:     svc.Config.TUI.ListTypes,
+	}
+	if entries, err := svc.Cache.LoadBrowse(); err == nil && len(entries) > 0 {
+		byID := make(map[int]domain.BrowseEntry, len(entries))
+		for _, e := range entries {
+			byID[e.ID] = e
+		}
+		opts.BrowseEntries = byID
 	}
 
 	// Chafa artefact warm only helps chafa-only terminals. Native (Sixel/Kitty/
@@ -212,7 +231,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 		useProgress = true
 		spriteWarmer = warm.New(warm.Config{
 			Mode:     prewarm,
-			Cells:    sprite.MaxFrameSize,
+			Cells:    sprite.BrowseWarmBuckets()[0],
 			Workers:  sprite.InteractiveWorkers,
 			Loader:   warmPokemonLoader{details},
 			Renderer: engine,
@@ -224,6 +243,7 @@ func (h *Handler) openBrowse(ctx context.Context, req BrowseRequest) error {
 				})
 			},
 		})
+		spriteWarmer.SetBuckets(sprite.BrowseWarmBuckets())
 		queueUIReady(func() { spriteWarmer.Start(runCtx) })
 		defer spriteWarmer.Stop()
 		opts.Warmer = spriteWarmer

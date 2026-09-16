@@ -56,7 +56,7 @@ func TestE2ECachedSelectionNoColdRender(t *testing.T) {
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	m = updated.(tui.Model)
+	_ = updated.(tui.Model)
 	if sprites.coldCalls.Load() != 0 {
 		t.Fatalf("cached selection must not cold-render, calls=%d", sprites.coldCalls.Load())
 	}
@@ -72,7 +72,7 @@ func TestE2ESelectionColdUsesLookupFirst(t *testing.T) {
 		Context: context.Background(),
 	})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
-	m = updated.(tui.Model)
+	_ = updated.(tui.Model)
 	if sprites.lookupCalls.Load() == 0 {
 		t.Fatal("initial layout must lookup cache before cold render")
 	}

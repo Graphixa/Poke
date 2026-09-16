@@ -111,6 +111,13 @@ func (m *Model) initColdScheduler() {
 }
 
 func (m *Model) shutdown() {
+	// Drop any pending DCS so teardown Writes cannot re-paint on the main screen.
+	if m.compositor != nil {
+		m.compositor.ClearNative()
+	}
+	if m.sprites != nil {
+		m.sprites.ClearNative()
+	}
 	if m.coldSched != nil {
 		ctx := m.ctx
 		if ctx == nil {

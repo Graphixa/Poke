@@ -324,7 +324,7 @@ func (s *Store) readJSON(path string, dest any) (time.Time, error) {
 
 func (s *Store) quarantine(path string, data []byte) error {
 	rel, err := filepath.Rel(s.root, path)
-	if err != nil {
+	if err != nil || !filepath.IsLocal(rel) {
 		rel = filepath.Base(path)
 	}
 	stamp := s.clock.Now().UTC().Format("20060102T150405")
@@ -332,7 +332,8 @@ func (s *Store) quarantine(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(dest, data, 0o600); err != nil {
+	// dest is under s.root/corrupt; rel rejected unless filepath.IsLocal.
+	if err := os.WriteFile(dest, data, 0o600); err != nil { // #nosec G703
 		return err
 	}
 	_ = os.Remove(path)

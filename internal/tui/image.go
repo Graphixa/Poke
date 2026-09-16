@@ -28,14 +28,12 @@ func (m *Model) clearImagePane() {
 
 func (m *Model) setImageBlank() {
 	m.imageState = ImageBlank
-	m.imageSpinner = false
 	m.clearImagePane()
 }
 
 func (m *Model) setImageLoading() {
 	m.clearImagePane()
 	m.imageState = ImageLoading
-	m.imageSpinner = true
 	m.imageLoading = true
 }
 
@@ -49,7 +47,6 @@ func (m *Model) applySpriteFrame(speciesID, cells int, res sprite.RenderResult) 
 		m.imageKind = ""
 		m.imagePlaceholder = true
 		m.imageState = ImageUnavailable
-		m.imageSpinner = false
 		if m.isSelectedID(speciesID) {
 			m.markNativeOverlayDirty()
 		}
@@ -60,14 +57,9 @@ func (m *Model) applySpriteFrame(speciesID, cells int, res sprite.RenderResult) 
 	m.imageKind = res.AssetKind
 	m.imagePlaceholder = false
 	m.imageState = ImageReady
-	m.imageSpinner = false
 	if res.Native {
-		m.markNativeOverlayDirtyFollowUp()
+		m.markNativeOverlayDirty()
 	}
-}
-
-func (m Model) spinnerView() string {
-	return m.spinner.View()
 }
 
 func (m *Model) touchResource(id int) {
@@ -84,10 +76,7 @@ func (m *Model) touchResource(id int) {
 }
 
 func (m *Model) evictResources(keepID int) {
-	if len(m.resources) <= detailCacheLimit {
-		return
-	}
-	for len(m.resources) > detailCacheLimit && len(m.lruIDs) > 0 {
+	for len(m.resources) >= detailCacheLimit && len(m.lruIDs) > 0 {
 		oldest := m.lruIDs[0]
 		m.lruIDs = m.lruIDs[1:]
 		if oldest == keepID {

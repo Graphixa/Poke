@@ -6,8 +6,8 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-func TestFrameStepsThreeBuckets(t *testing.T) {
-	want := []int{24, 32, 40}
+func TestFrameStepsBuckets(t *testing.T) {
+	want := []int{16, 24, 32, 40}
 	got := sprite.FrameSteps()
 	if len(got) != len(want) {
 		t.Fatalf("steps=%v want %v", got, want)
@@ -19,8 +19,8 @@ func TestFrameStepsThreeBuckets(t *testing.T) {
 	}
 }
 
-func TestFrameStepsMaxFirstThreeBuckets(t *testing.T) {
-	want := []int{40, 32, 24}
+func TestFrameStepsMaxFirstBuckets(t *testing.T) {
+	want := []int{40, 32, 24, 16}
 	got := sprite.FrameStepsMaxFirst()
 	if len(got) != len(want) {
 		t.Fatalf("steps=%v want %v", got, want)
@@ -32,9 +32,10 @@ func TestFrameStepsMaxFirstThreeBuckets(t *testing.T) {
 	}
 }
 
-func TestClampFrameSideThreeBuckets(t *testing.T) {
+func TestClampFrameSideBuckets(t *testing.T) {
 	cases := map[int]int{
-		20: 24, 23: 24, 24: 24, 25: 24, 31: 24,
+		10: 16, 15: 16, 16: 16, 20: 16, 23: 16,
+		24: 24, 25: 24, 31: 24,
 		32: 32, 33: 32, 39: 32, 40: 40, 56: 40,
 	}
 	for in, want := range cases {
@@ -44,42 +45,17 @@ func TestClampFrameSideThreeBuckets(t *testing.T) {
 	}
 }
 
-func TestLargestFrameFittingThreeBuckets(t *testing.T) {
-	steps := sprite.FrameSteps()
-	if len(steps) != 3 {
-		t.Fatalf("steps=%v", steps)
-	}
-	minOW, minOH := sprite.OuterFor(sprite.MinFrameSize)
-	if sprite.LargestFrameFitting(minOW-1, minOH) != 0 {
-		t.Fatal("expected no fit when too small")
-	}
-	if got := sprite.LargestFrameFitting(minOW, minOH); got != 24 {
-		t.Fatalf("min fit=%d want 24", got)
-	}
-	maxOW, maxOH := sprite.OuterFor(40)
-	if got := sprite.LargestFrameFitting(maxOW, maxOH); got != 40 {
-		t.Fatalf("max fit=%d want 40", got)
-	}
-}
-
-func TestFrameStepsAndFit(t *testing.T) {
+func TestFrameStepsAndOuter(t *testing.T) {
 	steps := sprite.FrameSteps()
 	if len(steps) < 2 {
 		t.Fatalf("steps=%v", steps)
 	}
-	if steps[0] != sprite.MinFrameSize || steps[len(steps)-1] != sprite.MaxFrameSize {
+	if steps[0] != 16 || steps[len(steps)-1] != sprite.MaxFrameSize {
 		t.Fatalf("steps=%v", steps)
 	}
-	ow, oh := sprite.OuterFor(sprite.MinFrameSize)
-	if sprite.LargestFrameFitting(ow-1, oh) != 0 {
-		t.Fatal("expected no fit when width short")
-	}
-	if got := sprite.LargestFrameFitting(ow, oh); got != sprite.MinFrameSize {
-		t.Fatalf("got %d want min", got)
-	}
-	maxOW, maxOH := sprite.OuterFor(sprite.MaxFrameSize)
-	if got := sprite.LargestFrameFitting(maxOW, maxOH); got != sprite.MaxFrameSize {
-		t.Fatalf("got %d want max", got)
+	ow, oh := sprite.OuterFor(16)
+	if ow < 16 || oh < 8 {
+		t.Fatalf("outer 16 = %dx%d", ow, oh)
 	}
 }
 
@@ -91,6 +67,19 @@ func TestFrameSizeForAspect(t *testing.T) {
 	w, h = sprite.FrameSizeFor(99)
 	if w != sprite.MaxFrameSize || h != sprite.MaxFrameSize/sprite.CellAspectY {
 		t.Fatalf("clamp got %dx%d", w, h)
+	}
+}
+
+func TestNormalizeBuckets(t *testing.T) {
+	got := sprite.NormalizeBuckets([]int{40, 16, 16, 99, 8})
+	want := []int{40, 16}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
 	}
 }
 

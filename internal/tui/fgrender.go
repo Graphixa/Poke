@@ -29,7 +29,8 @@ func (m *Model) runColdSelection(pokemon domain.Pokemon, cells int, force bool) 
 	if m.coldSched == nil || cells < 1 {
 		return nil
 	}
-	m.clearNativeDisplay()
+	// Do not ClearNative here — that flashes Kitty and is unnecessary for
+	// Sixel; themed reservation + deferred overlay handle transitions.
 	m.spriteLoadSpecies = pokemon.ID
 
 	if res, hit := m.sprites.LookupCached(m.ctx, pokemon, cells); hit && !res.UsePlaceholder && res.ANSI != "" {
@@ -45,21 +46,13 @@ func (m *Model) runColdSelection(pokemon domain.Pokemon, cells int, force bool) 
 }
 
 func (m *Model) coldListenCmd() tea.Cmd {
-	var spin tea.Cmd
-	if m.imageState == ImageLoading {
-		spin = func() tea.Msg { return m.spinner.Tick() }
-	}
-	return tea.Batch(listenColdFrame(m.coldFrameCh), spin)
+	return listenColdFrame(m.coldFrameCh)
 }
 
 func (m *Model) finishColdSelection(msg coldFrameMsg) tea.Cmd {
 	follow := m.applyColdFrame(msg)
 	if follow != nil {
-		var spin tea.Cmd
-		if m.imageState == ImageLoading {
-			spin = func() tea.Msg { return m.spinner.Tick() }
-		}
-		return tea.Batch(follow, spin)
+		return follow
 	}
 	if m.imageState == ImageLoading {
 		return m.coldListenCmd()

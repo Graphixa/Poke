@@ -29,8 +29,18 @@ func TestResizeArtworkInteractiveProducesTargetSize(t *testing.T) {
 }
 
 func TestAlgorithmVersionBumpedForNativeKey(t *testing.T) {
-	if sprite.AlgorithmVersion != "v13" {
-		t.Fatalf("AlgorithmVersion=%s want v13 (palette-aware native keys + gzip layout)", sprite.AlgorithmVersion)
+	if sprite.AlgorithmVersion != "v16" {
+		t.Fatalf("AlgorithmVersion=%s want v16 (P1=7 1:1 sixel aspect)", sprite.AlgorithmVersion)
+	}
+}
+
+func TestPixelSizeMatchesCellDefaults(t *testing.T) {
+	if sprite.SixelCellPxW != 10 || sprite.SixelCellPxH != 20 {
+		t.Fatalf("cell px %dx%d want 10x20", sprite.SixelCellPxW, sprite.SixelCellPxH)
+	}
+	w, h := sprite.PixelSize(24, 12)
+	if w != 240 || h != 240 {
+		t.Fatalf("PixelSize(24,12)=%dx%d want 240x240", w, h)
 	}
 }
 

@@ -1,16 +1,17 @@
 package tui
 
-// BrowseView is reserved for future sprite-variant cycling on the browse pane.
-// v1 keeps a single sprite hero (no text views on browse).
+// BrowseView selects the browse right-pane layout (Glance vs large Art).
 type BrowseView int
 
 const (
-	BrowseSprite BrowseView = iota
+	BrowseGlance BrowseView = iota
+	BrowseArt
 	browseViewCount
 )
 
 var browseViewLabels = [...]string{
-	BrowseSprite: "Sprite",
+	BrowseGlance: "Glance",
+	BrowseArt:    "Art",
 }
 
 func (v BrowseView) Label() string {
@@ -28,36 +29,28 @@ func (v BrowseView) Prev() BrowseView {
 	return BrowseView((int(v) + int(browseViewCount) - 1) % int(browseViewCount))
 }
 
-// DialogSection is a detail section inside the Enter/i overlay (full dossier).
+// DialogSection is a detail section in the full-screen dossier.
 type DialogSection int
 
 const (
-	DialogSummary DialogSection = iota
+	DialogOverview DialogSection = iota
 	DialogStats
 	DialogEvolution
 	DialogMoves
 	DialogLocations
-	DialogAbilities
-	DialogFlavour
-	DialogBreeding
-	DialogTraining
-	DialogForms
-	DialogMeta
+	DialogPokedex
+	DialogBiology
 	dialogSectionCount
 )
 
 var dialogSectionLabels = [...]string{
-	DialogSummary:   "Summary",
+	DialogOverview:  "Overview",
 	DialogStats:     "Stats",
 	DialogEvolution: "Evolution",
 	DialogMoves:     "Moves",
 	DialogLocations: "Locations",
-	DialogAbilities: "Abilities",
-	DialogFlavour:   "Flavour",
-	DialogBreeding:  "Breeding",
-	DialogTraining:  "Training",
-	DialogForms:     "Forms",
-	DialogMeta:      "Meta",
+	DialogPokedex:   "Pokédex",
+	DialogBiology:   "Biology",
 }
 
 func (s DialogSection) Label() string {
@@ -81,7 +74,7 @@ func (s DialogSection) NeedsLazyLoad() bool {
 	return false
 }
 
-// AllDialogSectionLabels returns labels in cycle order for the dialog switcher.
+// AllDialogSectionLabels returns labels in cycle order for the dossier rail.
 func AllDialogSectionLabels() []string {
 	out := make([]string, int(dialogSectionCount))
 	for i := DialogSection(0); i < dialogSectionCount; i++ {

@@ -186,11 +186,12 @@ func padLines(content string, width, height int) []string {
 	return out
 }
 
-// FillTerminalArea constrains the view and clears leftover rows (FontGet pattern).
+// FillTerminalArea constrains the view to the terminal size.
+// Do not append CSI J (erase-below): with Sixel overlays that erase can punch
+// holes through the graphic when the cursor is not at the true footer.
 func FillTerminalArea(view string, width, height int) string {
 	if width <= 0 || height <= 0 {
 		return view
 	}
-	out := lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(height).Render(view)
-	return out + "\x1b[J"
+	return lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(height).Render(view)
 }

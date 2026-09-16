@@ -59,7 +59,7 @@ func renderExec(ctx context.Context, bin string, src image.Image, opts sprite.Re
 		"--animate", "off",
 		tmpName,
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...) // #nosec G204 -- bin from LookPath("chafa"); args are size/format + temp PNG
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

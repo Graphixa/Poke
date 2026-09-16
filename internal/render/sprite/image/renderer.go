@@ -154,10 +154,7 @@ func envSixel() bool {
 		return true
 	}
 	termName := strings.ToLower(os.Getenv("TERM"))
-	if strings.Contains(termName, "sixel") {
-		return true
-	}
-	return false
+	return strings.Contains(termName, "sixel")
 }
 
 // Render encodes the image with the selected native protocol.
@@ -194,10 +191,9 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		return sprite.Frame{Text: out, Backend: "image", Native: true}, nil
 	}
 
-	// Square official artwork: skip full-res content crop (termimg scales next).
-	if b := src.Bounds(); b.Dx() != b.Dy() {
-		src = sprite.CropToContentSquare(src, threshold, 1)
-	}
+	// Content crop + ScaleFit into the cell box (single scale path — do not
+	// PrepareEncodeSrc then ScaleFill, which double-scales and fights WT).
+	src = sprite.CropToContentSquare(src, threshold, 0)
 
 	var (
 		out string
@@ -237,10 +233,6 @@ func (r *Renderer) RenderPNG(pngData []byte, w, h int) (sprite.Frame, error) {
 	return r.Render(context.Background(), img, sprite.RenderOptions{
 		Width: w, Height: h, Source: sprite.SourcePixel,
 	})
-}
-
-func bypassDetection(_ protocol) (restore func()) {
-	return func() {}
 }
 
 // ClearBestEffort deletes prior native placements for Kitty/iTerm.

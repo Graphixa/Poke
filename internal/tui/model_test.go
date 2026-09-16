@@ -195,7 +195,7 @@ func drainCmds(t *testing.T, model *tea.Model, cmd tea.Cmd) {
 	}
 }
 
-func TestSearchFilterAndQuitEligibility(t *testing.T) {
+func TestSearchFilterTypesQ(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
 	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -204,20 +204,17 @@ func TestSearchFilterAndQuitEligibility(t *testing.T) {
 	if m.Query() != "c" {
 		t.Fatalf("query = %q", m.Query())
 	}
-	if m.CanQuitWithQ() {
-		t.Fatal("q should not quit while query non-empty")
-	}
 	m = apply(t, m, key("q"))
 	if m.Query() != "cq" {
-		t.Fatalf("typed q should filter, got %q", m.Query())
+		t.Fatalf("q must type into search, got %q", m.Query())
+	}
+	if m.Quitting() {
+		t.Fatal("q must not quit")
 	}
 
 	m = apply(t, m, key("esc"))
 	if m.Query() != "" {
 		t.Fatalf("esc clear = %q", m.Query())
-	}
-	if !m.CanQuitWithQ() {
-		t.Fatal("q should quit when empty")
 	}
 }
 
@@ -234,32 +231,72 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("selected = %d ok=%v", id, ok)
 	}
 
-	// Tab on browse is reserved (sprite variants later) — no-op.
+	// Tab cycles Glance ↔ Art (digits stay free for dex-id search).
 	m = apply(t, m, key("tab"))
-	if m.ActiveBrowseView() != tui.BrowseSprite {
-		t.Fatalf("view = %v want Sprite", m.ActiveBrowseView())
+	if m.ActiveBrowseView() != tui.BrowseArt {
+		t.Fatalf("tab → Art, got %v", m.ActiveBrowseView())
 	}
-	if details.loadCalls.Load() != 0 {
-		t.Fatalf("browse must not load dossier, got %d", details.loadCalls.Load())
+	if f := m.LayoutFlags(); !f.ShowSprite || f.SpriteSize != 40 {
+		t.Fatalf("Art view show=%v size=%d want 40", f.ShowSprite, f.SpriteSize)
+	}
+	m = apply(t, m, key("tab"))
+	if m.ActiveBrowseView() != tui.BrowseGlance {
+		t.Fatalf("tab → Glance, got %v", m.ActiveBrowseView())
+	}
+	if details.coreCalls.Load() < 1 {
+		t.Fatalf("browse should load dossier core for About, got %d", details.coreCalls.Load())
+	}
+	if details.extrasCalls.Load() != 0 {
+		t.Fatalf("browse must not load extras, got %d", details.extrasCalls.Load())
 	}
 
+	selectedBefore, _ := m.SelectedID()
 	m = apply(t, m, key("enter"))
 	if !m.DialogVisible() {
 		t.Fatal("enter should open dialog")
 	}
-	if m.ActiveDialogSection() != tui.DialogSummary {
-		t.Fatalf("section = %v", m.ActiveDialogSection())
+	if m.ActiveDialogSection() != tui.DialogOverview {
+		t.Fatalf("section = %v want Overview", m.ActiveDialogSection())
 	}
-	if details.loadCalls.Load() != 1 {
-		t.Fatalf("dossier loads = %d", details.loadCalls.Load())
+	if details.coreCalls.Load() != 1 {
+		t.Fatalf("core loads = %d want 1", details.coreCalls.Load())
 	}
-	m = apply(t, m, key("pgdown"), key("home"))
-	if m.DialogOffset() != 0 {
-		t.Fatalf("home offset = %d", m.DialogOffset())
+	m = apply(t, m, key("tab"))
+	if m.ActiveDialogSection() != tui.DialogStats {
+		t.Fatalf("tab section = %v want Stats", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("right"))
+	if m.ActiveDialogSection() != tui.DialogEvolution {
+		t.Fatalf("right section = %v want Evolution", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("left"))
+	if m.ActiveDialogSection() != tui.DialogStats {
+		t.Fatalf("left section = %v want Stats", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("shift+tab"), key("shift+tab"))
+	if m.ActiveDialogSection() != tui.DialogBiology {
+		t.Fatalf("shift-tab wrap section = %v want Biology", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("tab"))
+	if m.ActiveDialogSection() != tui.DialogOverview {
+		t.Fatalf("tab wrap section = %v want Overview", m.ActiveDialogSection())
+	}
+
+	// Wide rail: ↑/↓ move the section list (body scroll is PgUp/PgDn).
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40}, key("down"))
+	if m.ActiveDialogSection() != tui.DialogStats {
+		t.Fatalf("rail down section = %v want Stats", m.ActiveDialogSection())
+	}
+	m = apply(t, m, key("up"))
+	if m.ActiveDialogSection() != tui.DialogOverview {
+		t.Fatalf("rail up section = %v want Overview", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("esc"))
 	if m.DialogVisible() {
 		t.Fatal("esc should close dialog")
+	}
+	if id, ok := m.SelectedID(); !ok || id != selectedBefore {
+		t.Fatalf("esc must preserve selection: got %d ok=%v want %d", id, ok, selectedBefore)
 	}
 
 	m = apply(t, m, key("?"))
@@ -342,18 +379,34 @@ func TestEnterDossierNoRefetch(t *testing.T) {
 	if details.loadCalls.Load() != 1 {
 		t.Fatalf("dossier refetched: %d", details.loadCalls.Load())
 	}
-	m = apply(t, m, key("esc"), key("enter"))
+	_ = apply(t, m, key("esc"), key("enter"))
 	if details.loadCalls.Load() != 1 {
 		t.Fatalf("reopen should use cached dossier, got %d", details.loadCalls.Load())
 	}
 }
 
-func TestUnboundKeys(t *testing.T) {
+func TestSearchTypesLettersIncludingR(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52}, key("r"), key("/"))
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52}, key("r"), key("/"), key("a"))
+	if m.Query() != "r/a" {
+		t.Fatalf("letters must type into search, got %q", m.Query())
+	}
+}
+
+func TestEscClearsThenQuits(t *testing.T) {
+	details := &fakeDetails{}
+	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details, Prefill: "char"})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52}, key("esc"))
 	if m.Query() != "" {
-		t.Fatalf("unbound keys mutated query: %q", m.Query())
+		t.Fatalf("first esc clears search, got %q", m.Query())
+	}
+	if m.Quitting() {
+		t.Fatal("first esc must not quit while clearing")
+	}
+	m = apply(t, m, key("esc"))
+	if !m.Quitting() {
+		t.Fatal("second esc on empty search must quit")
 	}
 }
 
@@ -407,8 +460,8 @@ func TestEmptyResultsAndTooSmall(t *testing.T) {
 	if !strings.Contains(view, "too small") && !strings.Contains(view, "Too small") && !strings.Contains(strings.ToLower(view), "too small") {
 		t.Fatalf("expected too-small cue:\n%s", view)
 	}
-	m = apply(t, m, key("q"))
+	m = apply(t, m, key("esc"))
 	if !m.Quitting() {
-		t.Fatal("q should quit when terminal too small")
+		t.Fatal("esc should quit when terminal too small")
 	}
 }

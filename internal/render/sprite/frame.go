@@ -8,9 +8,10 @@ package sprite
 //	width  = side
 //	height = side / CellAspectY
 //
-// Native sixel buckets are explicit sizes between MinFrameSize and MaxFrameSize.
+// Native sixel buckets are explicit sizes (16 glance … 40 hero).
 const (
-	// MinFrameSize is the smallest longest-side (cells) browse will show.
+	// MinFrameSize is the classic terminal-minimum longest side (helpers /
+	// MinTerminal*). Encode buckets may be smaller (see FrameBuckets / glance).
 	MinFrameSize = 24
 	// MaxFrameSize is the largest longest-side (cells) browse will show.
 	MaxFrameSize = 40
@@ -27,39 +28,61 @@ const (
 	// FrameWidth / FrameHeight are the preferred (max) frame dimensions.
 	FrameWidth  = MaxFrameSize
 	FrameHeight = MaxFrameSize / CellAspectY
-
-	// SixelCellPxW/H convert terminal cells to sixel pixel targets.
-	//
-	// These defaults (8×16) approximate common monospace cell geometry. They are
-	// not universal: actual cell pixels vary by terminal/font/DPI. Cache identity
-	// uses the resulting pixel dimensions, so a future improvement (e.g. CSI 16 t
-	// cell-size query) naturally creates distinct artefacts without migration.
-	//
-	// TODO(terminal): query CSI 16 t / DECSRPP when production capability probing
-	// exposes reliable cell pixel dimensions; until then retain this fallback.
-	SixelCellPxW = 8
-	SixelCellPxH = 16
 )
 
-// FrameBuckets lists the only native sixel frame buckets (24 / 32 / 40).
-var FrameBuckets = [...]int{24, 32, 40}
+// SixelCellPxW/H convert terminal cells to sixel pixel targets.
+//
+// Defaults match typical Windows Terminal / Cascadia geometry (10×20). App
+// startup measures the real cell size via XTWINOPS (CSI 16 t) and overrides
+// through SetCellPixelSize before the engine or any warmer starts — encoding
+// with a guessed cell height taller than reality paints sixel past the art
+// box (the browse overpaint bug). Cache identity includes the resulting pixel
+// dimensions, so changed cell sizes key distinct artefacts without migration.
+var (
+	SixelCellPxW = 10
+	SixelCellPxH = 20
+)
+
+// SetCellPixelSize overrides the cell→pixel conversion with a measured value.
+// Call once at startup before rendering begins; out-of-range values are
+// ignored (keeps the safe default on bogus terminal replies).
+func SetCellPixelSize(pxW, pxH int) {
+	if pxW < 3 || pxW > 40 || pxH < 6 || pxH > 80 {
+		return
+	}
+	SixelCellPxW = pxW
+	SixelCellPxH = pxH
+}
+
+// FrameBuckets lists native sixel frame buckets (16 glance / 24 / 32 / 40 hero).
+var FrameBuckets = [...]int{16, 24, 32, 40}
+
+// SmallestFrameBucket is the smallest supported encode/layout bucket.
+func SmallestFrameBucket() int { return FrameBuckets[0] }
+
+// BrowseWarmBuckets is the default warm phase order: glance then hero.
+func BrowseWarmBuckets() []int {
+	return []int{FrameBuckets[0], MaxFrameSize}
+}
 
 // FrameSizeFor returns cell width×height for a longest-side step.
+// Side is snapped to a native bucket (16 / 24 / 32 / 40).
 func FrameSizeFor(side int) (w, h int) {
 	side = ClampFrameSide(side)
 	return side, side / CellAspectY
 }
 
 // ClampFrameSide snaps side down to the largest supported bucket that does not
-// exceed the requested side, clamped to [MinFrameSize, MaxFrameSize].
+// exceed the requested side. Values below the smallest bucket snap up to it.
 func ClampFrameSide(side int) int {
+	minBucket := FrameBuckets[0]
 	if side >= MaxFrameSize {
 		return MaxFrameSize
 	}
-	if side <= MinFrameSize {
-		return MinFrameSize
+	if side <= minBucket {
+		return minBucket
 	}
-	best := MinFrameSize
+	best := minBucket
 	for _, s := range FrameBuckets {
 		if s <= side {
 			best = s
@@ -98,45 +121,14 @@ const MinListWidth = 32
 // MinRightHeaderWidth is enough for name / types · genus without the sprite.
 const MinRightHeaderWidth = 36
 
-// RightPanelSharePercent is the preferred share of terminal width for the
-// detail/sprite pane (~42%). The list keeps the remaining ~58%.
+// RightPanelSharePercent is a fallback share for the sprite pane when list
+// sizing is not available.
 const RightPanelSharePercent = 42
 
-// BrowseChromeRows is terminal rows outside the sprite body: footer (1) +
-// combined-frame borders (2) + name/types header + gap (3) + divider +
-// switcher (2). Keep in sync with layout spriteChromeRows.
-const BrowseChromeRows = 8
-
-// MinTerminalWidth is the smallest terminal width that can host the padded
-// *minimum* sprite frame beside a usable list column.
-func MinTerminalWidth() int {
-	needRight, _ := OuterFor(MinFrameSize)
-	if needRight < MinRightHeaderWidth {
-		needRight = MinRightHeaderWidth
-	}
-	needRight += 2                      // frame borders / gutter
-	return needRight + MinListWidth + 1 // + sep
-}
-
-// MinTerminalHeight is the smallest terminal height that can host the padded
-// *minimum* sprite frame plus browse chrome.
-func MinTerminalHeight() int {
-	_, outerH := OuterFor(MinFrameSize)
-	return outerH + BrowseChromeRows
-}
-
-// LargestFrameFitting returns the largest step whose padded outer box fits in
-// the given cell budgets, or 0 if even the minimum does not fit.
-func LargestFrameFitting(maxOuterW, maxOuterH int) int {
-	best := 0
-	for _, side := range FrameSteps() {
-		ow, oh := OuterFor(side)
-		if ow <= maxOuterW && oh <= maxOuterH {
-			best = side
-		}
-	}
-	return best
-}
+// BrowseChromeRows is terminal rows outside the minimum art *card* content:
+// footer, outer frame borders, and the name/types header. The pinned art card
+// itself includes its own borders and 1-cell pad (see views.ArtCardOuter).
+const BrowseChromeRows = 5
 
 // PixelSize converts a cell box to the pixel target used by sixel encoding.
 func PixelSize(cellsW, cellsH int) (pxW, pxH int) {
@@ -147,6 +139,21 @@ func PixelSize(cellsW, cellsH int) (pxW, pxH int) {
 		cellsH = 1
 	}
 	return cellsW * SixelCellPxW, cellsH * SixelCellPxH
+}
+
+// NormalizeBuckets clamps, de-dupes, and drops sizes below the smallest bucket.
+func NormalizeBuckets(buckets []int) []int {
+	seen := make(map[int]bool, len(buckets))
+	out := make([]int, 0, len(buckets))
+	for _, b := range buckets {
+		b = ClampFrameSide(b)
+		if b < SmallestFrameBucket() || seen[b] {
+			continue
+		}
+		seen[b] = true
+		out = append(out, b)
+	}
+	return out
 }
 
 // RightPanelWidth picks the right column width: about RightPanelSharePercent of
@@ -163,7 +170,7 @@ func RightPanelWidth(termW, spriteSide int) int {
 	if r < MinRightHeaderWidth {
 		r = MinRightHeaderWidth
 	}
-	if spriteSide >= MinFrameSize {
+	if spriteSide >= SmallestFrameBucket() {
 		ow, _ := OuterFor(spriteSide)
 		if ow+2 > r {
 			r = ow + 2

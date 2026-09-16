@@ -19,7 +19,6 @@ type Model struct {
 	scroll    int
 	current   string
 	themesDir string
-	configDir string
 	save      func(name string) error
 	width     int
 	height    int

@@ -79,9 +79,18 @@ func ContentBounds(src image.Image, alphaThreshold uint8) image.Rectangle {
 	return image.Rect(minX, minY, maxX, maxY)
 }
 
-// CropAndPrepare trims transparent margins to a 1:1 crop and composites onto bg
-// in one pass (single bounds scan + single write pass).
+// CropAndPrepare trims transparent margins to a 1:1 crop and composites onto bg.
 func CropAndPrepare(src image.Image, bg color.RGBA, alphaThreshold uint8, pad int) *image.RGBA {
+	return cropAndComposite(src, bg, alphaThreshold, pad, true)
+}
+
+// CropAndPrepareTight trims transparent margins and composites onto bg without
+// forcing a 1:1 square.
+func CropAndPrepareTight(src image.Image, bg color.RGBA, alphaThreshold uint8, pad int) *image.RGBA {
+	return cropAndComposite(src, bg, alphaThreshold, pad, false)
+}
+
+func cropAndComposite(src image.Image, bg color.RGBA, alphaThreshold uint8, pad int, square bool) *image.RGBA {
 	if src == nil {
 		out := image.NewRGBA(image.Rect(0, 0, 1, 1))
 		draw.Draw(out, out.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
@@ -100,24 +109,38 @@ func CropAndPrepare(src image.Image, bg color.RGBA, alphaThreshold uint8, pad in
 		content = b
 	}
 
-	side := content.Dx()
-	if content.Dy() > side {
-		side = content.Dy()
+	var srcRect image.Rectangle
+	var dw, dh int
+	if square {
+		side := content.Dx()
+		if content.Dy() > side {
+			side = content.Dy()
+		}
+		if side < 1 {
+			side = 1
+		}
+		cx := (content.Min.X + content.Max.X) / 2
+		cy := (content.Min.Y + content.Max.Y) / 2
+		srcRect = image.Rect(cx-side/2, cy-side/2, cx-side/2+side, cy-side/2+side)
+		dw, dh = side, side
+	} else {
+		srcRect = content
+		dw, dh = content.Dx(), content.Dy()
+		if dw < 1 {
+			dw = 1
+		}
+		if dh < 1 {
+			dh = 1
+		}
 	}
-	if side < 1 {
-		side = 1
-	}
-	cx := (content.Min.X + content.Max.X) / 2
-	cy := (content.Min.Y + content.Max.Y) / 2
-	sq := image.Rect(cx-side/2, cy-side/2, cx-side/2+side, cy-side/2+side)
 
-	dst := image.NewRGBA(image.Rect(0, 0, side, side))
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
 	draw.Draw(dst, dst.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
 
-	for y := 0; y < side; y++ {
-		sy := sq.Min.Y + y
-		for x := 0; x < side; x++ {
-			sx := sq.Min.X + x
+	for y := 0; y < dh; y++ {
+		sy := srcRect.Min.Y + y
+		for x := 0; x < dw; x++ {
+			sx := srcRect.Min.X + x
 			if !image.Pt(sx, sy).In(b) {
 				continue
 			}
@@ -143,8 +166,12 @@ func CropAndPrepare(src image.Image, bg color.RGBA, alphaThreshold uint8, pad in
 }
 
 // PrepareEncodeSrc prepares src for terminal encode at tw×th.
-// Square (or near-square) artwork: skip ContentBounds; resize then Prepare at target.
-// Non-square / pixel sprites: keep CropAndPrepare then Resize (current behavior).
+//
+// Artwork: tight-crop opaque pixels, then fit into the target (letterbox only
+// when the subject is far from the target aspect). With PixelSize matching the
+// terminal cell geometry, a near-square subject fills the art cell box
+// (e.g. 16×8 glance or 40×20 hero).
+// Pixel sprites: square crop + fit (no squash) to preserve sprite art.
 func PrepareEncodeSrc(src image.Image, tw, th int, source SpriteSource, bg color.RGBA, threshold uint8, pad int) *image.RGBA {
 	if tw < 1 {
 		tw = 1
@@ -163,26 +190,12 @@ func PrepareEncodeSrc(src image.Image, tw, th int, source SpriteSource, bg color
 		draw.Draw(out, out.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
 		return out
 	}
-	b := src.Bounds()
-	if b.Dx() == b.Dy() && b.Dx() > 0 {
-		// Official artwork is square (e.g. 475×475): downsample first, composite small.
-		rgba := asRGBA(src)
-		resized := Resize(rgba, tw, th, source, true, bg)
-		return Prepare(resized, bg, threshold)
+	if source == SourceArtwork {
+		tight := CropAndPrepareTight(src, bg, threshold, pad)
+		return Resize(tight, tw, th, source, true, bg)
 	}
 	prepared := CropAndPrepare(src, bg, threshold, pad)
 	return Resize(prepared, tw, th, source, true, bg)
-}
-
-// asRGBA copies src into an RGBA buffer without alpha compositing or cropping.
-func asRGBA(src image.Image) *image.RGBA {
-	if rgba, ok := src.(*image.RGBA); ok {
-		return rgba
-	}
-	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Src)
-	return dst
 }
 
 // CropToContentSquare trims transparent margins, then returns a 1:1 crop centred

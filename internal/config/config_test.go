@@ -35,8 +35,25 @@ func TestDefault(t *testing.T) {
 	if cfg.EffectiveSixelColors() != DefaultSixelColors {
 		t.Fatalf("effective sixel_colors = %d want %d", cfg.EffectiveSixelColors(), DefaultSixelColors)
 	}
+	if cfg.TUI.ListTypes {
+		t.Fatal("tui.list_types default = true, want false")
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config is invalid: %v", err)
+	}
+}
+
+func TestLoadListTypes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("tui:\n  list_types: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TUI.ListTypes {
+		t.Fatal("tui.list_types was not enabled")
 	}
 }
 

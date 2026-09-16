@@ -48,16 +48,3 @@ func clearWarmFooterRawCmd(m Model) tea.Cmd {
 	seq := decSaveCursor + fmt.Sprintf("\x1b[%d;%dH%s", row, col, blank) + decRestoreCursor
 	return tea.Raw(seq)
 }
-
-func (m Model) warmFooterPatchIfNeeded() tea.Cmd {
-	if !m.nativeSpriteActive() {
-		return nil
-	}
-	if m.effectiveWarmFooterRight() == "" {
-		if m.warmRight != "" {
-			return clearWarmFooterRawCmd(m)
-		}
-		return nil
-	}
-	return patchWarmFooterCmd(m)
-}

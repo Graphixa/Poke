@@ -23,9 +23,9 @@ type TypeSlot struct {
 }
 
 type AbilitySlot struct {
-	Slot     int
-	Name     string
-	IsHidden bool
+	Slot     int    `json:"slot,omitempty"`
+	Name     string `json:"name"`
+	IsHidden bool   `json:"is_hidden,omitempty"`
 }
 
 type Stats struct {
@@ -63,18 +63,24 @@ func (s Sprites) Images() Images {
 	}
 }
 
-// BrowseEntry is the compact, in-memory row used for list selection.
+// BrowseEntry is the compact, in-memory row used for list selection and glance
+// stats/About (so the right pane does not wait on dossier core).
 type BrowseEntry struct {
-	ID        int      `json:"id"`
-	Slug      string   `json:"slug"`
-	Name      string   `json:"name"`
-	Types     []string `json:"types"`
-	HP        int      `json:"hp"`
-	Attack    int      `json:"attack"`
-	Defence   int      `json:"defence"`
-	SpAttack  int      `json:"sp_attack"`
-	SpDefence int      `json:"sp_defence"`
-	Speed     int      `json:"speed"`
+	ID              int           `json:"id"`
+	Slug            string        `json:"slug"`
+	Name            string        `json:"name"`
+	Types           []string      `json:"types"`
+	HP              int           `json:"hp"`
+	Attack          int           `json:"attack"`
+	Defence         int           `json:"defence"`
+	SpAttack        int           `json:"sp_attack"`
+	SpDefence       int           `json:"sp_defence"`
+	Speed           int           `json:"speed"`
+	HeightDecimeter int           `json:"height"`
+	WeightHectogram int           `json:"weight"`
+	BaseExperience  int           `json:"base_exp"`
+	Genus           string        `json:"genus,omitempty"`
+	Abilities       []AbilitySlot `json:"abilities,omitempty"`
 }
 
 func (b BrowseEntry) Summary() SpeciesSummary {
@@ -84,6 +90,18 @@ func (b BrowseEntry) Summary() SpeciesSummary {
 		DisplayName: b.Name,
 		Types:       b.Types,
 	}
+}
+
+func (b BrowseEntry) Stats() Stats {
+	return Stats{
+		HP: b.HP, Attack: b.Attack, Defense: b.Defence,
+		SpecialAttack: b.SpAttack, SpecialDefense: b.SpDefence, Speed: b.Speed,
+	}
+}
+
+// HasAbilities reports whether glance Abilities can render from this row.
+func (b BrowseEntry) HasAbilities() bool {
+	return len(b.Abilities) > 0
 }
 
 func BrowseEntryFrom(summary SpeciesSummary, stats Stats) BrowseEntry {

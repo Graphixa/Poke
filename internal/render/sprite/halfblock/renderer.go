@@ -51,7 +51,7 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 		threshold = 16
 	}
 
-	cropped := sprite.CropToContentSquare(src, threshold, 1)
+	cropped := sprite.CropToContentSquare(src, threshold, 0)
 	prepared := sprite.Prepare(cropped, bg, threshold)
 
 	// Two vertical samples per cell (imgcat RESIZE_FACTOR_Y = 2).

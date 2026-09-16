@@ -34,7 +34,7 @@ const (
 
 // AlgorithmVersion is embedded in cache keys so artefacts invalidate across
 // renderer pipeline changes.
-const AlgorithmVersion = "v13"
+const AlgorithmVersion = "v16"
 
 // DefaultSixelColors is the production sixel palette when unset or unsupported.
 const DefaultSixelColors = 64

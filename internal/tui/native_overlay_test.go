@@ -1,17 +1,25 @@
 package tui_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/tui"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
+
+func TestMain(m *testing.M) {
+	tui.InstantNativeReassertForTest()
+	os.Exit(m.Run())
+}
 
 // Init cannot mutate the live model. First WindowSize must paint native art
 // for the initially selected species (Bulbasaur) without a list move.
@@ -39,7 +47,7 @@ func TestStartupPaintsFirstNativeSprite(t *testing.T) {
 	if !m.HasSpriteANSI() {
 		t.Fatal("expected first species native sprite after WindowSize")
 	}
-	if !m.NativePaintPendingForTest() && m.NativePaintANSIForTest() == "" {
+	if m.NativePaintANSIForTest() == "" {
 		t.Fatal("expected native overlay paint for the first species")
 	}
 	payloads := collectRawPayloads(cmd)
@@ -48,42 +56,55 @@ func TestStartupPaintsFirstNativeSprite(t *testing.T) {
 	}
 }
 
-func TestNativeOverlayDebounceDoesNotStarve(t *testing.T) {
-	details := &fakeDetails{}
-	sprites := &fakeSprites{ansi: "ART"}
+// Warm same-bucket scroll must overwrite in place (DCS only) — no space-clear
+// flash. Encode fits the box (measured cell px), so no spill accumulates.
+func TestWarmScrollOverwritesWithoutSpaceClear(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	idx := fixtureIndex()
+	all := idx.All()
+	sprites := &fakeSprites{
+		native: true,
+		cachedByID: map[int]string{
+			all[0].ID: dcsA,
+			all[1].ID: dcsB,
+		},
+	}
 	m := tui.NewModel(tui.Options{
-		Index:   fixtureIndex(),
-		Details: details,
+		Index:   idx,
+		Details: &fakeDetails{},
 		Sprites: sprites,
 	})
-	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-
-	id, ok := m.SelectedID()
-	if !ok {
-		t.Fatal("expected selection")
+	if m.NativePaintANSIForTest() == "" {
+		var model tea.Model = m
+		drainCmds(t, &model, cmd)
+		m = model.(tui.Model)
 	}
-	cells := m.CurrentSpriteCells()
-	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
-		m.SpriteReqID(), m.SelectionGen(), id, cells,
-		"\x1bP0;0;8q#1~~~\x1b\\", false,
-	))
-	updated, cmd := m.Update(msg)
-	m = updated.(tui.Model)
-	if cmd == nil {
-		t.Fatal("expected overlay schedule cmd after native sprite load")
-	}
-	if !m.NativePaintPendingForTest() {
-		t.Fatal("expected nativePaintPending after schedule")
-	}
-
-	// Flood updates (warm progress style). Overlay must stay pending through follow-up window.
-	for i := 0; i < 20; i++ {
-		updated, _ = m.Update(tui.WarmProgressMsgForTest(i, 100))
+	if m.NativePaintANSIForTest() != dcsA {
+		idA, _ := m.SelectedID()
+		cells := m.CurrentSpriteCells()
+		updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+			m.SpriteReqID(), m.SelectionGen(), idA, cells, dcsA, false,
+		)))
 		m = updated.(tui.Model)
 	}
-	if !m.NativePaintPendingForTest() {
-		t.Fatal("overlay pending flag cleared by update flood — paint would starve")
+	if m.NativePaintANSIForTest() != dcsA {
+		t.Fatalf("setup paint=%q", m.NativePaintANSIForTest())
+	}
+
+	updated, cmd = m.Update(key("down"))
+	m = updated.(tui.Model)
+	joined := strings.Join(collectRawPayloads(cmd), "")
+	if !strings.Contains(joined, dcsB) {
+		t.Fatal("warm neighbor must Raw-paint new sixel in the same Update")
+	}
+	if strings.Contains(joined, "48;2;") || containsSpaces(joined, 8) {
+		t.Fatal("same-bucket warm scroll must not space-clear (flicker)")
+	}
+	if m.NativePaintANSIForTest() != dcsB {
+		t.Fatalf("paint tracking=%q want B", m.NativePaintANSIForTest())
 	}
 }
 
@@ -105,9 +126,6 @@ func TestNativeOverlayClearsOnSelectionWithoutArt(t *testing.T) {
 	))
 	updated, _ = m.Update(msg)
 	m = updated.(tui.Model)
-	// Complete follow-up so paint state is committed.
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
-	m = updated.(tui.Model)
 	if m.NativePaintANSIForTest() == "" {
 		t.Fatal("expected painted native ANSI tracked")
 	}
@@ -117,11 +135,14 @@ func TestNativeOverlayClearsOnSelectionWithoutArt(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected clear/load cmds on selection change")
 	}
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatal("selection change must clear paint tracking")
+	}
 }
 
-func TestNativeOverlayNotPerpetualLoop(t *testing.T) {
+func TestNativeOverlayKeepsTextHoldUntilReady(t *testing.T) {
 	details := &fakeDetails{}
-	sprites := &fakeSprites{ansi: "ART"}
+	sprites := &fakeSprites{ansi: "ART", block: make(chan struct{})}
 	m := tui.NewModel(tui.Options{
 		Index:   fixtureIndex(),
 		Details: details,
@@ -131,22 +152,437 @@ func TestNativeOverlayNotPerpetualLoop(t *testing.T) {
 	m = updated.(tui.Model)
 	id, _ := m.SelectedID()
 	cells := m.CurrentSpriteCells()
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
 	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
-		m.SpriteReqID(), m.SelectionGen(), id, cells,
-		"\x1bP0;0;8q#1~~~\x1b\\", false,
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
 	))
 	updated, _ = m.Update(msg)
 	m = updated.(tui.Model)
-	if !m.NativePaintPendingForTest() {
-		t.Fatal("expected pending after dirty paint")
+	if m.NativePaintANSIForTest() == "" {
+		t.Fatal("expected painted native ANSI tracked")
 	}
-	// Follow-up re-paint clears pending — no perpetual 100ms loop.
-	updated, cmd := m.Update(tui.NativeOverlayFollowUpForTest())
+
+	updated, cmd := m.Update(key("down"))
 	m = updated.(tui.Model)
-	if m.NativePaintPendingForTest() {
-		t.Fatal("follow-up should clear nativePaintPending")
+	if cmd != nil {
+		c := cmd
+		go func() { _ = c() }()
 	}
-	_ = cmd
+	// Clear→paint: tracking cleared immediately; text hold may remain.
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatalf("selection change must clear paint tracking, got %q", m.NativePaintANSIForTest())
+	}
+	if m.HasSpriteANSI() {
+		t.Fatal("image pane must not keep prior species after selection change")
+	}
+	if m.GlanceHoldIDForTest() == 0 {
+		t.Fatal("expected text glance hold while loading")
+	}
+	close(sprites.block)
+}
+
+func TestGlanceHoldKeepsPreviousUntilReady(t *testing.T) {
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	const dcs = "\x1bP0;0;8q#A~~~\x1b\\"
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if m.BrowseSelectedNameForTest() != "Charmander" {
+		t.Fatalf("name=%q", m.BrowseSelectedNameForTest())
+	}
+
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	if cmd != nil {
+		c := cmd
+		go func() { _ = c() }()
+	}
+	if m.GlanceHoldIDForTest() != id {
+		t.Fatalf("hold=%d want %d", m.GlanceHoldIDForTest(), id)
+	}
+	if m.BrowseSelectedNameForTest() != "Charmander" {
+		t.Fatalf("held glance name=%q want Charmander", m.BrowseSelectedNameForTest())
+	}
+	nextID, _ := m.SelectedID()
+	if nextID == id {
+		t.Fatal("list selection should have moved")
+	}
+
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, "\x1bP0;0;8q#B~~~\x1b\\", false, true, "artwork"))
+	m = updated.(tui.Model)
+	close(block)
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("hold should clear once new frame is ready")
+	}
+	if m.BrowseSelectedNameForTest() != "Charmeleon" {
+		t.Fatalf("committed name=%q want Charmeleon", m.BrowseSelectedNameForTest())
+	}
+}
+
+func TestGlanceHoldClearsOnHelp(t *testing.T) {
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, "\x1bP0;0;8q#A~~~\x1b\\", false,
+	)))
+	m = updated.(tui.Model)
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	if cmd != nil {
+		c := cmd
+		go func() { _ = c() }()
+	}
+	if m.GlanceHoldIDForTest() == 0 {
+		t.Fatal("expected glance hold before help")
+	}
+	updated, _ = m.Update(key("?"))
+	m = updated.(tui.Model)
+	close(block)
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("help should clear glance hold")
+	}
+}
+
+func TestGlanceHoldSkipsStickyRawUntilCommit(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	nextID, _ := m.SelectedID()
+	if cmd != nil {
+		c := cmd
+		go func() { _ = c() }()
+	}
+	if m.GlanceHoldIDForTest() != id {
+		t.Fatalf("hold=%d want %d", m.GlanceHoldIDForTest(), id)
+	}
+	// Clear→paint: no sticky Raw of species A while loading B.
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatal("must clear paint tracking on selection change")
+	}
+
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, cmd = m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, dcsB, false, true, "artwork"))
+	m = updated.(tui.Model)
+	close(block)
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("ready frame must commit hold")
+	}
+	found := false
+	for _, p := range collectRawPayloads(cmd) {
+		if strings.Contains(p, dcsB) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("after commit, immediate Raw must paint new sixel")
+	}
+}
+
+func TestNativeOverlayImmediateOnStableReady(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: sprites,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+	if m.NativePaintANSIForTest() != dcsA {
+		t.Fatalf("species A paint=%q", m.NativePaintANSIForTest())
+	}
+
+	updated, cmd := m.Update(key("down"))
+	m = updated.(tui.Model)
+	nextID, _ := m.SelectedID()
+	if nextID == id {
+		t.Fatal("expected selection to move")
+	}
+	if cmd != nil {
+		c := cmd
+		go func() { _ = c() }()
+	}
+	if m.ImageStateForTest() != int(tui.ImageLoading) {
+		_ = m.ForceSpriteLoadForTest()
+	}
+	if m.GlanceHoldIDForTest() == 0 {
+		t.Fatal("expected text hold while loading neighbor")
+	}
+	if m.NativePaintCellsForTest() < 1 {
+		t.Fatal("same-bucket miss must keep last paint, like Glance overwrite")
+	}
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, cmd = m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, dcsB, false, true, "artwork"))
+	m = updated.(tui.Model)
+	close(block)
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("commit must clear hold before/with native paint")
+	}
+	joined := strings.Join(collectRawPayloads(cmd), "")
+	if !strings.Contains(joined, dcsB) {
+		t.Fatal("commit-ready paint must include immediate tea.Raw with B DCS")
+	}
+	if strings.Contains(joined, "48;2;") {
+		t.Fatal("same-bucket paint must overwrite like Glance, no space-clear")
+	}
+	if m.NativePaintANSIForTest() != dcsB {
+		t.Fatalf("tracked=%q want B", m.NativePaintANSIForTest())
+	}
+}
+
+// Selection change keeps Abilities from browse.json for the held/selected ID; sprite
+// commit alone releases text hold (Abilities no longer waits on dossier core).
+func TestGlanceHoldCommitsOnSpriteWhenBrowseAbilitiesReady(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	block := make(chan struct{})
+	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
+	idx := fixtureIndex()
+	all := idx.All()
+	entries := map[int]domain.BrowseEntry{}
+	for _, s := range all {
+		entries[s.ID] = domain.BrowseEntry{
+			ID: s.ID, Name: s.DisplayName, Types: s.Types,
+			Genus: "Test Pokémon",
+			HP:    39, Attack: 52, Defence: 43, SpAttack: 60, SpDefence: 50, Speed: 65,
+			Abilities: []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
+		}
+	}
+	// Distinct abilities for first two list rows.
+	id0 := all[0].ID
+	id1 := all[1].ID
+	e0 := entries[id0]
+	e0.Abilities = []domain.AbilitySlot{{Slot: 1, Name: "blaze"}}
+	e0.Name = "Charmander"
+	entries[id0] = e0
+	e1 := entries[id1]
+	e1.Abilities = []domain.AbilitySlot{{Slot: 1, Name: "solar-power"}}
+	e1.Name = "Charmeleon"
+	entries[id1] = e1
+
+	m := tui.NewModel(tui.Options{
+		Index:         idx,
+		Details:       &fakeDetails{},
+		Sprites:       sprites,
+		BrowseEntries: entries,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("setup Abilities: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
+	}
+
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	nextID, _ := m.SelectedID()
+	if m.GlanceHoldIDForTest() != id {
+		t.Fatalf("hold=%d want %d", m.GlanceHoldIDForTest(), id)
+	}
+	// Hold keeps prior identity; About still comes from held browse row.
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("held Abilities: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
+	}
+
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, cmd := m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, dcsB, false, true, "artwork"))
+	m = updated.(tui.Model)
+	close(block)
+
+	if m.GlanceHoldIDForTest() != 0 {
+		t.Fatal("browse Abilities + sprite ready must commit text hold")
+	}
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Solar Power") {
+		t.Fatalf("committed Abilities: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
+	}
+	if m.BrowseSelectedNameForTest() != "Charmeleon" {
+		t.Fatalf("committed name=%q", m.BrowseSelectedNameForTest())
+	}
+	found := false
+	for _, p := range collectRawPayloads(cmd) {
+		if strings.Contains(p, dcsB) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("sixel must paint for selection")
+	}
+}
+
+// Cold fast scroll: each species' Abilities come from browse.json, so eviction of
+// dossier core cannot blank the Abilities card.
+func TestGlanceAbilitiesFromBrowseSurvivesColdFastScroll(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsD = "\x1bP0;0;8q#D~~~\x1b\\"
+	idx := fixtureIndex()
+	all := idx.All()
+	entries := map[int]domain.BrowseEntry{}
+	for i, s := range all {
+		entries[s.ID] = domain.BrowseEntry{
+			ID: s.ID, Name: s.DisplayName, Types: s.Types,
+			Genus: "Test Pokémon",
+			HP:    39, Attack: 52, Defence: 43, SpAttack: 60, SpDefence: 50, Speed: 65,
+			Abilities: []domain.AbilitySlot{{Slot: 1, Name: fmt.Sprintf("ability-%d", i)}},
+		}
+	}
+	m := tui.NewModel(tui.Options{
+		Index:         idx,
+		Details:       &fakeDetails{},
+		Sprites:       &fakeSprites{ansi: "COLD", native: true},
+		BrowseEntries: entries,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	idA, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), idA, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+	wantA := formatGlanceAbility(entries[idA].Abilities[0].Name)
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), wantA) {
+		t.Fatalf("setup Abilities: has=%v text=%q want %q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest(), wantA)
+	}
+
+	var idD int
+	for i := 0; i < 3; i++ {
+		updated, _ = m.Update(key("down"))
+		m = updated.(tui.Model)
+		idD, _ = m.SelectedID()
+	}
+	if idD == idA {
+		t.Fatal("expected to land on a later species")
+	}
+
+	m.DropResourceForTest(idA)
+	if m.ResourceName(idA) != "" {
+		t.Fatal("eviction setup failed")
+	}
+
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.ColdFrameMsgForTest(gen, idD, cells, dcsD, false, true, "artwork"))
+	m = updated.(tui.Model)
+
+	wantD := formatGlanceAbility(entries[idD].Abilities[0].Name)
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), wantD) {
+		t.Fatalf("cold scroll Abilities: has=%v text=%q want %q",
+			m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest(), wantD)
+	}
+}
+
+// Cold scroll onto species with no browse abilities and no dossier: keep last-good card.
+func TestGlanceAbilitiesSnapshotSurvivesColdScrollWithoutBrowse(t *testing.T) {
+	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
+	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
+	idx := fixtureIndex()
+	all := idx.All()
+	entries := map[int]domain.BrowseEntry{}
+	for _, s := range all {
+		entries[s.ID] = domain.BrowseEntry{
+			ID: s.ID, Name: s.DisplayName, Types: s.Types,
+			HP: 39, Attack: 52, Defence: 43, SpAttack: 60, SpDefence: 50, Speed: 65,
+		}
+	}
+	id0 := all[0].ID
+	e0 := entries[id0]
+	e0.Abilities = []domain.AbilitySlot{{Slot: 1, Name: "blaze"}}
+	entries[id0] = e0
+	// Later rows intentionally have no abilities in browse.json.
+
+	m := tui.NewModel(tui.Options{
+		Index:         idx,
+		Details:       &fakeDetails{},
+		Sprites:       &fakeSprites{ansi: "COLD", native: true},
+		BrowseEntries: entries,
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id0, cells, dcsA, false,
+	)))
+	m = updated.(tui.Model)
+	if !m.BrowseAbilitiesReadyForTest() || !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("setup: has=%v text=%q", m.BrowseAbilitiesReadyForTest(), m.BrowseAbilitiesTextForTest())
+	}
+
+	updated, _ = m.Update(key("down"))
+	m = updated.(tui.Model)
+	id1, _ := m.SelectedID()
+	if id1 == id0 {
+		t.Fatal("expected next species")
+	}
+	gen := m.SelectionGen()
+	cells = m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.ColdFrameMsgForTest(gen, id1, cells, dcsB, false, true, "artwork"))
+	m = updated.(tui.Model)
+
+	if !m.BrowseAbilitiesReadyForTest() {
+		t.Fatal("abilities card must stay visible via last-good snapshot")
+	}
+	if !strings.Contains(m.BrowseAbilitiesTextForTest(), "Blaze") {
+		t.Fatalf("snapshot should keep prior abilities until new data exists, got %q", m.BrowseAbilitiesTextForTest())
+	}
+}
+
+func formatGlanceAbility(slug string) string {
+	return output.TitleFromSlug(slug)
 }
 
 func TestSpriteArtOriginTwoPane(t *testing.T) {
@@ -154,7 +590,7 @@ func TestSpriteArtOriginTwoPane(t *testing.T) {
 		Width: 120, Height: 52,
 		ShowSprite: true, SpriteNative: true,
 		LeftWidth: 40, RightWidth: 79,
-		BodySize:    40,
+		BodySize:    24,
 		HasSelected: true,
 		Selected:    domain.SpeciesSummary{ID: 25, DisplayName: "Pikachu"},
 	}
@@ -203,8 +639,6 @@ func TestNativeOverlayClearsOnPlaceholder(t *testing.T) {
 	))
 	updated, _ = m.Update(native)
 	m = updated.(tui.Model)
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
-	m = updated.(tui.Model)
 	if m.NativePaintANSIForTest() == "" {
 		t.Fatal("expected painted native ANSI tracked")
 	}
@@ -217,40 +651,237 @@ func TestNativeOverlayClearsOnPlaceholder(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected clear cmd when native art falls back to placeholder")
 	}
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatal("placeholder must clear tracked native paint")
+	}
+	_ = cmd
 }
 
 func TestNativeOverlayWrapsSixelInDECSC(t *testing.T) {
 	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
 	seq := tui.NativeOverlayPaintSeqForTest(5, 10, 20, 16, dcs)
 	assertNativeOverlayPayload(t, seq, dcs)
+
+	dcsAt := strings.Index(seq, dcs)
+	if dcsAt < 0 {
+		t.Fatal("expected DCS")
+	}
+	before := seq[:dcsAt]
+	cup := "\x1b[5;10H"
+	cupAt := strings.LastIndex(before, cup)
+	if cupAt < 0 {
+		t.Fatal("expected CUP immediately before DCS")
+	}
+	between := before[cupAt+len(cup):]
+	if between != "" && (strings.Contains(between, "48;2;") || containsSpaces(between, 8)) {
+		t.Fatalf("after DCS CUP must not re-clear; got %q", between)
+	}
+	if strings.Contains(between, "\x1b[?8452") {
+		t.Fatal("paint must not use DECSET 8452")
+	}
+	if !strings.Contains(before[:cupAt], "48;2;") && !containsSpaces(before[:cupAt], 8) {
+		t.Fatal("clear+paint seq must space-clear before the DCS CUP")
+	}
+	// artH=16 + slack=2 → last clear row = 5+18-1 = 22
+	lastClearRow := "\x1b[22;10H"
+	if !strings.Contains(before, lastClearRow) {
+		t.Fatalf("expected clear slack through %s", lastClearRow)
+	}
 }
 
-func TestNativeOverlayFollowUpPayloadHasNoFooter(t *testing.T) {
-	details := &fakeDetails{}
-	sprites := &fakeSprites{ansi: "ART"}
+func TestNativeOverlayPaintOnlySkipsSpaceClear(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	seq := tui.NativeOverlayPaintOnlySeqForTest(5, 10, 20, 16, dcs)
+	assertNativeOverlayPayload(t, seq, dcs)
+	if strings.Contains(seq, "48;2;") || containsSpaces(seq, 8) {
+		t.Fatal("same-geometry overwrite must not space-clear before DCS")
+	}
+	if strings.Contains(seq, "\x1b[?8452") {
+		t.Fatal("overwrite paint must not use DECSET 8452")
+	}
+	cup := "\x1b[5;10H"
+	if !strings.Contains(seq, cup) {
+		t.Fatal("expected CUP before DCS")
+	}
+}
+
+// Browsing a new species loads its dossier core in the background. Its arrival
+// changes header genus / About cells (outside the art box) but not the Sixel
+// payload. It must repaint once, in place — no space-clear flash.
+func TestBrowseCoreArrivalRepaintsInPlace(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
 	m := tui.NewModel(tui.Options{
 		Index:   fixtureIndex(),
-		Details: details,
-		Sprites: sprites,
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
 	})
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
 	id, _ := m.SelectedID()
 	cells := m.CurrentSpriteCells()
-	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
-	msg := tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
 		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
-	))
-	updated, _ = m.Update(msg)
+	)))
+	m = updated.(tui.Model)
+	if m.NativePaintANSIForTest() != dcs {
+		t.Fatalf("expected settled paint, got %q", m.NativePaintANSIForTest())
+	}
+	if !m.NativeFollowUpPendingForTest() {
+		t.Fatal("first paint must arm post-flush overwrite")
+	}
+
+	dossier := domain.Dossier{
+		Pokemon: domain.Pokemon{ID: id},
+		Species: domain.Species{Genus: "Seed"},
+	}
+	updated, cmd := m.Update(tui.DossierCoreMsgForTest(m.SelectionGen(), id, dossier, false, nil))
 	m = updated.(tui.Model)
 
-	_, cmd := m.Update(tui.NativeOverlayFollowUpForTest())
-	payloads := collectRawPayloads(cmd)
-	if len(payloads) == 0 {
-		t.Fatal("expected Raw overlay payload")
+	if m.NativeOverlayDirtyForTest() {
+		t.Fatal("core arrival must drain overlay dirty after paint")
 	}
-	joined := strings.Join(payloads, "")
-	assertNativeOverlayPayload(t, joined, dcs)
+	joined := strings.Join(collectRawPayloads(cmd), "")
+	if !strings.Contains(joined, dcs) {
+		t.Fatal("core arrival must repaint the Sixel in place")
+	}
+	if strings.Contains(joined, "48;2;") || containsSpaces(joined, 8) {
+		t.Fatal("same-geometry core repaint must not space-clear (flash)")
+	}
+}
+
+func TestNativeOverlayReassertOverwritesWithoutClear(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if !m.NativeFollowUpPendingForTest() {
+		t.Fatal("expected follow-up armed after first paint")
+	}
+
+	updated, cmd := m.Update(tui.NativeReassertMsgForTest())
+	m = updated.(tui.Model)
+	if m.NativeFollowUpPendingForTest() {
+		t.Fatal("reassert paint must not arm another follow-up")
+	}
+	joined := strings.Join(collectRawPayloads(cmd), "")
+	if !strings.Contains(joined, dcs) {
+		t.Fatal("reassert must overwrite DCS")
+	}
+	if strings.Contains(joined, "48;2;") || containsSpaces(joined, 8) {
+		t.Fatal("reassert must not space-clear")
+	}
+}
+
+func TestCompositeOverlayDefersDCSUntilFlushMsg(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	buf.Reset()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if strings.Contains(buf.String(), dcs) {
+		t.Fatalf("DCS must not paint during Update (before View): %q", buf.String())
+	}
+	// Simulate Bubble Tea running the post-View flush cmd.
+	updated, _ = m.Update(tui.NativeCompositeFlushMsgForTest())
+	m = updated.(tui.Model)
+	if !strings.Contains(buf.String(), dcs) {
+		t.Fatalf("flush msg must write DCS after View, got %q", buf.String())
+	}
+}
+
+func TestResizeWipesNativeBeforeRelayout(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if m.NativePaintANSIForTest() != dcs {
+		t.Fatal("expected painted native")
+	}
+	buf.Reset()
+
+	updated, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 60})
+	m = updated.(tui.Model)
+	out := buf.String()
+	clearAt := strings.Index(out, "48;2;")
+	if clearAt < 0 {
+		t.Fatalf("resize must WriteDirect theme space-clear of old art box, got %q", out)
+	}
+	// Wipe clears pending; scheduleNativeOverlay SetNatives at the new origin
+	// (DCS lands via post-View flush / frame tail — not required in this buf check).
+	if dcsAt := strings.Index(out, dcs); dcsAt >= 0 && dcsAt < clearAt {
+		t.Fatal("stale DCS must not precede the resize wipe clear")
+	}
+}
+
+func TestViewCycleWipesNativeBeforeRelayout(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if m.NativePaintANSIForTest() != dcs {
+		t.Fatal("expected painted native")
+	}
+	buf.Reset()
+
+	// Tab Glance → Art: must WriteDirect-clear the glance origin before hero layout.
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updated.(tui.Model)
+	if m.ActiveBrowseView() != tui.BrowseArt {
+		t.Fatalf("tab → Art, got %v", m.ActiveBrowseView())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "48;2;") {
+		t.Fatalf("view cycle must WriteDirect theme space-clear of old art box, got %q", out)
+	}
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatal("wipe must clear paint identity before the new view encodes")
+	}
 }
 
 func assertNativeOverlayPayload(t *testing.T, seq, dcs string) {
@@ -294,8 +925,7 @@ func collectRawPayloads(cmd tea.Cmd) []string {
 		if c == nil {
 			return
 		}
-		msg := c()
-		switch v := msg.(type) {
+		switch v := c().(type) {
 		case tea.BatchMsg:
 			for _, inner := range v {
 				walk(inner)
@@ -344,8 +974,6 @@ func TestWarmProgressNativeFooterVisibleViaRaw(t *testing.T) {
 	))
 	updated, _ = m.Update(msg)
 	m = updated.(tui.Model)
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
-	m = updated.(tui.Model)
 
 	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
 	m = updated.(tui.Model)
@@ -380,8 +1008,6 @@ func TestWarmHintHiddenUnderNativeSprite(t *testing.T) {
 	updated, _ = m.Update(msg)
 	m = updated.(tui.Model)
 	// Finish initial overlay paint cycle before warm ticks.
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
-	m = updated.(tui.Model)
 
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(460, 649, 36))
 	m = updated.(tui.Model)
@@ -391,7 +1017,7 @@ func TestWarmHintHiddenUnderNativeSprite(t *testing.T) {
 	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
 		t.Fatalf("warm hint must not render over native art: %q", vis)
 	}
-	if m.NativeOverlayDirtyForTest() || m.NativePaintPendingForTest() {
+	if m.NativeOverlayDirtyForTest() {
 		t.Fatal("warm tick must not trigger overlay repaint (causes Sixel flash)")
 	}
 }
@@ -414,8 +1040,6 @@ func TestNativeWarmDoesNotPatchFooterWhileSpriteVisible(t *testing.T) {
 		"\x1bP0;0;8q#1~~~\x1b\\", false,
 	))
 	updated, _ = m.Update(msg)
-	m = updated.(tui.Model)
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
 	m = updated.(tui.Model)
 
 	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(3, 8, 40))
@@ -447,8 +1071,6 @@ func TestNativeWarmCompleteClearsFooterViaRaw(t *testing.T) {
 	))
 	updated, _ = m.Update(msg)
 	m = updated.(tui.Model)
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
-	m = updated.(tui.Model)
 
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(1024, 1025, 40))
 	m = updated.(tui.Model)
@@ -464,7 +1086,7 @@ func TestNativeWarmCompleteClearsFooterViaRaw(t *testing.T) {
 	if vis := m.BrowseVisibleWarmHintForTest(); vis != "" {
 		t.Fatalf("view hint must stay hidden under native art: %q", vis)
 	}
-	if m.NativeOverlayDirtyForTest() || m.NativePaintPendingForTest() {
+	if m.NativeOverlayDirtyForTest() {
 		t.Fatal("completion must not trigger overlay repaint")
 	}
 	if raws := collectRawPayloads(cmd); len(raws) == 0 {
@@ -490,8 +1112,6 @@ func TestArtworkWarmClearsStaleFooterUnderNativeSprite(t *testing.T) {
 		"\x1bP0;0;8q#1~~~\x1b\\", false,
 	))
 	updated, _ = m.Update(msg)
-	m = updated.(tui.Model)
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
 	m = updated.(tui.Model)
 
 	updated, _ = m.Update(tui.WarmProgressNativeMsgForTest(5, 10, 40))
@@ -541,8 +1161,6 @@ func TestNativeWarmDoneEqualsTotalClearsFooterViaRaw(t *testing.T) {
 	))
 	updated, _ = m.Update(msg)
 	m = updated.(tui.Model)
-	updated, _ = m.Update(tui.NativeOverlayFollowUpForTest())
-	m = updated.(tui.Model)
 
 	updated, cmd := m.Update(tui.WarmProgressNativeMsgForTest(8, 8, 40))
 	m = updated.(tui.Model)
@@ -560,6 +1178,7 @@ func (fakeNativeWarmer) EnsureStarted(context.Context, int) {}
 func (fakeNativeWarmer) Prioritize(int)                     {}
 func (fakeNativeWarmer) SetNeighborsFromList([]domain.SpeciesSummary, int, int) {
 }
+func (fakeNativeWarmer) SetBuckets([]int)       {}
 func (fakeNativeWarmer) SetCells(int)           {}
 func (fakeNativeWarmer) Snapshot() (int, int)   { return 0, 0 }
 func (fakeNativeWarmer) NoteActivity()          {}
@@ -581,6 +1200,55 @@ func TestNativeWarmHintVisibleBeforeSpriteViaRaw(t *testing.T) {
 	m = updated.(tui.Model)
 	if m.BrowseWarmHintForTest() == "" {
 		t.Fatal("native warm must track footer progress before sprite paint")
+	}
+}
+
+func TestDialogOpenClearsNativeCompositor(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	updated, _ = m.Update(tui.NativeCompositeFlushMsgForTest())
+	m = updated.(tui.Model)
+	if m.CompositorPendingForTest() == "" {
+		t.Fatal("expected pending DCS after paint")
+	}
+
+	buf.Reset()
+	updated, cmd := m.Update(key("enter"))
+	m = updated.(tui.Model)
+	if !m.DialogVisible() {
+		t.Fatal("expected dialog")
+	}
+	// Run cover wipe cmd (SetNativeOnce clear / WriteDirect).
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			updated, _ = m.Update(msg)
+			m = updated.(tui.Model)
+		}
+	}
+	if pending := m.CompositorPendingForTest(); strings.Contains(pending, dcs) {
+		t.Fatalf("dialog must drop paint pending, got %q", pending)
+	}
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatal("dialog must clear painted native state")
+	}
+	buf.Reset()
+	m.CompositorWriteFrameForTest([]byte("cells\x1b[?2026l"))
+	if strings.Contains(buf.String(), dcs) {
+		t.Fatalf("cell flush must not re-tail sprite over dialog: %q", buf.String())
 	}
 }
 
@@ -614,8 +1282,8 @@ func TestDialogCloseRepaintsNativeOverlay(t *testing.T) {
 	if m.DialogVisible() {
 		t.Fatal("expected dialog closed")
 	}
-	if !m.NativePaintPendingForTest() && !m.NativeOverlayDirtyForTest() {
-		t.Fatal("expected native overlay dirty/pending after dialog close")
+	if !m.NativeOverlayDirtyForTest() && m.NativePaintANSIForTest() == "" {
+		t.Fatal("expected native overlay dirty or painted after dialog close")
 	}
 }
 

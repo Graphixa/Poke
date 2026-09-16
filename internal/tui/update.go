@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
@@ -19,38 +18,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(tea.RawMsg); ok {
 		return m, nil
 	}
+	if _, ok := msg.(nativeCompositeFlushMsg); ok {
+		if m.compositor != nil {
+			m.compositor.FlushPending()
+		}
+		return m, nil
+	}
 	next, cmd := m.update(msg)
 	n := next.(Model)
-	// Always drain a dirty overlay after updates — including follow-up paints,
-	// where a warm/list tick may have set dirty while paint was pending.
+	n.maybeCommitGlanceHold()
+	n.captureGlanceAbilities()
 	n, overlay := n.scheduleNativeOverlay()
 	return n, tea.Batch(cmd, overlay)
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case nativeOverlayMsg:
-		m, cmd := m.emitNativeOverlay(msg.followUp)
-		return m, tea.Batch(cmd, m.warmFooterPatchIfNeeded())
-
-	case spinner.TickMsg:
-		if m.imageState != ImageLoading {
-			return m, nil
+	case nativeReassertMsg:
+		if m.nativeOverlayReady() {
+			m.markNativeOverlayDirty()
 		}
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
+		return m, nil
 
 	case tea.WindowSizeMsg:
+		// Wipe sixel at the pre-resize art origin before layout moves — WT does
+		// not erase old placements when CUP shifts.
+		var wipe tea.Cmd
+		if msg.Width != m.width || msg.Height != m.height {
+			wipe = m.wipeNativeGraphics()
+		}
 		prevShow := m.layout().ShowSprite
 		prevSide := m.currentSpriteSide()
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.SetWidth(msg.Width)
 		m.ensureListVisible()
+		if m.showDialog {
+			m.syncDialogViewport()
+		}
+		m.invalidateNativePaintGeometry()
+		m.markNativeOverlayDirty()
 		layoutCmd := m.handleSpriteLayoutChange(prevShow, prevSide)
 		m.notifyWarmer()
-		return m, m.noteFirstLayout(layoutCmd)
+		return m, tea.Batch(wipe, m.noteFirstLayout(layoutCmd))
 
 	case dossierCoreMsg:
 		if msg.gen != m.selectionGen || !m.isSelectedID(msg.speciesID) {
@@ -76,9 +86,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.applyCore(msg.dossier, msg.complete)
 		if m.showDialog {
 			m.syncDialogViewport()
+		} else if m.nativeSpriteActive() {
+			// Core only adds genus cells outside the art box; the Sixel
+			// payload is unchanged. Repaint once, in place (no space-clear, no
+			// delayed ~60ms insurance) so the art re-lays if the cell flush
+			// grazed it — without the second, delayed redraw that read as lag
+			// on WT while browsing new species. origin/main did not repaint the
+			// overlay on core arrival at all; this is the minimal safe version.
+			m.markNativeOverlayDirty()
 		}
 		var extrasCmd tea.Cmd
-		if !msg.complete && !r.extrasReady() {
+		// Extras only while the dossier overlay is open — browse highlight loads core alone.
+		if m.showDialog && !msg.complete && !r.extrasReady() {
 			extrasCmd = m.ensureDossierExtras(msg.slug)
 		}
 		return m, tea.Batch(extrasCmd, m.ensureSpriteLoad())
@@ -197,9 +216,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var patch tea.Cmd
 		nativeComplete := msg.Stage == WarmStageNative && msg.Total > 0 && msg.Done >= msg.Total
-		if nativeComplete && m.nativeSpriteActive() {
+		if !m.composite && nativeComplete && m.nativeSpriteActive() {
 			patch = clearWarmFooterRawCmd(m)
-		} else if m.nativeSpriteActive() {
+		} else if !m.composite && m.nativeSpriteActive() {
 			switch {
 			case right != "":
 				patch = patchWarmFooterCmd(m)
@@ -219,13 +238,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.ForceQuit) {
 		m.quitting = true
-		return m, tea.Quit
+		m.glanceHoldID = 0
+		return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
 	}
 
 	if m.showHelp {
 		if key.Matches(msg, m.keys.Help, m.keys.Clear) {
 			m.showHelp = false
-			m.markNativeOverlayDirtyFollowUp()
+			// Help View wiped sixel; force space-clear on restore paint.
+			m.invalidateNativePaintGeometry()
+			m.markNativeOverlayDirty()
 		}
 		return m, nil
 	}
@@ -234,35 +256,27 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleDialogKey(msg)
 	}
 
-	if key.Matches(msg, m.keys.Unbound) {
-		return m, nil
-	}
-
 	if key.Matches(msg, m.keys.Help) {
 		m.showHelp = true
-		return m, nil
+		m.glanceHoldID = 0
+		covered, wipe := m.coverNativeOverlay()
+		return covered, wipe
 	}
 
 	if key.Matches(msg, m.keys.Enter) {
 		return m.openDialog()
 	}
 
-	if key.Matches(msg, m.keys.Info) {
-		if m.queryValue() == "" {
-			return m.openDialog()
-		}
-		return m.updateSearch(msg)
-	}
-
-	if key.Matches(msg, m.keys.Quit) {
-		if m.layout().TooSmall || m.canQuitWithQ() {
-			m.quitting = true
-			return m, tea.Quit
-		}
-		return m.updateSearch(msg)
+	if key.Matches(msg, m.keys.ViewCycle) {
+		return m.setBrowseView(m.browseView.Next())
 	}
 
 	if key.Matches(msg, m.keys.Clear) {
+		if m.queryValue() == "" || m.layout().TooSmall {
+			m.quitting = true
+			m.glanceHoldID = 0
+			return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
+		}
 		m.clearQuery()
 		return m, m.syncSelectionLoads()
 	}
@@ -275,39 +289,40 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.moveCursor(1)
 		return m, m.syncSelectionLoads()
 	}
-	// Tab on browse reserved for future sprite variants — no-op for now.
-	// TODO(sprite-variants): cycle pixel / official-artwork when assets exist.
-	if key.Matches(msg, m.keys.TabNext, m.keys.TabPrev) {
-		return m, nil
-	}
 
 	return m.updateSearch(msg)
 }
 
 func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, m.keys.Clear, m.keys.Quit) {
+	if key.Matches(msg, m.keys.Clear) {
 		m.showDialog = false
-		// Dialog wiped native graphics from the cell grid; re-paint cached art.
-		m.markNativeOverlayDirtyFollowUp()
+		// Dialog wiped native graphics from the cell grid; force space-clear restore.
+		m.invalidateNativePaintGeometry()
+		m.markNativeOverlayDirty()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.TabNext) {
+	stacked := m.dialogStacked()
+	// Stacked pager: ←/→ sections, ↑/↓ scroll.
+	// Side rail: ↑/↓ sections (vertical list), ←/→ still cycle sections; PgUp/PgDn scroll.
+	if key.Matches(msg, m.keys.TabNext) || key.Matches(msg, m.keys.Right) ||
+		(!stacked && key.Matches(msg, m.keys.Down)) {
 		m.dialogSection = m.dialogSection.Next()
 		m.dialogVP.GotoTop()
 		m.syncDialogViewport()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.TabPrev) {
+	if key.Matches(msg, m.keys.TabPrev) || key.Matches(msg, m.keys.Left) ||
+		(!stacked && key.Matches(msg, m.keys.Up)) {
 		m.dialogSection = m.dialogSection.Prev()
 		m.dialogVP.GotoTop()
 		m.syncDialogViewport()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.Up) {
+	if stacked && key.Matches(msg, m.keys.Up) {
 		m.scrollDialog(-1)
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.Down) {
+	if stacked && key.Matches(msg, m.keys.Down) {
 		m.scrollDialog(1)
 		return m, nil
 	}
@@ -338,11 +353,29 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.showDialog = true
-	m.dialogSection = DialogSummary
+	m.glanceHoldID = 0
+	m.dialogSection = DialogOverview
 	m.dialogVP.GotoTop()
 	m.syncDialogViewport()
 	_ = sel
-	return m, m.ensureDossierLoad()
+	covered, wipe := m.coverNativeOverlay()
+	return covered, tea.Batch(wipe, covered.ensureDossierLoad())
+}
+
+func (m Model) setBrowseView(v BrowseView) (tea.Model, tea.Cmd) {
+	if m.browseView == v {
+		return m, nil
+	}
+	prevShow := m.layout().ShowSprite
+	prevSide := m.currentSpriteSide()
+	// Wipe sixel at the pre-switch art origin before layout moves — same as
+	// resize. Clearing only the new (often smaller) box leaves hero spill under
+	// glance / between cards.
+	wipe := m.wipeNativeGraphics()
+	m.browseView = v
+	m.markNativeOverlayDirty()
+	m.notifyWarmer()
+	return m, tea.Batch(wipe, m.handleSpriteLayoutChange(prevShow, prevSide))
 }
 
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -378,8 +411,15 @@ func (m *Model) syncSelectionLoads() tea.Cmd {
 	if id == m.trackedID {
 		return nil
 	}
+	displayed := m.glanceHoldID
+	if displayed == 0 {
+		displayed = m.trackedID
+	}
 	m.trackedID = id
 	m.bumpSelection()
+	if displayed > 0 && displayed != id {
+		m.glanceHoldID = displayed
+	}
 	m.notifyWarmer()
 	return m.ensureSelectionLoads()
 }
@@ -398,7 +438,8 @@ func (m *Model) notifyWarmer() {
 	}
 	if m.warmer != nil {
 		cells := m.currentSpriteCells()
-		if cells >= sprite.MinFrameSize {
+		if cells >= sprite.SmallestFrameBucket() {
+			m.warmer.SetBuckets(sprite.BrowseWarmBuckets())
 			m.warmer.SetCells(cells)
 		}
 		m.warmer.Prioritize(sel.ID)
@@ -410,7 +451,8 @@ func (m *Model) notifyWarmer() {
 		m.artworkWarmer.SetNeighborsFromList(m.filtered, m.cursor, warmerNeighborRadius)
 	}
 	if m.nativeWarmer != nil {
-		if cells := m.currentSpriteCells(); cells >= sprite.MinFrameSize {
+		if cells := m.currentSpriteCells(); cells >= sprite.SmallestFrameBucket() {
+			m.nativeWarmer.SetBuckets(sprite.BrowseWarmBuckets())
 			m.nativeWarmer.EnsureStarted(m.ctx, cells)
 		}
 		m.nativeWarmer.Prioritize(sel.ID)
@@ -420,7 +462,25 @@ func (m *Model) notifyWarmer() {
 }
 
 func (m *Model) ensureSelectionLoads() tea.Cmd {
-	return m.ensureSpriteLoad()
+	return tea.Batch(m.ensureDossierCore(), m.ensureSpriteLoad())
+}
+
+// ensureDossierCore loads pokemon+species for glance genus / Enter dossier without extras.
+func (m *Model) ensureDossierCore() tea.Cmd {
+	sel, ok := m.selected()
+	if !ok || m.details == nil {
+		return nil
+	}
+	r := m.ensureResource(sel.ID)
+	if r.HasCore {
+		return nil
+	}
+	if r.loadingCore {
+		return nil
+	}
+	r.loadingCore = true
+	r.CoreErr = nil
+	return loadDossierCoreCmd(m.beginDossierLoad(sel.ID), m.details, m.selectionGen, sel.ID, sel.Slug)
 }
 
 func (m *Model) ensureDossierLoad() tea.Cmd {
@@ -517,7 +577,7 @@ func (m *Model) clearNativeDisplay() {
 
 func (m *Model) currentSpriteSide() int {
 	lay := m.layout()
-	if !lay.ShowSprite || lay.SpriteSize < sprite.MinFrameSize {
+	if !lay.ShowSprite || lay.SpriteSize < sprite.SmallestFrameBucket() {
 		return 0
 	}
 	return lay.SpriteSize
@@ -536,7 +596,7 @@ func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 	side := m.currentSpriteSide()
 	if !prevShow || prevSide != side {
 		m.resetSpriteLayoutState()
-		return m.ensureSpriteLoad()
+		return tea.Batch(m.ensureDossierCore(), m.ensureSpriteLoad())
 	}
 	return nil
 }
@@ -573,13 +633,6 @@ func (m *Model) noteFirstLayout(cmd tea.Cmd) tea.Cmd {
 func (m *Model) ensureSpriteLoad() tea.Cmd {
 	load := m.beginSpriteLoad()
 	m.syncWarmerBusy()
-	if load == nil {
-		return nil
-	}
-	if m.imageState == ImageLoading {
-		tick := m.spinner.Tick()
-		return tea.Batch(load, func() tea.Msg { return tick })
-	}
 	return load
 }
 
@@ -599,18 +652,19 @@ func (m *Model) beginSpriteLoad() tea.Cmd {
 	force := false
 	if m.imageSpeciesID == sel.ID && m.imageCells == cells && !m.imagePlaceholder && m.imageANSI != "" && !m.imageLoading {
 		m.imageState = ImageReady
-		m.imageSpinner = false
 		// Only treat official artwork as final. Pixel frames must upgrade when
 		// background artwork warm finishes for this species.
 		if m.imageKind == "artwork" {
-			if m.imageNative && m.imageANSI != "" {
-				m.dirtyNativeIfPaintChanged(sel.ID, cells, m.imageANSI)
+			if m.imageNative && m.imageANSI != "" &&
+				!(sel.ID == m.nativePaintSpecies && cells == m.nativePaintCells && m.imageANSI == m.nativePaintANSI) {
+				m.markNativeOverlayDirty()
 			}
 			return nil
 		}
 		if !m.artworkReady(sel.ID) {
-			if m.imageNative && m.imageANSI != "" {
-				m.dirtyNativeIfPaintChanged(sel.ID, cells, m.imageANSI)
+			if m.imageNative && m.imageANSI != "" &&
+				!(sel.ID == m.nativePaintSpecies && cells == m.nativePaintCells && m.imageANSI == m.nativePaintANSI) {
+				m.markNativeOverlayDirty()
 			}
 			return nil
 		}

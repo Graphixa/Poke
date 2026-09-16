@@ -183,7 +183,7 @@ func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells
 		return RenderResult{}, false
 	}
 	fw, fh := e.frameSize()
-	if cells >= MinFrameSize {
+	if cells >= SmallestFrameBucket() {
 		fw, fh = FrameSizeFor(cells)
 	}
 	rend := e.Modes.Resolve(e.Caps, e.Preference)
@@ -281,7 +281,7 @@ func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cel
 		return false
 	}
 	fw, fh := e.frameSize()
-	if cells >= MinFrameSize {
+	if cells >= SmallestFrameBucket() {
 		fw, fh = FrameSizeFor(cells)
 	}
 	bg := e.Background
@@ -305,7 +305,7 @@ func (e *Engine) HasNativeFile(ctx context.Context, pokemon domain.Pokemon, cell
 		return false
 	}
 	fw, fh := e.frameSize()
-	if cells >= MinFrameSize {
+	if cells >= SmallestFrameBucket() {
 		fw, fh = FrameSizeFor(cells)
 	}
 	bg := e.Background
@@ -343,7 +343,7 @@ func (e *Engine) renderAtQuality(ctx context.Context, pokemon domain.Pokemon, ce
 		return RenderResult{UsePlaceholder: true}
 	}
 	fw, fh := e.frameSize()
-	if cells >= MinFrameSize {
+	if cells >= SmallestFrameBucket() {
 		fw, fh = FrameSizeFor(cells)
 	}
 	label := displayName(pokemon)
