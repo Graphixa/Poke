@@ -368,10 +368,14 @@ func (m Model) setBrowseView(v BrowseView) (tea.Model, tea.Cmd) {
 	}
 	prevShow := m.layout().ShowSprite
 	prevSide := m.currentSpriteSide()
+	// Wipe sixel at the pre-switch art origin before layout moves — same as
+	// resize. Clearing only the new (often smaller) box leaves hero spill under
+	// glance / between cards.
+	wipe := m.wipeNativeGraphics()
 	m.browseView = v
 	m.markNativeOverlayDirty()
 	m.notifyWarmer()
-	return m, m.handleSpriteLayoutChange(prevShow, prevSide)
+	return m, tea.Batch(wipe, m.handleSpriteLayoutChange(prevShow, prevSide))
 }
 
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

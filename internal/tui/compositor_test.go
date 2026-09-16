@@ -95,6 +95,26 @@ func TestCompositorWriterFlushPendingKeepsPending(t *testing.T) {
 	}
 }
 
+func TestCompositorWriterFlushSkipsAfterFrameTail(t *testing.T) {
+	var buf bytes.Buffer
+	c := newCompositorWriter(&buf)
+	c.SetNative("DCS")
+	if _, err := c.Write(frameEnd()); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	c.FlushPending()
+	if got := buf.String(); got != "" {
+		t.Fatalf("flush after frame tail must not double-write sixel: got %q", got)
+	}
+	// A new SetNative re-arms the flush (viewEquals skip path).
+	c.SetNative("DCS2")
+	c.FlushPending()
+	if got := buf.String(); got != "DCS2" {
+		t.Fatalf("new SetNative must flush: got %q", got)
+	}
+}
+
 func TestCompositorWriterPaintNowKeepsPending(t *testing.T) {
 	var buf bytes.Buffer
 	c := newCompositorWriter(&buf)

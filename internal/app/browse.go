@@ -145,6 +145,13 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	img := spriteimage.New()
 	_, _ = spritechafa.Detect()
 	caps := sprite.DetectCapabilities(img.Available())
+	if caps.NativeImage {
+		// Measure real cell pixels before the engine/warmers exist so every
+		// sixel encode fits the art box (overpaint fix). Fallback: 10×20.
+		if pxW, pxH, ok := queryCellPixelSize(); ok {
+			sprite.SetCellPixelSize(pxW, pxH)
+		}
+	}
 	debuglog.StartupMark("startup.capabilities_ready")
 	debuglog.Renderf("render.backend.selected native=%v protocol=%q term_program=%q wt_session=%v",
 		caps.NativeImage, img.ProtocolName(), os.Getenv("TERM_PROGRAM"), os.Getenv("WT_SESSION") != "")

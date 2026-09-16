@@ -190,6 +190,9 @@ func ClearCellRectForTest(row, col, w, h int) string {
 	return clearCellRect(row, col, w, h)
 }
 
+// BrowseDataForTest exposes the browse view model for layout/overlay tests.
+func (m Model) BrowseDataForTest() views.BrowseData { return m.browseData() }
+
 // NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite
 // with a leading space-clear (geometry change).
 func NativeOverlayPaintSeqForTest(row, col, artW, artH int, ansi string) string {

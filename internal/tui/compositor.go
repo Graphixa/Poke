@@ -21,6 +21,7 @@ type compositorWriter struct {
 	mu      sync.Mutex
 	pending []byte
 	oneshot bool // clear: append once then drop; paint: re-append every frame
+	wrote   bool // pending already written since SetNative (dedupe flush-vs-tail)
 }
 
 // End-of-frame markers from Bubble Tea's cursed renderer (sync output or
@@ -65,18 +66,25 @@ func (c *compositorWriter) SetNative(seq string) {
 	c.mu.Lock()
 	c.pending = []byte(seq)
 	c.oneshot = false
+	c.wrote = false
 	c.mu.Unlock()
 }
 
-// FlushPending writes the current pending native sequence immediately without
-// clearing it. Used after View so a viewEquals skip still gets DCS, while a
-// normal frame already tailed the same bytes (harmless overwrite).
+// FlushPending writes the current pending native sequence when no frame tail
+// has written it since SetNative (viewEquals skip). When a completed frame
+// already tailed the same bytes, skip — a 40×20 sixel written twice per
+// scroll step was measurable lag.
 func (c *compositorWriter) FlushPending() {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
+	if c.wrote {
+		c.mu.Unlock()
+		return
+	}
 	seq := append([]byte(nil), c.pending...)
+	c.wrote = len(seq) > 0
 	c.mu.Unlock()
 	if len(seq) == 0 {
 		return
@@ -91,6 +99,9 @@ func (c *compositorWriter) PaintNow(seq string) {
 		return
 	}
 	c.SetNative(seq)
+	c.mu.Lock()
+	c.wrote = true
+	c.mu.Unlock()
 	_, _ = c.inner.Write([]byte(seq))
 }
 
@@ -154,6 +165,7 @@ func (c *compositorWriter) writePendingTail() {
 		c.pending = nil
 		c.oneshot = false
 	}
+	c.wrote = len(seq) > 0
 	c.mu.Unlock()
 	if len(seq) == 0 {
 		return

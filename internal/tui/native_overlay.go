@@ -168,8 +168,10 @@ func (m Model) emitNativeOverlay() (Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	// Clear only when replacing a different painted bucket. After an explicit
-	// wipe (cells==0) the rect is already empty — skip a second space-clear flash.
+	// Clear only when replacing a different painted bucket. Same-bucket species
+	// scroll overwrites in place (DCS only — no clear, no flicker); the encode
+	// fits the art box because cell pixels are measured at startup, so no spill
+	// accumulates. After an explicit wipe (cells==0) the rect is already empty.
 	clearFirst := m.nativePaintCells > 0 && m.nativePaintCells != m.imageCells
 	seq := nativeOverlayPaintSeq(row, col, artW, artH, m.imageANSI, clearFirst)
 	debuglog.Renderf("native overlay emit row=%d col=%d %dx%d bytes=%d clear=%v",

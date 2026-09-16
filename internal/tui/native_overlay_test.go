@@ -57,7 +57,8 @@ func TestStartupPaintsFirstNativeSprite(t *testing.T) {
 }
 
 
-// Warm same-bucket scroll must overwrite in place (DCS only) — no space-clear flash.
+// Warm same-bucket scroll must overwrite in place (DCS only) — no space-clear
+// flash. Encode fits the box (measured cell px), so no spill accumulates.
 func TestWarmScrollOverwritesWithoutSpaceClear(t *testing.T) {
 	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
 	const dcsB = "\x1bP0;0;8q#B~~~\x1b\\"
@@ -83,7 +84,6 @@ func TestWarmScrollOverwritesWithoutSpaceClear(t *testing.T) {
 		m = model.(tui.Model)
 	}
 	if m.NativePaintANSIForTest() != dcsA {
-		// WindowSize may load via cache; force paint if needed.
 		idA, _ := m.SelectedID()
 		cells := m.CurrentSpriteCells()
 		updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
@@ -848,6 +848,43 @@ func TestResizeWipesNativeBeforeRelayout(t *testing.T) {
 	// (DCS lands via post-View flush / frame tail — not required in this buf check).
 	if dcsAt := strings.Index(out, dcs); dcsAt >= 0 && dcsAt < clearAt {
 		t.Fatal("stale DCS must not precede the resize wipe clear")
+	}
+}
+
+func TestViewCycleWipesNativeBeforeRelayout(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	if m.NativePaintANSIForTest() != dcs {
+		t.Fatal("expected painted native")
+	}
+	buf.Reset()
+
+	// Tab Glance → Art: must WriteDirect-clear the glance origin before hero layout.
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updated.(tui.Model)
+	if m.ActiveBrowseView() != tui.BrowseArt {
+		t.Fatalf("tab → Art, got %v", m.ActiveBrowseView())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "48;2;") {
+		t.Fatalf("view cycle must WriteDirect theme space-clear of old art box, got %q", out)
+	}
+	if m.NativePaintANSIForTest() != "" {
+		t.Fatal("wipe must clear paint identity before the new view encodes")
 	}
 }
 

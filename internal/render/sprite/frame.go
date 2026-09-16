@@ -28,20 +28,31 @@ const (
 	// FrameWidth / FrameHeight are the preferred (max) frame dimensions.
 	FrameWidth  = MaxFrameSize
 	FrameHeight = MaxFrameSize / CellAspectY
+)
 
-	// SixelCellPxW/H convert terminal cells to sixel pixel targets.
-	//
-	// Defaults match this repo's Chafa path and typical Windows Terminal /
-	// Cascadia geometry (10×20, still 1:2). The old 8×16 fallback under-filled
-	// the 24×12 art reservation on WT (empty below/right of the graphic).
-	// Cache identity uses the resulting pixel dimensions, so a future CSI 16 t
-	// cell-size query naturally creates distinct artefacts without migration.
-	//
-	// TODO(terminal): query CSI 16 t / DECSRPP when production capability probing
-	// exposes reliable cell pixel dimensions; until then retain this fallback.
+// SixelCellPxW/H convert terminal cells to sixel pixel targets.
+//
+// Defaults match typical Windows Terminal / Cascadia geometry (10×20). App
+// startup measures the real cell size via XTWINOPS (CSI 16 t) and overrides
+// through SetCellPixelSize before the engine or any warmer starts — encoding
+// with a guessed cell height taller than reality paints sixel past the art
+// box (the browse overpaint bug). Cache identity includes the resulting pixel
+// dimensions, so changed cell sizes key distinct artefacts without migration.
+var (
 	SixelCellPxW = 10
 	SixelCellPxH = 20
 )
+
+// SetCellPixelSize overrides the cell→pixel conversion with a measured value.
+// Call once at startup before rendering begins; out-of-range values are
+// ignored (keeps the safe default on bogus terminal replies).
+func SetCellPixelSize(pxW, pxH int) {
+	if pxW < 3 || pxW > 40 || pxH < 6 || pxH > 80 {
+		return
+	}
+	SixelCellPxW = pxW
+	SixelCellPxH = pxH
+}
 
 // FrameBuckets lists native sixel frame buckets (16 glance / 24 / 32 / 40 hero).
 var FrameBuckets = [...]int{16, 24, 32, 40}
