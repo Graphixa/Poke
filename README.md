@@ -164,7 +164,7 @@ Representative browse screenshots are not checked into the repository yet. Until
 ## Development
 
 ```bash
-make check          # fmt-check, vet, race tests, cross-build
+make check          # fmt-check, vet, staticcheck, gosec, race, cross-build
 make release-check  # goreleaser check + snapshot + archive name verification
 ```
 
@@ -174,6 +174,6 @@ On Windows without `bash` on `PATH`, archive verification can use:
 pwsh -File scripts/verify-release-archives.ps1
 ```
 
-CI runs format, vet, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser and publishes GitHub Release assets with checksums.
+CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser and publishes GitHub Release assets with checksums.
 
 Release notes are grouped from conventional commit subjects (`feat`, `fix`, `docs`, …).

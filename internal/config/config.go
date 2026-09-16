@@ -493,7 +493,7 @@ type CommandRunner interface {
 type ExecRunner struct{}
 
 func (ExecRunner) Run(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) // #nosec G204 -- user $VISUAL/$EDITOR or platform default
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

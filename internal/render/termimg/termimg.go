@@ -23,14 +23,12 @@ const (
 
 var (
 	initOnce sync.Once
-	active   Protocol
 )
 
 // Init applies the one-time TERMIMG_BYPASS_DETECTION workaround for the
 // session-selected protocol. Subsequent calls are no-ops.
 func Init(p Protocol) {
 	initOnce.Do(func() {
-		active = p
 		if p == ProtocolNone {
 			return
 		}

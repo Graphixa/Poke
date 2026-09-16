@@ -66,16 +66,16 @@ func (s Sprites) Images() Images {
 // BrowseEntry is the compact, in-memory row used for list selection and glance
 // stats/About (so the right pane does not wait on dossier core).
 type BrowseEntry struct {
-	ID              int      `json:"id"`
-	Slug            string   `json:"slug"`
-	Name            string   `json:"name"`
-	Types           []string `json:"types"`
-	HP              int      `json:"hp"`
-	Attack          int      `json:"attack"`
-	Defence         int      `json:"defence"`
-	SpAttack        int      `json:"sp_attack"`
-	SpDefence       int      `json:"sp_defence"`
-	Speed           int      `json:"speed"`
+	ID              int           `json:"id"`
+	Slug            string        `json:"slug"`
+	Name            string        `json:"name"`
+	Types           []string      `json:"types"`
+	HP              int           `json:"hp"`
+	Attack          int           `json:"attack"`
+	Defence         int           `json:"defence"`
+	SpAttack        int           `json:"sp_attack"`
+	SpDefence       int           `json:"sp_defence"`
+	Speed           int           `json:"speed"`
 	HeightDecimeter int           `json:"height"`
 	WeightHectogram int           `json:"weight"`
 	BaseExperience  int           `json:"base_exp"`

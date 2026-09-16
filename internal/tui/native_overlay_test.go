@@ -56,7 +56,6 @@ func TestStartupPaintsFirstNativeSprite(t *testing.T) {
 	}
 }
 
-
 // Warm same-bucket scroll must overwrite in place (DCS only) — no space-clear
 // flash. Encode fits the box (measured cell px), so no spill accumulates.
 func TestWarmScrollOverwritesWithoutSpaceClear(t *testing.T) {
@@ -318,8 +317,6 @@ func TestGlanceHoldSkipsStickyRawUntilCommit(t *testing.T) {
 		t.Fatal("after commit, immediate Raw must paint new sixel")
 	}
 }
-
-
 
 func TestNativeOverlayImmediateOnStableReady(t *testing.T) {
 	const dcsA = "\x1bP0;0;8q#A~~~\x1b\\"
@@ -708,7 +705,6 @@ func TestNativeOverlayPaintOnlySkipsSpaceClear(t *testing.T) {
 	}
 }
 
-
 // Browsing a new species loads its dossier core in the background. Its arrival
 // changes header genus / About cells (outside the art box) but not the Sixel
 // payload. It must repaint once, in place — no space-clear flash.
@@ -785,7 +781,6 @@ func TestNativeOverlayReassertOverwritesWithoutClear(t *testing.T) {
 		t.Fatal("reassert must not space-clear")
 	}
 }
-
 
 func TestCompositeOverlayDefersDCSUntilFlushMsg(t *testing.T) {
 	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"

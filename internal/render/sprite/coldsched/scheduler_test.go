@@ -69,15 +69,6 @@ func (f *fakeRenderer) release(speciesID int) {
 	}
 }
 
-func (f *fakeRenderer) releaseAllStarted() {
-	f.mu.Lock()
-	ids := append([]int(nil), f.started...)
-	f.mu.Unlock()
-	for _, id := range ids {
-		f.release(id)
-	}
-}
-
 func (f *fakeRenderer) LookupCached(_ context.Context, pokemon domain.Pokemon, cells int) (coldsched.ColdResult, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

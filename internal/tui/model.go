@@ -141,14 +141,14 @@ type Model struct {
 	imagePlaceholder bool
 	imageLoading     bool
 
-	spriteCancel       context.CancelFunc
-	spriteReqID        int
-	spriteLoadSpecies  int
-	coldSched          *coldsched.Scheduler
-	coldFrameCh        chan coldFrameMsg
-	dossierCancel      context.CancelFunc
-	dossierLoadCtx     context.Context
-	dossierLoadSpecies int
+	spriteCancel          context.CancelFunc
+	spriteReqID           int
+	spriteLoadSpecies     int
+	coldSched             *coldsched.Scheduler
+	coldFrameCh           chan coldFrameMsg
+	dossierCancel         context.CancelFunc
+	dossierLoadCtx        context.Context
+	dossierLoadSpecies    int
 	nativeOverlayDirty    bool
 	nativeFollowUpPending bool // armed until post-flush overwrite fires (Raw path)
 	nativePaintSpecies    int

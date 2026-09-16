@@ -44,7 +44,7 @@ func TestBackgroundWarmersStartAfterUIReady(t *testing.T) {
 		t.Fatal("background warmer must start exactly once after UI ready")
 	}
 	updated, _ = m.Update(tea.WindowSizeMsg{Width: 121, Height: 52})
-	m = updated.(tui.Model)
+	_ = updated.(tui.Model)
 	if !w.started.Load() {
 		t.Fatal("UI ready signal must remain latched")
 	}

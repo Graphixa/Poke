@@ -154,10 +154,7 @@ func envSixel() bool {
 		return true
 	}
 	termName := strings.ToLower(os.Getenv("TERM"))
-	if strings.Contains(termName, "sixel") {
-		return true
-	}
-	return false
+	return strings.Contains(termName, "sixel")
 }
 
 // Render encodes the image with the selected native protocol.
@@ -236,10 +233,6 @@ func (r *Renderer) RenderPNG(pngData []byte, w, h int) (sprite.Frame, error) {
 	return r.Render(context.Background(), img, sprite.RenderOptions{
 		Width: w, Height: h, Source: sprite.SourcePixel,
 	})
-}
-
-func bypassDetection(_ protocol) (restore func()) {
-	return func() {}
 }
 
 // ClearBestEffort deletes prior native placements for Kitty/iTerm.

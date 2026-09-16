@@ -4,12 +4,12 @@ import "testing"
 
 func TestFormatGenerationRoman(t *testing.T) {
 	cases := map[string]string{
-		"generation-i":   "Generation I",
-		"generation-iv":  "Generation IV",
-		"generation-ix":  "Generation IX",
-		"GENERATION-II":  "Generation II",
-		"":               "",
-		"gen-1":          "",
+		"generation-i":  "Generation I",
+		"generation-iv": "Generation IV",
+		"generation-ix": "Generation IX",
+		"GENERATION-II": "Generation II",
+		"":              "",
+		"gen-1":         "",
 	}
 	for in, want := range cases {
 		if got := FormatGeneration(in); got != want {

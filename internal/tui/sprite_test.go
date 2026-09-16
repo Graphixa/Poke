@@ -163,9 +163,9 @@ func TestSpriteCancelOnSelectionChange(t *testing.T) {
 		Details: details,
 		Sprites: sprites,
 	})
-	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
 	m = updated.(tui.Model)
-	cmd = m.ForceSpriteLoadForTest()
+	cmd := m.ForceSpriteLoadForTest()
 	if cmd == nil {
 		t.Fatal("expected sprite cmd")
 	}
@@ -386,7 +386,7 @@ func TestSelectionChangeBlanksImagePane(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
 		t.Fatalf("image state=%d want loading on cold miss", m.ImageStateForTest())
 	}
-	
+
 }
 
 func TestResourceCacheLRUPlateau(t *testing.T) {
@@ -446,7 +446,7 @@ func TestColdMissShowsSpinnerImmediately(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
 		t.Fatalf("image state=%d want loading immediately on cold miss", m.ImageStateForTest())
 	}
-	
+
 	if !m.SelectedSpriteLoadingForTest() {
 		t.Fatal("cold miss must start encode")
 	}
@@ -467,7 +467,7 @@ func TestWarmCacheHitPaintsImmediatelyWithoutSpinner(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("image state=%d want ready on warm hit", m.ImageStateForTest())
 	}
-	
+
 	if !m.HasSpriteANSI() || m.ImageANSILenForTest() != len("WARM") {
 		t.Fatal("warm hit must paint cached frame immediately")
 	}
@@ -480,7 +480,7 @@ func TestWarmCacheHitPaintsImmediatelyWithoutSpinner(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("after move image state=%d want ready", m.ImageStateForTest())
 	}
-	
+
 	if sprites.calls.Load() != 0 {
 		t.Fatalf("warm navigation must not cold-render, calls=%d", sprites.calls.Load())
 	}
@@ -513,7 +513,7 @@ func TestSelectionStartsSpriteLoadImmediately(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageLoading) {
 		t.Fatalf("image state=%d want loading", m.ImageStateForTest())
 	}
-	
+
 	close(sprites.block)
 }
 
@@ -686,7 +686,7 @@ func TestWarmSelectionBypassesUnrelatedColdRender(t *testing.T) {
 	if m.ImageStateForTest() != int(tui.ImageReady) {
 		t.Fatalf("warm neighbor state=%d want ready", m.ImageStateForTest())
 	}
-	
+
 	if m.ImageANSILenForTest() != len("WARM5") {
 		t.Fatal("warm frame must paint immediately")
 	}

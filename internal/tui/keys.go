@@ -5,21 +5,21 @@ import "charm.land/bubbles/v2/key"
 // keyMap holds browse key bindings (Charm bubbles/key pattern).
 // Letter keys are not used as hotkeys — they type into the always-on list filter.
 type keyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	Left       key.Binding
-	Right      key.Binding
-	TabNext    key.Binding
-	TabPrev    key.Binding
-	PageUp     key.Binding
-	PageDown   key.Binding
-	Home       key.Binding
-	End        key.Binding
-	Clear      key.Binding
-	Help       key.Binding
-	Enter      key.Binding
-	ViewCycle  key.Binding
-	ForceQuit  key.Binding
+	Up        key.Binding
+	Down      key.Binding
+	Left      key.Binding
+	Right     key.Binding
+	TabNext   key.Binding
+	TabPrev   key.Binding
+	PageUp    key.Binding
+	PageDown  key.Binding
+	Home      key.Binding
+	End       key.Binding
+	Clear     key.Binding
+	Help      key.Binding
+	Enter     key.Binding
+	ViewCycle key.Binding
+	ForceQuit key.Binding
 }
 
 func defaultKeyMap() keyMap {

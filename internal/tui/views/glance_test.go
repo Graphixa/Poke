@@ -99,8 +99,8 @@ func TestBrowseGlanceShowsStatsAndAbilities(t *testing.T) {
 			{Slot: 2, Name: "competitive"},
 			{Slot: 3, Name: "friend-guard", IsHidden: true},
 		},
-		SpriteANSI:     "[sprite]",
-		ImageState:     2,
+		SpriteANSI: "[sprite]",
+		ImageState: 2,
 	})
 	for _, want := range []string{"Stats", "HP", "Abilities", "Cute Charm", "Jigglypuff", "#039"} {
 		if !strings.Contains(out, want) {
@@ -158,8 +158,8 @@ func TestBrowseGlanceCardsHugOnTallTerminal(t *testing.T) {
 			{Slot: 1, Name: "overgrow"},
 			{Slot: 2, Name: "chlorophyll"},
 		},
-		SpriteANSI:     "[sprite]",
-		ImageState:     2,
+		SpriteANSI: "[sprite]",
+		ImageState: 2,
 	})
 	if !strings.Contains(out, "Abilities") || !strings.Contains(out, "Stats") {
 		t.Fatalf("missing cards:\n%s", out)
@@ -210,9 +210,9 @@ func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 35, Attack: 55, Defense: 40, SpecialAttack: 50, SpecialDefense: 50, Speed: 90},
 		HasCore:        true,
-		Abilities: []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
-		HeaderTypes: "Electric",
-		ImageState:  2,
+		Abilities:      []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
+		HeaderTypes:    "Electric",
+		ImageState:     2,
 	}
 	row, col, artW, artH, ok := views.SpriteArtOrigin(d)
 	if !ok {
@@ -287,8 +287,8 @@ func TestBrowseGlanceAbilitiesVisibleMediumHeight(t *testing.T) {
 			{Slot: 1, Name: "overgrow"},
 			{Slot: 2, Name: "chlorophyll"},
 		},
-		SpriteANSI:     "[sprite]",
-		ImageState:     2,
+		SpriteANSI: "[sprite]",
+		ImageState: 2,
 	})
 	plain := stripANSI(out)
 	if !strings.Contains(plain, "Abilities") || !strings.Contains(plain, "Overgrow") {
@@ -309,9 +309,9 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 45},
 		HasCore:        true,
-		Abilities: []domain.AbilitySlot{{Slot: 1, Name: "overgrow"}},
-		SpriteANSI: "X",
-		ImageState: 2,
+		Abilities:      []domain.AbilitySlot{{Slot: 1, Name: "overgrow"}},
+		SpriteANSI:     "X",
+		ImageState:     2,
 	})
 	plain := stripANSI(out)
 	lines := strings.Split(plain, "\n")
@@ -376,8 +376,8 @@ func TestBrowseArtViewNoStatsAbilities(t *testing.T) {
 		BrowseView:  1,
 		BodySize:    views.HeroBucket,
 		LeftWidth:   140 - rw - 1, RightWidth: rw,
-		HasCore:     true,
-		Abilities: []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
+		HasCore:        true,
+		Abilities:      []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
 		HasBrowseStats: true,
 		Stats:          domain.Stats{HP: 35},
 		SpriteANSI:     "[hero]",

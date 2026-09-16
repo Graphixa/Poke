@@ -264,20 +264,6 @@ func footerSty() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(style.SecondaryColor())
 }
 
-func padRight(s string, w int) string {
-	if len(s) >= w {
-		return s
-	}
-	return s + strings.Repeat(" ", w-len(s))
-}
-
-func padLeft(s string, w int) string {
-	if len(s) >= w {
-		return s
-	}
-	return strings.Repeat(" ", w-len(s)) + s
-}
-
 // HelpOverlay renders the keybinding help card.
 // body is typically bubbles/help FullHelpView output; a built-in fallback is used when empty.
 func HelpOverlay(body string, width, height int) string {

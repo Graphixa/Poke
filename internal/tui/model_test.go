@@ -379,7 +379,7 @@ func TestEnterDossierNoRefetch(t *testing.T) {
 	if details.loadCalls.Load() != 1 {
 		t.Fatalf("dossier refetched: %d", details.loadCalls.Load())
 	}
-	m = apply(t, m, key("esc"), key("enter"))
+	_ = apply(t, m, key("esc"), key("enter"))
 	if details.loadCalls.Load() != 1 {
 		t.Fatalf("reopen should use cached dossier, got %d", details.loadCalls.Load())
 	}

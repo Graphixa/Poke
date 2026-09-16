@@ -96,8 +96,8 @@ type BrowseData struct {
 	// Glance cards (C3).
 	HasBrowseStats bool
 	Stats          domain.Stats
-	HasCore    bool // bottom Abilities card has data (browse.json or dossier)
-	Abilities  []domain.AbilitySlot
+	HasCore        bool // bottom Abilities card has data (browse.json or dossier)
+	Abilities      []domain.AbilitySlot
 
 	ShowHelp bool
 	HelpBody string
@@ -526,30 +526,6 @@ func boldName(name string) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(style.PrimaryColor()).Render(name)
 }
 
-func renderViewBody(d BrowseData, width, maxH int) string {
-	if d.BrowseView == 1 {
-		return renderHeroBody(d, width, maxH, ComputeHeroArt(width, maxH+glanceHeaderRows))
-	}
-	return renderGlanceBody(d, width, maxH, ComputeGlance(width, maxH+glanceHeaderRows, d.HasCore))
-}
-
-func spriteArtSize(d BrowseData, width, maxH int) (artW, artH int) {
-	var g GlanceLayout
-	if d.BrowseView == 1 {
-		g = ComputeHeroArt(width, maxH+glanceHeaderRows)
-	} else {
-		g = ComputeGlance(width, maxH+glanceHeaderRows, d.HasCore)
-	}
-	if g.ShowSprite {
-		return g.ArtW, g.ArtH
-	}
-	side := d.BodySize
-	if side < sprite.SmallestFrameBucket() {
-		side = sprite.SmallestFrameBucket()
-	}
-	return sprite.FrameSizeFor(side)
-}
-
 // SpriteArtOrigin returns the 1-indexed terminal CUP row/col of the sprite art
 // box for native overlay painting, plus the art cell size for clearing.
 // ok is false when the sprite is not shown or native art is not active.
@@ -615,29 +591,6 @@ func spriteArtRegion(d BrowseData, requireNative bool) (row, col, artW, artH int
 		return 0, 0, 0, 0, false
 	}
 	return row, col, artW, artH, true
-}
-
-func renderTextBody(lines []string, width, height int) string {
-	out := make([]string, 0, height)
-	for i := 0; i < height; i++ {
-		if i < len(lines) {
-			out = append(out, padLine(lines[i], width))
-		} else {
-			out = append(out, strings.Repeat(" ", width))
-		}
-	}
-	return strings.Join(out, "\n")
-}
-
-func padLine(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w < width {
-		return s + strings.Repeat(" ", width-w)
-	}
-	if w > width {
-		return lipgloss.NewStyle().MaxWidth(width).Render(s)
-	}
-	return s
 }
 
 func visibleRows(rows []components.ListRow, off, count int) []components.ListRow {
