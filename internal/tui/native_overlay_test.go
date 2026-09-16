@@ -359,6 +359,9 @@ func TestNativeOverlayImmediateOnStableReady(t *testing.T) {
 	if m.GlanceHoldIDForTest() == 0 {
 		t.Fatal("expected text hold while loading neighbor")
 	}
+	if m.NativePaintCellsForTest() < 1 {
+		t.Fatal("same-bucket miss must keep last paint, like Glance overwrite")
+	}
 	gen := m.SelectionGen()
 	cells = m.CurrentSpriteCells()
 	updated, cmd = m.Update(tui.ColdFrameMsgForTest(gen, nextID, cells, dcsB, false, true, "artwork"))
@@ -367,14 +370,12 @@ func TestNativeOverlayImmediateOnStableReady(t *testing.T) {
 	if m.GlanceHoldIDForTest() != 0 {
 		t.Fatal("commit must clear hold before/with native paint")
 	}
-	found := false
-	for _, p := range collectRawPayloads(cmd) {
-		if strings.Contains(p, dcsB) {
-			found = true
-		}
-	}
-	if !found {
+	joined := strings.Join(collectRawPayloads(cmd), "")
+	if !strings.Contains(joined, dcsB) {
 		t.Fatal("commit-ready paint must include immediate tea.Raw with B DCS")
+	}
+	if strings.Contains(joined, "48;2;") {
+		t.Fatal("same-bucket paint must overwrite like Glance, no space-clear")
 	}
 	if m.NativePaintANSIForTest() != dcsB {
 		t.Fatalf("tracked=%q want B", m.NativePaintANSIForTest())

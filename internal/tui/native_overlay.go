@@ -62,6 +62,12 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 	if !m.nativeOverlayReady() {
 		m.nativeOverlayDirty = false
 		m.nativeFollowUpPending = false
+		// Glance almost always cache-hits and overwrites in place (no clear).
+		// Art 40 often misses; the Glance miss path (space-clear then DCS) is
+		// what overpaints the hero card. Same bucket: keep last sixel.
+		if m.nativePaintCells > 0 && m.nativePaintCells == m.currentSpriteCells() && !m.imagePlaceholder {
+			return m, nil
+		}
 		return m.emitNativeClear()
 	}
 	m.nativeOverlayDirty = false
