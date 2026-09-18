@@ -5,6 +5,9 @@ import "charm.land/bubbles/v2/key"
 // keyMap holds browse key bindings (Charm bubbles/key pattern).
 // Letter keys are not used as hotkeys — they type into the always-on list filter.
 type keyMap struct {
+	Filters   key.Binding
+	Compare   key.Binding
+	Favourite key.Binding
 	Up        key.Binding
 	Down      key.Binding
 	Left      key.Binding
@@ -24,6 +27,9 @@ type keyMap struct {
 
 func defaultKeyMap() keyMap {
 	return keyMap{
+		Filters:   key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "filter")),
+		Compare:   key.NewBinding(key.WithKeys("f3"), key.WithHelp("F3", "compare")),
+		Favourite: key.NewBinding(key.WithKeys("f4"), key.WithHelp("F4", "favourite")),
 		Up: key.NewBinding(
 			key.WithKeys("up"),
 			key.WithHelp("↑/↓", "move"),
@@ -108,7 +114,9 @@ func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {
 // ShortHelp implements help.KeyMap for the footer strip.
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
-		k.Up,
+		k.Filters,
+		k.Compare,
+		k.Favourite,
 		k.Enter,
 		k.ViewCycle,
 		k.Clear,
@@ -118,6 +126,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 // FullHelp implements help.KeyMap for the ? overlay.
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
+		{k.Filters, k.Compare, k.Favourite},
 		{
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("backspace", "delete from search")),
 			k.Clear,

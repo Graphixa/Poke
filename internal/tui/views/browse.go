@@ -9,6 +9,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Pokedex/internal/textwidth"
 	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
@@ -64,6 +65,8 @@ type BrowseData struct {
 
 	Query       string
 	SearchView  string
+	BrowseTitle string
+	ListHint    string
 	Rows        []components.ListRow
 	ListOff     int
 	ListRows    int
@@ -156,6 +159,9 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 	footerH := 1
 	margin := 0
 	title := "Pokedex"
+	if d.BrowseTitle != "" {
+		title = d.BrowseTitle
+	}
 
 	if d.OnePane {
 		bodyH := d.Height - footerH
@@ -163,8 +169,13 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 		if d.ShowListPane || !d.HasSelected {
 			search := renderSearch(d, d.Width)
 			listH := bodyH - 1
+			prefix := search + "\n"
+			if d.ListHint != "" {
+				prefix += textwidth.PadRight(textwidth.Truncate(d.ListHint, d.Width), d.Width) + "\n"
+				listH--
+			}
 			visible := visibleRows(d.Rows, d.ListOff, listH)
-			body = search + "\n" + components.List(visible, d.Width, listH, d.ListTypes, d.ListNameCol, abbreviate)
+			body = prefix + components.List(visible, d.Width, listH, d.ListTypes, d.ListNameCol, abbreviate)
 		} else {
 			body = renderRight(d, d.Width, bodyH)
 		}
@@ -209,6 +220,9 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 func renderLeft(d BrowseData, width, height int) string {
 	search := renderSearch(d, width)
 	sep := lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", max(1, width)))
+	if d.ListHint != "" {
+		sep = textwidth.PadRight(textwidth.Truncate(d.ListHint, width), width)
+	}
 	listH := height - 2
 	if listH < 3 {
 		listH = 3

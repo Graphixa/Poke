@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/favourites"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
@@ -213,6 +215,13 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		Context:       runCtx,
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
 		ListTypes:     svc.Config.TUI.ListTypes,
+	}
+	favouriteStore := favourites.Store{Path: filepath.Join(filepath.Dir(svc.Paths.ConfigFile), "favourites.json")}
+	if ids, err := favouriteStore.Load(); err != nil {
+		opts.FavouriteLoadError = err.Error()
+	} else {
+		opts.Favourites = ids
+		opts.SaveFavourites = favouriteStore.Save
 	}
 	if entries, err := svc.Cache.LoadBrowse(); err == nil && len(entries) > 0 {
 		byID := make(map[int]domain.BrowseEntry, len(entries))

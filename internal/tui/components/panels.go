@@ -47,8 +47,10 @@ func PadSearchLine(line string, width int) string {
 
 // ListRow is one browse list entry.
 type ListRow struct {
-	Summary  domain.SpeciesSummary
-	Selected bool
+	Favourite     bool
+	DividerBefore bool
+	Summary       domain.SpeciesSummary
+	Selected      bool
 }
 
 // List renders the filtered species list. Empty lists show a plain-text cue.
@@ -80,19 +82,28 @@ func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbrev
 		}
 	}
 	lines := make([]string, 0, height)
-	for i := 0; i < height; i++ {
+	for i := 0; len(lines) < height; i++ {
 		if i >= len(rows) {
 			lines = append(lines, strings.Repeat(" ", width))
 			continue
 		}
 		row := rows[i]
+		if row.DividerBefore && i > 0 {
+			lines = append(lines, style.StatusMuted(strings.Repeat("─", width)))
+			if len(lines) == height {
+				break
+			}
+		}
 		marker := "  "
 		if row.Selected {
 			marker = "> "
 		}
+		if row.Favourite {
+			marker = marker[:1] + "★"
+		}
 		dex := output.FormatDex(row.Summary.ID)
 		rightW := textwidth.Width(dex) + 1 // one column of padding after right-aligned ID
-		available := width - len(marker)
+		available := width - textwidth.Width(marker)
 		if available < 8+rightW {
 			name := textwidth.Truncate(row.Summary.DisplayName, available)
 			lines = append(lines, textwidth.PadRight(marker+name, width))

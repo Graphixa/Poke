@@ -80,13 +80,20 @@ All of the above work with `pokedex` instead of `poke`.
 
 Default theme is **Catppuccin**. Bundled themes include Nord, Dracula, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can be placed next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
 
+## Prototype branch
+
+This branch adds **F2 view options**, **F3 comparison**, and **F4 favourites**. See [the prototype walkthrough](docs/PROTOTYPE.md) for a short test flow, rendered screen examples and current limits.
+
 ## Browse keyboard reference
 
 Typing always filters the list (including the letter `q`). Press `?` in browse mode for the in-app help card.
 
 | Key | Action |
 | --- | --- |
-| Type | Filter the list |
+| Type | Search the list within the active view options |
+| `F2` | Filter by type or favourites; change sorting |
+| `F3` | Pin selected Pokémon, then compare another; same Pokémon unpins |
+| `F4` | Add/remove selected Pokémon from favourites |
 | Backspace | Delete from search |
 | Esc | Clear search (or close help) |
 | ↑ / ↓ | Move selection |
