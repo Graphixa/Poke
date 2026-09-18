@@ -21,6 +21,12 @@ import (
 
 // Options configures a browse session.
 type Options struct {
+	// Favourites are species IDs, independent of artwork and render caches.
+	// A nil SaveFavourites callback keeps changes for this session only.
+	Favourites         []int
+	SaveFavourites     func([]int) error
+	FavouriteLoadError string
+
 	Index    *search.Index
 	Details  DetailSource
 	Pokemon  PokemonSource
@@ -102,6 +108,20 @@ type WarmProgress struct {
 
 // Model is the Bubble Tea browse state machine.
 type Model struct {
+	favourites         map[int]bool
+	saveFavourites     func([]int) error
+	favouriteLoadError string
+	favouriteSaving    bool
+	quitAfterFavourite bool
+	viewOptions        viewOptions
+	draftOptions       viewOptions
+	filterRow          int
+	showFilters        bool
+	showCompare        bool
+	comparePin         *compareEntry
+	featureNotice      string
+	featureError       string
+
 	ctx     context.Context
 	index   *search.Index
 	details DetailSource
@@ -225,6 +245,17 @@ func NewModel(opts Options) Model {
 		listTypes:     opts.ListTypes,
 		browseEntries: opts.BrowseEntries,
 	}
+	m.favourites = make(map[int]bool, len(opts.Favourites))
+	for _, id := range opts.Favourites {
+		if id > 0 {
+			m.favourites[id] = true
+		}
+	}
+	m.saveFavourites = opts.SaveFavourites
+	m.favouriteLoadError = opts.FavouriteLoadError
+	if opts.FavouriteLoadError != "" {
+		m.featureNotice = "Favourites unavailable (F4 for info)"
+	}
 	if opts.Prefill != "" {
 		m.search.SetValue(opts.Prefill)
 		m.search.CursorEnd()
@@ -343,7 +374,7 @@ func (m *Model) refilter() {
 		m.listOff = 0
 		return
 	}
-	m.filtered = m.index.Search(m.queryValue())
+	m.filtered = m.filterSpecies(m.index.Search(m.queryValue()), m.viewOptions)
 	if len(m.filtered) == 0 {
 		m.cursor = 0
 		m.listOff = 0
@@ -372,7 +403,7 @@ func (m *Model) selectSpeciesID(id int) {
 	}
 	if m.index != nil {
 		m.search.SetValue("")
-		m.filtered = m.index.Search("")
+		m.filtered = m.filterSpecies(m.index.Search(""), m.viewOptions)
 		for i, s := range m.filtered {
 			if s.ID == id {
 				m.cursor = i
@@ -409,6 +440,10 @@ func (m *Model) listVisibleRows() int {
 	rows := h - 6
 	if lay.OnePane {
 		rows = h - 5
+	}
+	// Reserve a visual row for the favourites divider. Offsets remain species indices.
+	if m.hasFavouriteDivider() {
+		rows--
 	}
 	if rows < 3 {
 		rows = 3

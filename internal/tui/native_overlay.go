@@ -50,7 +50,7 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 	}
 	// Keep dirty while covered so Esc can restore — but drop pending DCS so
 	// cell flushes cannot re-tail the sprite over the dialog/help.
-	if m.showHelp || m.showDialog {
+	if m.overlayOpen() {
 		if m.compositor != nil {
 			m.compositor.ClearNative()
 		}
@@ -145,7 +145,7 @@ func (m *Model) wipeNativeGraphics() tea.Cmd {
 }
 
 func (m Model) nativeOverlayReady() bool {
-	if m.showHelp || m.showDialog || m.quitting {
+	if m.overlayOpen() || m.quitting {
 		return false
 	}
 	sel, ok := m.selected()

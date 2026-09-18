@@ -34,6 +34,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case favouriteSavedMsg:
+		return m.finishFavouriteSave(msg)
 	case nativeReassertMsg:
 		if m.nativeOverlayReady() {
 			m.markNativeOverlayDirty()
@@ -237,9 +239,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.ForceQuit) {
-		m.quitting = true
-		m.glanceHoldID = 0
-		return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
+		return m.requestQuit()
+	}
+
+	if m.showFilters || m.showCompare || m.featureError != "" {
+		return m.handleFeatureKey(msg)
 	}
 
 	if m.showHelp {
@@ -254,6 +258,20 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if m.showDialog {
 		return m.handleDialogKey(msg)
+	}
+
+	if key.Matches(msg, m.keys.Filters) {
+		m.showFilters = true
+		m.draftOptions = m.viewOptions
+		m.filterRow = 0
+		m.glanceHoldID = 0
+		return m.coverNativeOverlay()
+	}
+	if key.Matches(msg, m.keys.Compare) {
+		return m.pinOrCompare()
+	}
+	if key.Matches(msg, m.keys.Favourite) {
+		return m.toggleFavourite()
 	}
 
 	if key.Matches(msg, m.keys.Help) {
@@ -273,9 +291,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	if key.Matches(msg, m.keys.Clear) {
 		if m.queryValue() == "" || m.layout().TooSmall {
-			m.quitting = true
-			m.glanceHoldID = 0
-			return m, tea.Batch(m.wipeNativeGraphics(), tea.Quit)
+			return m.requestQuit()
 		}
 		m.clearQuery()
 		return m, m.syncSelectionLoads()

@@ -28,6 +28,9 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 	content := views.Browse(m.browseData())
+	if m.showFilters || m.showCompare || m.featureError != "" {
+		content = m.featureView()
+	}
 	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
@@ -38,7 +41,7 @@ func (m Model) browseData() views.BrowseData {
 
 	rows := make([]components.ListRow, len(m.filtered))
 	for i, s := range m.filtered {
-		rows[i] = components.ListRow{Summary: s, Selected: i == m.cursor}
+		rows[i] = components.ListRow{Summary: s, Selected: i == m.cursor, Favourite: m.favourites[s.ID], DividerBefore: i > 0 && m.favourites[m.filtered[i-1].ID] && !m.favourites[s.ID]}
 	}
 
 	query := m.queryValue()
@@ -68,7 +71,8 @@ func (m Model) browseData() views.BrowseData {
 		VerboseFooter: lay.VerboseFooter,
 		OnePane:       lay.OnePane,
 		TooSmall:      lay.TooSmall,
-		ShowListPane:  query != "",
+		ShowListPane:  query != "" || m.viewOptions != (viewOptions{}) || len(m.favourites) > 0 || m.comparePin != nil,
+		ListHint:      m.listHint(),
 		BrowseView:    int(m.browseView),
 		ViewLabels:    AllBrowseViewLabels(),
 		BodySize:      bodySide,
@@ -82,6 +86,9 @@ func (m Model) browseData() views.BrowseData {
 		DialogLabels:  AllDialogSectionLabels(),
 		DialogLines:   m.dialogContentLines(),
 		DialogOff:     m.dialogVP.YOffset(),
+	}
+	if m.comparePin != nil {
+		data.BrowseTitle = "Pokedex · F3 vs " + m.comparePin.Summary.DisplayName
 	}
 	if m.showDialog {
 		hintW := m.width
@@ -236,7 +243,7 @@ func (m *Model) maybeCommitGlanceHold() {
 	if m.glanceHoldID == 0 {
 		return
 	}
-	if m.showHelp || m.showDialog || m.quitting {
+	if m.overlayOpen() || m.quitting {
 		m.glanceHoldID = 0
 		return
 	}
@@ -269,7 +276,7 @@ func (m Model) speciesSummary(id int) (domain.SpeciesSummary, bool) {
 // nativeSpriteActive reports whether a native frame is shown for the selection
 // without building browse view data (avoids recursion with showsWarmHintInView).
 func (m Model) nativeSpriteActive() bool {
-	if m.showHelp || m.showDialog || m.quitting {
+	if m.overlayOpen() || m.quitting {
 		return false
 	}
 	sel, ok := m.selected()
@@ -290,7 +297,7 @@ func (m Model) showsWarmHintInView() bool {
 	if m.composite {
 		return true
 	}
-	if m.showHelp || m.showDialog || m.quitting {
+	if m.overlayOpen() || m.quitting {
 		return true
 	}
 	return !m.nativeSpriteActive()
