@@ -7,11 +7,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/output"
-	"github.com/Graphixa/Pokedex/internal/textwidth"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
 type viewOptions struct {
@@ -230,6 +226,20 @@ func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.showCompare {
+		if k == "up" || k == "down" {
+			delta := 1
+			if k == "up" {
+				delta = -1
+			}
+			for i := m.cursor + delta; i >= 0 && i < len(m.filtered); i += delta {
+				if m.comparePin != nil && m.filtered[i].ID == m.comparePin.Summary.ID {
+					continue
+				}
+				m.cursor = i
+				m.ensureListVisible()
+				return m, m.syncSelectionLoads()
+			}
+		}
 		if k == "backspace" {
 			m.comparePin = nil
 			m.closeFeature()
@@ -264,82 +274,4 @@ func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.syncSelectionLoads()
 	}
 	return m, nil
-}
-
-func (m Model) featureView() string {
-	w, h := m.width, m.height
-	if w < 40 || h < 18 {
-		return lipgloss.Place(max(1, w), max(1, h), lipgloss.Center, lipgloss.Center, "Resize to 40 × 18\nEsc closes this view")
-	}
-	inner := min(w-6, 70)
-	var lines []string
-	if m.featureError != "" {
-		lines = []string{"FAVOURITES", "", lipgloss.NewStyle().Width(inner).Render(m.featureError), "", "Enter / Esc close"}
-	} else if m.showFilters {
-		collection := "All Pokémon"
-		if m.draftOptions.FavouritesOnly {
-			collection = "Favourites only"
-		}
-		count := len(m.filterSpecies(m.index.Search(m.queryValue()), m.draftOptions))
-		lines = []string{"VIEW OPTIONS", "", "  Collection   " + collection, "  Type         " + output.TitleFromSlug(filterTypes[m.draftOptions.Type]), "  Sort         " + filterSorts[m.draftOptions.Sort], "", fmt.Sprintf("%d matches · keeps your search", count), "", "↑/↓ choose   ←/→ change", "Enter apply  Esc cancel", "Backspace reset view options"}
-		lines[2+m.filterRow] = "> " + strings.TrimPrefix(lines[2+m.filterRow], "  ")
-	} else {
-		a := *m.comparePin
-		s, _ := m.selected()
-		b := m.comparisonEntry(s)
-		// A pin may have been made before its core arrived; use newly available data.
-		if !a.HasStats {
-			a = m.comparisonEntry(a.Summary)
-		}
-		col := (inner - 10) / 2
-		row := func(label, left, right string) string {
-			return textwidth.PadRight(label, 10) + textwidth.PadRight(textwidth.Truncate(left, col), col) + textwidth.PadRight(textwidth.Truncate(right, col), col)
-		}
-		lines = []string{"COMPARE · BASE STATS", row("", a.Summary.DisplayName, b.Summary.DisplayName), row("", output.FormatDex(a.Summary.ID), output.FormatDex(b.Summary.ID))}
-		for i := 0; i < 2; i++ {
-			at, bt := "", ""
-			if i < len(a.Summary.Types) {
-				at = output.TitleFromSlug(a.Summary.Types[i])
-			}
-			if i < len(b.Summary.Types) {
-				bt = output.TitleFromSlug(b.Summary.Types[i])
-			}
-			lines = append(lines, row("", at, bt))
-		}
-		av := []int{a.Stats.HP, a.Stats.Attack, a.Stats.Defense, a.Stats.SpecialAttack, a.Stats.SpecialDefense, a.Stats.Speed, a.Stats.Total()}
-		bv := []int{b.Stats.HP, b.Stats.Attack, b.Stats.Defense, b.Stats.SpecialAttack, b.Stats.SpecialDefense, b.Stats.Speed, b.Stats.Total()}
-		for i, label := range []string{"HP", "Attack", "Defence", "Sp. Atk", "Sp. Def", "Speed", "Total"} {
-			left, right := "—", "—"
-			if a.HasStats {
-				left = fmt.Sprint(av[i])
-			}
-			if b.HasStats {
-				right = fmt.Sprint(bv[i])
-			}
-			if a.HasStats && b.HasStats {
-				if av[i] > bv[i] {
-					left += " +"
-				}
-				if bv[i] > av[i] {
-					right += " +"
-				}
-			}
-			lines = append(lines, row(label, left, right))
-		}
-		lines = append(lines, "+ higher stat · — unavailable", "Esc back · Backspace unpin")
-	}
-	// Keep long filesystem errors inside the terminal too.
-	var clipped []string
-	for _, line := range lines {
-		clipped = append(clipped, strings.Split(line, "\n")...)
-	}
-	if len(clipped) > h-2 {
-		clipped = append(clipped[:h-3], "… Enter / Esc close")
-	}
-	for i := range clipped {
-		clipped[i] = textwidth.Truncate(clipped[i], inner)
-	}
-	clipped[0] = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(style.CurrentPalette().Primary)).Render(clipped[0])
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(style.BorderColor()).Width(inner).Render(strings.Join(clipped, "\n"))
-	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
 }

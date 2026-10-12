@@ -1,35 +1,26 @@
 package tui
 
 import (
-	"bytes"
 	"io"
 	"os"
 	"sync"
 )
 
-// compositorWriter forwards Bubble Tea cell output, then appends a pending
-// native graphics sequence (CUP+DCS) once per completed frame. io.Copy may
-// split a frame across several Write calls — tailing every Write injects DCS
-// mid-stream and corrupts the terminal (list column garbage).
-//
-// When wrapping *os.File it implements charmbracelet/x/term.File (Read/Write/
-// Close/Fd) so Bubble Tea still detects the console and enables VT mode.
+// compositorWriter appends native graphics after Bubble Tea's cell output.
+// Bubble Tea v2.0.9 flushes a bytes.Buffer through io.Copy: Buffer.WriteTo makes
+// one Write for the complete frame. Do not infer frames from cursor-show or
+// synchronized-output markers: hidden-cursor, non-sync frames have neither.
+// Keep this contract in step with cursed_renderer.go when upgrading Bubble Tea.
+// The same mutex serialises output and pending state, so a clear cannot be
+// overtaken by a previously captured paint, or a DCS interleaved with cell bytes.
 type compositorWriter struct {
-	file  *os.File // non-nil when inner is a console file
-	inner io.Writer
-
+	file    *os.File
+	inner   io.Writer
 	mu      sync.Mutex
 	pending []byte
-	oneshot bool // clear: append once then drop; paint: re-append every frame
-	wrote   bool // pending already written since SetNative (dedupe flush-vs-tail)
+	oneshot bool
+	wrote   bool
 }
-
-// End-of-frame markers from Bubble Tea's cursed renderer (sync output or
-// cursor-show fallback when mode 2026 is unavailable).
-var (
-	syncOutputEnd = []byte("\x1b[?2026l")
-	cursorShow    = []byte("\x1b[?25h")
-)
 
 func newCompositorWriter(inner io.Writer) *compositorWriter {
 	c := &compositorWriter{inner: inner}
@@ -38,137 +29,107 @@ func newCompositorWriter(inner io.Writer) *compositorWriter {
 	}
 	return c
 }
-
-// Fd implements term.File so BT can enable VT processing / read size.
 func (c *compositorWriter) Fd() uintptr {
 	if c != nil && c.file != nil {
 		return c.file.Fd()
 	}
 	return ^(uintptr(0))
 }
-
-// Read implements term.File (unused for output; required for the interface).
 func (c *compositorWriter) Read(p []byte) (int, error) {
 	if c != nil && c.file != nil {
 		return c.file.Read(p)
 	}
 	return 0, io.EOF
 }
-
-// Close implements term.File. Never closes the underlying console.
 func (c *compositorWriter) Close() error { return nil }
-
-// SetNative stores a sequence appended once after each completed cell frame.
 func (c *compositorWriter) SetNative(seq string) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
-	c.pending = []byte(seq)
-	c.oneshot = false
-	c.wrote = false
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	c.pending, c.oneshot, c.wrote = []byte(seq), false, false
 }
-
-// FlushPending writes the current pending native sequence when no frame tail
-// has written it since SetNative (viewEquals skip). When a completed frame
-// already tailed the same bytes, skip — a 40×20 sixel written twice per
-// scroll step was measurable lag.
-func (c *compositorWriter) FlushPending() {
-	if c == nil {
-		return
-	}
-	c.mu.Lock()
-	if c.wrote {
-		c.mu.Unlock()
-		return
-	}
-	seq := append([]byte(nil), c.pending...)
-	c.wrote = len(seq) > 0
-	c.mu.Unlock()
-	if len(seq) == 0 {
-		return
-	}
-	_, _ = c.inner.Write(seq)
-}
-
-// PaintNow stores seq for post-frame re-assert and writes it immediately.
-// Prefer SetNative + nativeCompositeFlushMsg in the TUI so cells land first.
-func (c *compositorWriter) PaintNow(seq string) {
-	if c == nil || seq == "" {
-		return
-	}
-	c.SetNative(seq)
-	c.mu.Lock()
-	c.wrote = true
-	c.mu.Unlock()
-	_, _ = c.inner.Write([]byte(seq))
-}
-
-// SetNativeOnce appends seq after the next completed frame only (geometry wipe).
 func (c *compositorWriter) SetNativeOnce(seq string) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
-	c.pending = []byte(seq)
-	c.oneshot = true
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	c.pending, c.oneshot, c.wrote = []byte(seq), true, false
 }
-
-// ClearNative drops any pending native sequence.
 func (c *compositorWriter) ClearNative() {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
-	c.pending = nil
-	c.oneshot = false
-	c.mu.Unlock()
+	defer c.mu.Unlock()
+	c.pending, c.oneshot, c.wrote = nil, false, false
 }
-
-// WriteDirect clears pending and writes seq immediately (quit wipe — must not
-// wait for the next cell frame, and must not re-tail DCS after alt-screen exit).
+func (c *compositorWriter) FlushPending() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.wrote {
+		_ = c.writePendingLocked()
+	}
+}
+func (c *compositorWriter) PaintNow(seq string) {
+	if c == nil || seq == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pending, c.oneshot, c.wrote = []byte(seq), false, false
+	_ = c.writePendingLocked()
+}
 func (c *compositorWriter) WriteDirect(seq string) {
 	if c == nil {
 		return
 	}
-	c.ClearNative()
-	if seq == "" {
-		return
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pending, c.oneshot, c.wrote = nil, false, false
+	if seq != "" {
+		_, _ = io.WriteString(c.inner, seq)
 	}
-	_, _ = c.inner.Write([]byte(seq))
 }
-
-func frameComplete(p []byte) bool {
-	return bytes.Contains(p, syncOutputEnd) || bytes.Contains(p, cursorShow)
-}
-
 func (c *compositorWriter) Write(p []byte) (int, error) {
 	if c == nil {
 		return 0, io.ErrClosedPipe
 	}
-	if _, err := c.inner.Write(p); err != nil {
-		return 0, err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n, err := c.inner.Write(p)
+	if err != nil {
+		return n, err
 	}
-	if frameComplete(p) {
-		c.writePendingTail()
+	if n != len(p) {
+		return n, io.ErrShortWrite
 	}
-	return len(p), nil
+	if len(p) > 0 {
+		err = c.writePendingLocked()
+	}
+	return n, err
 }
 
-func (c *compositorWriter) writePendingTail() {
-	c.mu.Lock()
-	seq := c.pending
-	oneshot := c.oneshot
-	if oneshot {
-		c.pending = nil
-		c.oneshot = false
+// Caller holds mu through both the cell write and the native tail.
+func (c *compositorWriter) writePendingLocked() error {
+	if len(c.pending) == 0 {
+		return nil
 	}
-	c.wrote = len(seq) > 0
-	c.mu.Unlock()
-	if len(seq) == 0 {
-		return
+	n, err := c.inner.Write(c.pending)
+	if err == nil && n != len(c.pending) {
+		err = io.ErrShortWrite
 	}
-	_, _ = c.inner.Write(seq)
+	if err != nil {
+		return err
+	}
+	c.wrote = true
+	if c.oneshot {
+		c.pending, c.oneshot = nil, false
+	}
+	return nil
 }

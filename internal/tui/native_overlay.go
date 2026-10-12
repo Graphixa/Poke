@@ -103,10 +103,9 @@ func (m Model) emitNativeClear() (Model, tea.Cmd) {
 	debuglog.Renderf("native overlay clear row=%d col=%d %dx%d", row, col, artW, artH)
 	seq := nativeOverlayClearSeq(row, col, artW, artH)
 	if m.composite && m.compositor != nil {
-		// Quit has no further cell flush — write clear now. Live clears can wait
-		// for the next frame via SetNativeOnce; on exit that would never run and
-		// a pending SetNative could re-paint DCS after alt-screen exit.
-		if m.quitting {
+		// Clear before a covering screen is drawn, otherwise the old art
+		// rectangle erases the new screen's text. Quit also has no next frame.
+		if m.quitting || m.overlayOpen() {
 			m.compositor.WriteDirect(seq)
 			return m, nil
 		}
