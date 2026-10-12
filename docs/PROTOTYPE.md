@@ -71,7 +71,7 @@ Actual list-panel render using a small test fixture (the real app uses your comp
 ╰───────────────────────╯
 ```
 
-Favourites are **quick-links**: a starred copy is prepended at the top, and the same species stays in its normal list position (also starred). F4 does not move the cursor or jump the viewport. Favourites-only (F2) shows each favourite once.
+Favourites are **quick-links**: a starred copy is prepended at the top, and the same species stays in its normal list position (also starred). F4 does not move the cursor or jump the viewport. While a **search** is active, F4 only stars the matching row (no quick-link block). Favourites-only (F2) shows each favourite once.
 
 **F4 toggles without a confirmation dialog.** The change becomes visible after its small background save succeeds. Another F4 is ignored while that write is in flight. A normal exit waits for the outstanding save.
 

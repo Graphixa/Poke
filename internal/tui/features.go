@@ -79,9 +79,9 @@ func (m Model) filterSpecies(input []domain.SpeciesSummary, opts viewOptions) []
 }
 
 // applyFavouritePins prepends quick-link copies of favourites (All collection only).
-// Favourites-only stays unique. Sets m.favPinCount.
+// Skipped while searching (★ only on matching rows) and in Favourites-only (unique rows).
 func (m *Model) applyFavouritePins(main []domain.SpeciesSummary) []domain.SpeciesSummary {
-	if m.viewOptions.FavouritesOnly {
+	if m.viewOptions.FavouritesOnly || m.queryValue() != "" {
 		m.favPinCount = 0
 		return main
 	}
@@ -227,7 +227,6 @@ func (m Model) toggleFavourite() (tea.Model, tea.Cmd) {
 	slices.Sort(ids)
 	save := m.saveFavourites
 	m.favouriteSaving = true
-	m.featureNotice = "Saving favourite…"
 	return m, func() tea.Msg {
 		var err error
 		if save != nil {

@@ -142,6 +142,33 @@ func TestFavouriteQuickLinkKeepsDexSelection(t *testing.T) {
 	}
 }
 
+func TestSearchFavouriteStarsWithoutQuickLinks(t *testing.T) {
+	m := featureModel()
+	m.search.SetValue("pika")
+	m.refilter()
+	m.selectSpeciesID(25)
+	m.saveFavourites = func([]int) error { return nil }
+	next, cmd := m.toggleFavourite()
+	m = next.(Model)
+	next, _ = m.update(cmd())
+	m = next.(Model)
+	if !m.favourites[25] || m.favPinCount != 0 || m.hasFavouriteDivider() {
+		t.Fatal("search F4 must star in place without favourites block")
+	}
+	if !reflect.DeepEqual(featureIDs(m), []int{25}) {
+		t.Fatalf("search results mutated: %v", featureIDs(m))
+	}
+	rows := m.browseData().Rows
+	if len(rows) != 1 || !rows[0].Favourite || rows[0].SectionLabel != "" {
+		t.Fatalf("want single starred row, got %+v", rows)
+	}
+	m.search.SetValue("")
+	m.refilter()
+	if m.favPinCount != 1 || !reflect.DeepEqual(featureIDs(m), []int{25, 4, 6, 25, 133}) {
+		t.Fatalf("clearing search should restore quick-links: pin=%d ids=%v", m.favPinCount, featureIDs(m))
+	}
+}
+
 func TestUnstarFromQuickLinkAdvancesCursor(t *testing.T) {
 	m := featureModel()
 	m.favourites[25] = true
