@@ -20,7 +20,7 @@ Use at least **40 columns × 18 rows** for the new dialogs; 100 × 30 is more co
 
 ## Three-minute walkthrough
 
-1. **Favourite:** type `pikachu`, press **F4**, then Esc to clear the search. Pikachu appears at the top with a star. Favourite Eevee too. Each appears once; the divider separates them from the remaining results. The selection stays on the same species when its row moves.
+1. **Favourite:** type `pikachu`, press **F4**, then Esc to clear the search. A starred quick-link appears at the top; Pikachu also stays in dex order with a star. Cursor does not jump. Favourite Eevee too. The divider separates quick-links from the full list.
 2. **Filter:** press **F2**. Use ↑/↓ to choose Collection, Type or Sort; ←/→ changes the value. Choose *Favourites only*, then **Enter**. Reopen F2, press **Backspace**, then Enter to reset view options. Search text is preserved.
 3. **Compare:** search `char`, select Charmander and press **F3** to pin it. Select Charizard and press F3 again. **Esc** returns to the same selection and search, retaining the pin. **Backspace** inside comparison closes it and clears the pin. Pressing F3 on the pinned species also unpins it.
 4. **Check persistence:** exit and reopen. Favourites remain; filters and the comparison pin reset for a new session.
@@ -57,18 +57,25 @@ The count previews the draft filter against the current search. Enter applies; E
 Actual list-panel render using a small test fixture (the real app uses your complete dataset):
 
 ```text
-> Search Pokémon…
-All · 4
- ★Pikachu                        #025
- ★Eevee                          #133
-──────────────────────────────────────
-> Charmander                     #004
-  Charizard                      #006
+╭─ Pokedex ─────[ 4/4 ]─╮
+│ > Search Pokémon…     │
+│───────────────────────│
+│ Favourites · 2        │
+│   ★ Pikachu     #025  │
+│   ★ Eevee       #133  │
+│ ───────────────────── │
+│ >   Charmander  #004  │
+│     Charizard   #006  │
+│   ★ Pikachu     #025  │
+│   ★ Eevee       #133  │
+╰───────────────────────╯
 ```
+
+Favourites are **quick-links**: a starred copy is prepended at the top, and the same species stays in its normal list position (also starred). F4 does not move the cursor or jump the viewport. Favourites-only (F2) shows each favourite once.
 
 **F4 toggles without a confirmation dialog.** The change becomes visible after its small background save succeeds. Another F4 is ignored while that write is in flight. A normal exit waits for the outstanding save.
 
-The favourites group scrolls with the list; it does not permanently consume rows while browsing further down. It disappears when no favourites match the active search/filters. In a favourites-only view, removing the final entry leaves an empty list.
+The quick-link group scrolls with the list; it does not permanently consume rows while browsing further down. It disappears when no favourites match the active search/filters. In a favourites-only view, removing the final entry leaves an empty list.
 
 Choices live in `favourites.json` beside the file reported by `poke config path`, independently of artwork/render caches. Both `poke cache clear` and the current `poke reset` preserve this file. A failed save leaves the list unchanged and shows an error; malformed or unsupported preference files are preserved and writes are disabled until repaired and the app restarted.
 

@@ -109,7 +109,8 @@ func statusStyles() (err, warn, ok, muted, loading, activeTab, inactiveTab lipgl
 	err = lipgloss.NewStyle().Foreground(fg(p.Error)).Bold(true)
 	warn = lipgloss.NewStyle().Foreground(fg(p.Warning)).Bold(true)
 	ok = lipgloss.NewStyle().Foreground(fg(p.Success))
-	muted = lipgloss.NewStyle().Foreground(fg(p.Placeholders)).Faint(true)
+	// Same ink as borders (BorderColor → Placeholders). No Faint: themes already set Placeholders muted.
+	muted = lipgloss.NewStyle().Foreground(fg(p.Placeholders))
 	loading = lipgloss.NewStyle().Foreground(fg(p.Secondary))
 	activeTab = lipgloss.NewStyle().Foreground(fg(p.Primary)).Bold(true).Underline(true)
 	inactiveTab = lipgloss.NewStyle().Foreground(fg(p.Placeholders))

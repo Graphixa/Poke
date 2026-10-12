@@ -14,7 +14,7 @@ The view uses the same full-screen rounded frame, border title, palette and Bubb
 - Left/Right or Space changes its value.
 - Enter applies the draft. Esc cancels it. Backspace resets the draft.
 - Search is retained, and the draft match count respects it. Zero matches gets an explicit recovery hint.
-- Favourites remain grouped first, including when sorting by speed or total.
+- Favourites appear as quick-links first (duplicate rows), including when sorting by speed or total; the dex row stays in place with ★.
 
 Actual 100×24 text render: [Filter preview](filter-preview.txt).
 

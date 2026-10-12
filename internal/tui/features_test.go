@@ -79,9 +79,25 @@ func TestViewOptionsApplyCancelAndIntersectSearch(t *testing.T) {
 	}
 }
 
-func TestFavouritePersistencePreservesSelectionAndNoDuplicates(t *testing.T) {
+func TestFitListBorderTitle(t *testing.T) {
+	if got := fitListBorderTitle("Pokedex", 12, 1025, 40); got != "Pokedex [ 12/1025 ]" {
+		t.Fatalf("wide = %q", got)
+	}
+	if got := fitListBorderTitle("Pokedex", 12, 1025, 22); got != "Pokedex [12/1025]" && got != "[12/1025]" {
+		// 22-4=18; "Pokedex [12/1025]" is 16 runes — prefer tight-with-base
+		if textwidth.Width(got) > 18 {
+			t.Fatalf("narrow too wide: %q", got)
+		}
+	}
+	if got := fitListBorderTitle("Pokedex", 6, 6, 10); got != "[6/6]" {
+		t.Fatalf("count-only = %q", got)
+	}
+}
+
+func TestFavouriteQuickLinkKeepsDexSelection(t *testing.T) {
 	m := featureModel()
 	m.selectSpeciesID(25)
+	dexCursor := m.cursor
 	var saved []int
 	m.saveFavourites = func(ids []int) error { saved = ids; return nil }
 	next, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyF4})
@@ -91,16 +107,20 @@ func TestFavouritePersistencePreservesSelectionAndNoDuplicates(t *testing.T) {
 	}
 	next, _ = m.update(cmd())
 	m = next.(Model)
-	if !reflect.DeepEqual(saved, []int{25}) || !reflect.DeepEqual(featureIDs(m), []int{25, 4, 6, 133}) {
-		t.Fatal("pin/save ordering failed")
+	// Quick-link prepend + dex row kept: [25] + [4, 6, 25, 133]
+	if !reflect.DeepEqual(saved, []int{25}) || !reflect.DeepEqual(featureIDs(m), []int{25, 4, 6, 25, 133}) {
+		t.Fatalf("quick-link/save failed: ids=%v", featureIDs(m))
 	}
 	s, _ := m.selected()
-	if s.ID != 25 || m.cursor != 0 {
-		t.Fatal("favourite changed selected species")
+	if s.ID != 25 || m.cursor == 0 || m.cursor != dexCursor+1 {
+		t.Fatalf("F4 must keep dex-row selection, cursor=%d want %d", m.cursor, dexCursor+1)
 	}
 	rows := m.browseData().Rows
-	if !rows[0].Favourite || !rows[1].DividerBefore {
-		t.Fatal("missing group marker/divider")
+	if !rows[0].Favourite || rows[0].SectionLabel == "" || !rows[1].DividerBefore {
+		t.Fatal("missing favourites label/divider")
+	}
+	if !rows[0].Favourite || !rows[m.cursor].Favourite {
+		t.Fatal("★ must show on quick-link and dex row")
 	}
 	m.search.SetValue("char")
 	m.refilter()
@@ -110,8 +130,8 @@ func TestFavouritePersistencePreservesSelectionAndNoDuplicates(t *testing.T) {
 	m.search.SetValue("")
 	m.viewOptions.FavouritesOnly = true
 	m.refilter()
-	if !reflect.DeepEqual(featureIDs(m), []int{25}) {
-		t.Fatal("favourites collection failed")
+	if !reflect.DeepEqual(featureIDs(m), []int{25}) || m.favPinCount != 0 {
+		t.Fatal("favourites-only must be unique (no quick-link dupes)")
 	}
 	next, cmd = m.toggleFavourite()
 	m = next.(Model)
@@ -119,6 +139,40 @@ func TestFavouritePersistencePreservesSelectionAndNoDuplicates(t *testing.T) {
 	m = next.(Model)
 	if len(m.filtered) != 0 || !strings.Contains(m.View().Content, "No matches") {
 		t.Fatal("removing last favourite should show empty results")
+	}
+}
+
+func TestUnstarFromQuickLinkAdvancesCursor(t *testing.T) {
+	m := featureModel()
+	m.favourites[25] = true
+	m.favourites[4] = true
+	m.favourites[6] = true
+	m.saveFavourites = func([]int) error { return nil }
+	m.refilter()
+	// Pins in main order: 4, 6, 25 then main…
+	if !reflect.DeepEqual(featureIDs(m)[:3], []int{4, 6, 25}) {
+		t.Fatalf("pins=%v", featureIDs(m)[:3])
+	}
+	m.cursor = 0 // quick-link Charmander
+	next, cmd := m.toggleFavourite()
+	m = next.(Model)
+	next, _ = m.update(cmd())
+	m = next.(Model)
+	s, _ := m.selected()
+	if s.ID != 6 || m.cursor != 0 {
+		t.Fatalf("unstar mid-pin should land on next pin, got id=%d cursor=%d", s.ID, m.cursor)
+	}
+	// Unstar last remaining pin while on last quick-link → first dex row.
+	m.favourites = map[int]bool{25: true}
+	m.refilter()
+	m.cursor = 0
+	next, cmd = m.toggleFavourite()
+	m = next.(Model)
+	next, _ = m.update(cmd())
+	m = next.(Model)
+	s, _ = m.selected()
+	if m.favPinCount != 0 || s.ID != 4 || m.cursor != 0 {
+		t.Fatalf("last unstar should land on first dex row, id=%d cursor=%d pin=%d", s.ID, m.cursor, m.favPinCount)
 	}
 }
 
@@ -172,13 +226,27 @@ func TestFavouriteDividerDoesNotHideSelectionWhenScrolling(t *testing.T) {
 	m.favourites[2] = true
 	m.height = 18
 	m.refilter()
-	for i := 0; i < len(all); i++ {
+	if m.favPinCount != 2 || len(m.filtered) != 52 {
+		t.Fatalf("want 2 quick-links + 50 dex rows, pin=%d len=%d", m.favPinCount, len(m.filtered))
+	}
+	for i := range m.filtered {
 		m.cursor = i
 		m.ensureListVisible()
 		d := m.browseData()
-		list := components.List(d.Rows[d.ListOff:], 28, m.listVisibleRows()+1, false, 0, nil)
-		if !strings.Contains(ansi.Strip(list), fmt.Sprintf(">%sSpecies %02d", map[bool]string{true: "★", false: " "}[i < 2], i+1)) {
-			t.Fatalf("selection %d not visible at offset %d", i, m.listOff)
+		extra := 0
+		if m.hasFavouriteLabel() {
+			extra++
+		}
+		if m.hasFavouriteDivider() {
+			extra++
+		}
+		list := components.List(d.Rows[d.ListOff:], 28, m.listVisibleRows()+extra, false, 0, nil)
+		mark := ">   "
+		if m.favourites[m.filtered[i].ID] {
+			mark = "> ★ "
+		}
+		if !strings.Contains(ansi.Strip(list), mark+m.filtered[i].DisplayName) {
+			t.Fatalf("selection %d not visible at offset %d\n%s", i, m.listOff, ansi.Strip(list))
 		}
 	}
 }
@@ -197,8 +265,9 @@ func TestSortMissingStatsAndFavouritePriority(t *testing.T) {
 	}
 	m.favourites[133] = true
 	m.refilter()
-	if !reflect.DeepEqual(featureIDs(m), []int{133, 25, 4, 6}) {
-		t.Fatal("favourites should stay grouped")
+	// Quick-link Eevee + full speed order (Eevee still in place).
+	if !reflect.DeepEqual(featureIDs(m), []int{133, 25, 4, 133, 6}) {
+		t.Fatalf("favourites quick-link: %v", featureIDs(m))
 	}
 }
 

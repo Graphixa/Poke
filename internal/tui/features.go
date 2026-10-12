@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/textwidth"
 )
 
 type viewOptions struct {
@@ -46,12 +48,9 @@ func (m Model) filterSpecies(input []domain.SpeciesSummary, opts viewOptions) []
 		}
 		out = append(out, s)
 	}
-	// Stable partition preserves search relevance in Default mode, and avoids duplicates.
+	// Sort only — favourites stay in place. Quick-link duplicates are prepended in applyFavouritePins.
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
-		if m.favourites[a.ID] != m.favourites[b.ID] {
-			return m.favourites[a.ID]
-		}
 		switch opts.Sort {
 		case 1:
 			an, bn := strings.ToLower(a.DisplayName), strings.ToLower(b.DisplayName)
@@ -79,28 +78,114 @@ func (m Model) filterSpecies(input []domain.SpeciesSummary, opts viewOptions) []
 	return out
 }
 
+// applyFavouritePins prepends quick-link copies of favourites (All collection only).
+// Favourites-only stays unique. Sets m.favPinCount.
+func (m *Model) applyFavouritePins(main []domain.SpeciesSummary) []domain.SpeciesSummary {
+	if m.viewOptions.FavouritesOnly {
+		m.favPinCount = 0
+		return main
+	}
+	pins := make([]domain.SpeciesSummary, 0, len(m.favourites))
+	for _, s := range main {
+		if m.favourites[s.ID] {
+			pins = append(pins, s)
+		}
+	}
+	m.favPinCount = len(pins)
+	if len(pins) == 0 {
+		return main
+	}
+	out := make([]domain.SpeciesSummary, 0, len(pins)+len(main))
+	out = append(out, pins...)
+	return append(out, main...)
+}
+
 func (m Model) hasFavouriteDivider() bool {
-	return len(m.filtered) > 1 && m.favourites[m.filtered[0].ID] && !m.favourites[m.filtered[len(m.filtered)-1].ID]
+	return m.favPinCount > 0 && len(m.filtered) > m.favPinCount
+}
+
+func (m Model) hasFavouriteLabel() bool {
+	return m.favPinCount > 0
+}
+
+func (m Model) pinnedFavouriteCount() int {
+	return m.favPinCount
+}
+
+func (m Model) matchedCount() int {
+	n := len(m.filtered) - m.favPinCount
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// indexOfSpecies finds id in the pin block (preferPin) or the main list after pins.
+func (m Model) indexOfSpecies(id int, preferPin bool) int {
+	if preferPin {
+		for i := 0; i < m.favPinCount && i < len(m.filtered); i++ {
+			if m.filtered[i].ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+	start := m.favPinCount
+	if start > len(m.filtered) {
+		start = 0
+	}
+	for i := start; i < len(m.filtered); i++ {
+		if m.filtered[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m Model) collectionSize() int {
+	if m.viewOptions.FavouritesOnly {
+		return len(m.favourites)
+	}
+	if m.index != nil {
+		return len(m.index.All())
+	}
+	return len(m.filtered)
+}
+
+// listBorderTitle is the left-pane top-edge title: base + [ matched/total ], narrowed as needed.
+func (m Model) listBorderTitle(leftW int) string {
+	base := "Pokedex"
+	if m.comparePin != nil {
+		base = "Pokedex · F3 vs " + m.comparePin.Summary.DisplayName
+	}
+	return fitListBorderTitle(base, m.matchedCount(), m.collectionSize(), leftW)
+}
+
+func fitListBorderTitle(base string, matched, total, leftW int) string {
+	maxW := leftW - 4 // ╭─␠title␠… inside left segment
+	if maxW < 3 {
+		maxW = 3
+	}
+	spaced := fmt.Sprintf("[ %d/%d ]", matched, total)
+	tight := fmt.Sprintf("[%d/%d]", matched, total)
+	for _, c := range []string{base + " " + spaced, base + " " + tight, tight} {
+		if textwidth.Width(c) <= maxW {
+			return c
+		}
+	}
+	return textwidth.Truncate(tight, maxW)
 }
 
 func (m Model) listHint() string {
 	if m.featureNotice != "" {
 		return m.featureNotice
 	}
-
-	collection := "All"
-	if m.viewOptions.FavouritesOnly {
-		collection = "Favourites"
+	// Two-pane: match count lives in the border title. One-pane has no title edge.
+	if !m.layout().OnePane {
+		return ""
 	}
-	typ := ""
-	if m.viewOptions.Type != 0 {
-		typ = " · " + filterTypes[m.viewOptions.Type]
-	}
-	hint := fmt.Sprintf("%s%s · %d", collection, typ, len(m.filtered))
-	if m.viewOptions.Sort != 0 {
-		hint += " · " + []string{"", "A–Z", "Speed↓", "Total↓"}[m.viewOptions.Sort]
-	}
-	if m.comparePin != nil && m.layout().OnePane {
+	hint := fmt.Sprintf("%d/%d", m.matchedCount(), m.collectionSize())
+	if m.comparePin != nil {
 		hint = "F3 vs " + m.comparePin.Summary.DisplayName + " · " + hint
 	}
 	return hint
@@ -160,6 +245,15 @@ func (m Model) finishFavouriteSave(msg favouriteSavedMsg) (tea.Model, tea.Cmd) {
 		m.featureError = "Favourite was not changed. Close this message, then press F4 to retry.\n\n" + msg.err.Error()
 		return m.coverNativeOverlay()
 	}
+	// Unstar from quick-link block: advance to the next pin, or first dex row if none left.
+	advancePin := false
+	nextPinID := 0
+	if !msg.value && m.favPinCount > 0 && m.cursor < m.favPinCount {
+		advancePin = true
+		if m.cursor+1 < m.favPinCount {
+			nextPinID = m.filtered[m.cursor+1].ID
+		}
+	}
 	if msg.value {
 		m.favourites[msg.id] = true
 	} else {
@@ -167,10 +261,35 @@ func (m Model) finishFavouriteSave(msg favouriteSavedMsg) (tea.Model, tea.Cmd) {
 	}
 	m.featureNotice = ""
 	m.refilter()
+	if advancePin {
+		m.cursorAfterUnstarPin(nextPinID)
+	}
 	if m.quitAfterFavourite {
 		return m.requestQuit()
 	}
 	return m, m.syncSelectionLoads()
+}
+
+// cursorAfterUnstarPin lands on nextPinID in the quick-link block, or the first main-list row.
+func (m *Model) cursorAfterUnstarPin(nextPinID int) {
+	if len(m.filtered) == 0 {
+		m.cursor = 0
+		m.listOff = 0
+		return
+	}
+	if nextPinID != 0 {
+		if idx := m.indexOfSpecies(nextPinID, true); idx >= 0 {
+			m.cursor = idx
+			m.ensureListVisible()
+			return
+		}
+	}
+	// Last quick-link removed (or next pin missing) → first dex row.
+	m.cursor = m.favPinCount
+	if m.cursor >= len(m.filtered) {
+		m.cursor = len(m.filtered) - 1
+	}
+	m.ensureListVisible()
 }
 
 func (m Model) comparisonEntry(s domain.SpeciesSummary) compareEntry {

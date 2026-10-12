@@ -136,10 +136,11 @@ type Model struct {
 	help   help.Model
 	search textinput.Model
 
-	filtered  []domain.SpeciesSummary
-	cursor    int
-	listOff   int
-	listTypes bool
+	filtered    []domain.SpeciesSummary
+	favPinCount int // quick-link rows prepended in All view (0 when Favourites-only)
+	cursor      int
+	listOff     int
+	listTypes   bool
 
 	browseEntries map[int]domain.BrowseEntry
 
@@ -281,7 +282,7 @@ func newSearchInput() textinput.Model {
 	ti.SetVirtualCursor(false)
 	p := style.CurrentPalette()
 	s := textinput.DefaultDarkStyles()
-	placeholder := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Placeholders)).Faint(true)
+	placeholder := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Placeholders))
 	prompt := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Components))
 	s.Focused.Placeholder = placeholder
 	s.Blurred.Placeholder = placeholder
@@ -365,28 +366,47 @@ func (m *Model) selected() (domain.SpeciesSummary, bool) {
 
 func (m *Model) refilter() {
 	var prevID int
+	prevIdx := m.cursor
+	oldPin := m.favPinCount
+	inPin := oldPin > 0 && prevIdx < oldPin
 	if sel, ok := m.selected(); ok {
 		prevID = sel.ID
 	}
 	if m.index == nil {
 		m.filtered = nil
+		m.favPinCount = 0
 		m.cursor = 0
 		m.listOff = 0
 		return
 	}
-	m.filtered = m.filterSpecies(m.index.Search(m.queryValue()), m.viewOptions)
+	main := m.filterSpecies(m.index.Search(m.queryValue()), m.viewOptions)
+	m.filtered = m.applyFavouritePins(main)
+	if delta := m.favPinCount - oldPin; delta != 0 && m.listOff > 0 {
+		m.listOff += delta
+		if m.listOff < 0 {
+			m.listOff = 0
+		}
+	}
 	if len(m.filtered) == 0 {
 		m.cursor = 0
 		m.listOff = 0
 		return
 	}
 	if prevID != 0 {
-		for i, s := range m.filtered {
-			if s.ID == prevID {
-				m.cursor = i
-				m.ensureListVisible()
-				return
-			}
+		if idx := m.indexOfSpecies(prevID, inPin); idx >= 0 {
+			m.cursor = idx
+			m.ensureListVisible()
+			return
+		}
+		if idx := m.indexOfSpecies(prevID, false); idx >= 0 {
+			m.cursor = idx
+			m.ensureListVisible()
+			return
+		}
+		if idx := m.indexOfSpecies(prevID, true); idx >= 0 {
+			m.cursor = idx
+			m.ensureListVisible()
+			return
 		}
 	}
 	m.cursor = 0
@@ -394,22 +414,25 @@ func (m *Model) refilter() {
 }
 
 func (m *Model) selectSpeciesID(id int) {
-	for i, s := range m.filtered {
-		if s.ID == id {
-			m.cursor = i
-			m.ensureListVisible()
-			return
-		}
+	// Prefer the dex-position row so deep-links don't land on the quick-link copy.
+	if idx := m.indexOfSpecies(id, false); idx >= 0 {
+		m.cursor = idx
+		m.ensureListVisible()
+		return
+	}
+	if idx := m.indexOfSpecies(id, true); idx >= 0 {
+		m.cursor = idx
+		m.ensureListVisible()
+		return
 	}
 	if m.index != nil {
 		m.search.SetValue("")
-		m.filtered = m.filterSpecies(m.index.Search(""), m.viewOptions)
-		for i, s := range m.filtered {
-			if s.ID == id {
-				m.cursor = i
-				m.ensureListVisible()
-				return
-			}
+		main := m.filterSpecies(m.index.Search(""), m.viewOptions)
+		m.filtered = m.applyFavouritePins(main)
+		if idx := m.indexOfSpecies(id, false); idx >= 0 {
+			m.cursor = idx
+			m.ensureListVisible()
+			return
 		}
 	}
 }
@@ -441,7 +464,10 @@ func (m *Model) listVisibleRows() int {
 	if lay.OnePane {
 		rows = h - 5
 	}
-	// Reserve a visual row for the favourites divider. Offsets remain species indices.
+	// Reserve chrome rows for favourites label/divider. Offsets remain species indices.
+	if m.hasFavouriteLabel() {
+		rows--
+	}
 	if m.hasFavouriteDivider() {
 		rows--
 	}

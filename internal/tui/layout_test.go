@@ -222,7 +222,7 @@ func TestBrowseListRowsShowColoredTypes(t *testing.T) {
 	})
 	plain := stripANSI(out)
 	lines := strings.Split(plain, "\n")
-	if !strings.Contains(lines[1], "> Bulbasaur") || !strings.Contains(lines[1], "#001") || !strings.Contains(lines[1], "Grass/Poison") {
+	if !strings.Contains(lines[1], ">   Bulbasaur") || !strings.Contains(lines[1], "#001") || !strings.Contains(lines[1], "Grass/Poison") {
 		t.Fatalf("selected list row = %q", lines[1])
 	}
 	assertDexRightAligned(t, lines[1], "#001")
@@ -281,7 +281,7 @@ func TestBrowseListVeryNarrowPrioritizesSelectedName(t *testing.T) {
 		Summary:  domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}},
 		Selected: true,
 	}}, 12, 1, false, 0, nil)
-	if got, want := stripANSI(out), "> Bulbasaur "; got != want {
+	if got, want := stripANSI(out), ">   Bulbasa…"; got != want {
 		t.Fatalf("narrow list row = %q, want %q", got, want)
 	}
 }

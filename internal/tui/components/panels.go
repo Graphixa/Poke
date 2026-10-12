@@ -14,7 +14,7 @@ import (
 )
 
 func mutedSty() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(style.BorderColor()).Faint(true)
+	return lipgloss.NewStyle().Foreground(style.BorderColor())
 }
 
 func boldSty() lipgloss.Style {
@@ -49,6 +49,7 @@ func PadSearchLine(line string, width int) string {
 type ListRow struct {
 	Favourite     bool
 	DividerBefore bool
+	SectionLabel  string // muted chrome row before this entry (e.g. "Favourites · 6")
 	Summary       domain.SpeciesSummary
 	Selected      bool
 }
@@ -88,19 +89,27 @@ func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbrev
 			continue
 		}
 		row := rows[i]
-		if row.DividerBefore && i > 0 {
-			lines = append(lines, style.StatusMuted(strings.Repeat("─", width)))
+		if row.SectionLabel != "" {
+			lines = append(lines, style.StatusMuted(textwidth.PadRight(textwidth.Truncate(row.SectionLabel, width), width)))
 			if len(lines) == height {
 				break
 			}
 		}
-		marker := "  "
+		if row.DividerBefore && i > 0 {
+			// Match list chrome / panel borders (not StatusMuted).
+			lines = append(lines, lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", width)))
+			if len(lines) == height {
+				break
+			}
+		}
+		cursor, star := " ", " "
 		if row.Selected {
-			marker = "> "
+			cursor = ">"
 		}
 		if row.Favourite {
-			marker = marker[:1] + "★"
+			star = "★"
 		}
+		marker := cursor + " " + star + " "
 		dex := output.FormatDex(row.Summary.ID)
 		rightW := textwidth.Width(dex) + 1 // one column of padding after right-aligned ID
 		available := width - textwidth.Width(marker)

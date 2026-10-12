@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -40,8 +41,21 @@ func (m Model) browseData() views.BrowseData {
 	lay := m.layout()
 
 	rows := make([]components.ListRow, len(m.filtered))
+	favLabel := ""
+	if m.hasFavouriteLabel() {
+		favLabel = fmt.Sprintf("Favourites · %d", m.pinnedFavouriteCount())
+	}
 	for i, s := range m.filtered {
-		rows[i] = components.ListRow{Summary: s, Selected: i == m.cursor, Favourite: m.favourites[s.ID], DividerBefore: i > 0 && m.favourites[m.filtered[i-1].ID] && !m.favourites[s.ID]}
+		row := components.ListRow{
+			Summary:       s,
+			Selected:      i == m.cursor,
+			Favourite:     m.favourites[s.ID],
+			DividerBefore: m.favPinCount > 0 && i == m.favPinCount,
+		}
+		if i == 0 && favLabel != "" {
+			row.SectionLabel = favLabel
+		}
+		rows[i] = row
 	}
 
 	query := m.queryValue()
@@ -72,6 +86,7 @@ func (m Model) browseData() views.BrowseData {
 		OnePane:       lay.OnePane,
 		TooSmall:      lay.TooSmall,
 		ShowListPane:  query != "" || m.viewOptions != (viewOptions{}) || len(m.favourites) > 0 || m.comparePin != nil,
+		BrowseTitle:   m.listBorderTitle(lay.leftWidth()),
 		ListHint:      m.listHint(),
 		BrowseView:    int(m.browseView),
 		ViewLabels:    AllBrowseViewLabels(),
@@ -86,9 +101,6 @@ func (m Model) browseData() views.BrowseData {
 		DialogLabels:  AllDialogSectionLabels(),
 		DialogLines:   m.dialogContentLines(),
 		DialogOff:     m.dialogVP.YOffset(),
-	}
-	if m.comparePin != nil {
-		data.BrowseTitle = "Pokedex · F3 vs " + m.comparePin.Summary.DisplayName
 	}
 	if m.showDialog {
 		hintW := m.width

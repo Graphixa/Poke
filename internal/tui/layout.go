@@ -16,7 +16,7 @@ const (
 	minUsableHeight  = 12
 
 	listNamePad         = 0 // name column is the longest species name
-	listMarkerCols      = 2
+	listMarkerCols      = 4 // "> ★ " / ">   " cursor+star gutter
 	listGapNameDex      = 1
 	listDexCols         = 5  // #NNNN
 	listTypeReserve     = 14 // Grass/Poison-sized dual type
