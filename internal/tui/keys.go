@@ -114,11 +114,11 @@ func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {
 // ShortHelp implements help.KeyMap for the footer strip.
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
+		k.Enter,
+		k.ViewCycle,
 		k.Filters,
 		k.Compare,
 		k.Favourite,
-		k.Enter,
-		k.ViewCycle,
 		k.Clear,
 	}
 }

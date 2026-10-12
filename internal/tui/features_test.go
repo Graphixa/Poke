@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
@@ -209,7 +210,7 @@ func TestComparePinCloseUnpinAndMissingStats(t *testing.T) {
 	m = featureKey(m, tea.KeyDown)
 	m = featureKey(m, tea.KeyF3)
 	view := ansi.Strip(m.featureView())
-	for _, want := range []string{"Charmander", "Charizard", "309", "534 +", "BASE STATS"} {
+	for _, want := range []string{"Charmander", "Charizard", "309", "534", "+225", "base stats"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q: %s", want, view)
 		}
@@ -239,7 +240,7 @@ func TestComparePinCloseUnpinAndMissingStats(t *testing.T) {
 }
 
 func TestFeatureViewsFitSmallTerminals(t *testing.T) {
-	for _, size := range [][2]int{{40, 12}, {40, 18}, {52, 18}, {80, 24}} {
+	for _, size := range [][2]int{{20, 6}, {40, 12}, {40, 18}, {52, 18}, {80, 24}, {120, 32}} {
 		for _, compare := range []bool{false, true} {
 			m := featureModel()
 			m.width, m.height = size[0], size[1]
@@ -251,6 +252,14 @@ func TestFeatureViewsFitSmallTerminals(t *testing.T) {
 				m = featureKey(m, tea.KeyF2)
 			}
 			view := m.View().Content
+			if size[0] >= 40 && size[1] >= 18 {
+				if !strings.Contains(view, "esc") {
+					t.Fatal("close action missing")
+				}
+				if compare && !strings.Contains(view, "Total") {
+					t.Fatal("stats clipped")
+				}
+			}
 			lines := strings.Split(view, "\n")
 			if len(lines) > m.height {
 				t.Fatalf("too tall %v: %d", size, len(lines))
@@ -298,5 +307,86 @@ func TestFeatureOverlaysSuppressNativePainting(t *testing.T) {
 				t.Fatal("closing must restore native art")
 			}
 		})
+	}
+}
+
+func TestBrowseHelpOrder(t *testing.T) {
+	var labels []string
+	for _, b := range defaultKeyMap().ShortHelp() {
+		labels = append(labels, b.Help().Key)
+	}
+	if !reflect.DeepEqual(labels, []string{"enter", "tab", "F2", "F3", "F4", "esc"}) {
+		t.Fatal(labels)
+	}
+}
+
+func TestCompareNavigationSkipsPinAndPreservesSearch(t *testing.T) {
+	m := featureModel()
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyDown)
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyDown)
+	s, _ := m.selected()
+	if s.ID != 25 || !m.showCompare {
+		t.Fatal("opponent did not advance")
+	}
+	m = featureKey(m, tea.KeyUp)
+	m = featureKey(m, tea.KeyUp)
+	s, _ = m.selected()
+	if s.ID != 6 {
+		t.Fatal("must not compare pin against itself")
+	}
+	m = featureKey(m, tea.KeyEscape)
+	if m.showCompare || m.comparePin.Summary.ID != 4 {
+		t.Fatal("back lost pin")
+	}
+}
+
+func TestCompareDossierBrowseRestoresNativeAfterEveryCellFrame(t *testing.T) {
+	m := featureModel()
+	m.layoutTh.DisableSprite = false
+	m.width, m.height = 120, 32
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyDown)
+	m.imageNative = true
+	m.imageANSI = "\x1bP0;0;8q#1~~~\x1b\\"
+	m.imageSpeciesID = 6
+	m.imageCells = m.currentSpriteCells()
+	m.nativeOverlayDirty = true
+	var buf bytes.Buffer
+	m.composite = true
+	m.compositor = newCompositorWriter(&buf)
+	step := func(code rune, wantArt bool) {
+		t.Helper()
+		next, _ := m.Update(tea.KeyPressMsg{Code: code})
+		m = next.(Model)
+		buf.Reset()
+		// Windows Terminal may have neither sync-output nor cursor-show markers.
+		_, err := m.compositor.Write([]byte(m.View().Content))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(buf.String(), m.imageANSI) != wantArt {
+			t.Fatalf("key %d: native tail present=%v, want %v", code, strings.HasSuffix(buf.String(), decRestoreCursor), wantArt)
+		}
+		if !wantArt && strings.Contains(buf.String(), decSaveCursor) {
+			t.Fatal("native clear erased covering screen")
+		}
+		if wantArt && !strings.Contains(buf.String(), m.imageANSI) {
+			t.Fatal("art payload missing")
+		}
+	}
+	// Prime browse paint, then exercise the exact reported sequence repeatedly.
+	m, _ = m.scheduleNativeOverlay()
+	for i := 0; i < 3; i++ {
+		step(tea.KeyF3, false)
+		step(tea.KeyEscape, true)
+		step(tea.KeyEnter, false)
+		step(tea.KeyEscape, true)
+		buf.Reset()
+		_, _ = m.compositor.Write([]byte("later cell update"))
+		if !strings.Contains(buf.String(), m.imageANSI) {
+			t.Fatal("later cells erased native image")
+		}
 	}
 }
