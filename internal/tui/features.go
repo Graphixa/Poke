@@ -380,7 +380,8 @@ func (m *Model) moveCompareFocused(delta int) bool {
 			continue
 		}
 		e := m.comparisonEntry(m.filtered[i])
-		if m.compareFocus == 0 {
+		side := m.compareFocus
+		if side == 0 {
 			m.compareA = e
 			m.compareArtA, m.compareArtANative, m.compareArtAID = "", false, 0
 			if m.comparePin != nil {
@@ -392,6 +393,8 @@ func (m *Model) moveCompareFocused(delta int) bool {
 			m.cursor = i
 			m.ensureListVisible()
 		}
+		// Drop the old sixel immediately; async load will repaint this side.
+		m.wipeCompareSideRect(side)
 		m.markNativeOverlayDirty()
 		return true
 	}

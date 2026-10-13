@@ -53,6 +53,10 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 		if m.compareNativeReady() {
 			return m.emitCompareNativeOverlay()
 		}
+		// Both sides loading / no native yet — wipe ghost sixels, keep dirty for restore.
+		if m.compareNativePainted {
+			return m.emitCompareNativeClear()
+		}
 		if m.compositor != nil {
 			m.compositor.ClearNative()
 		}
@@ -186,27 +190,27 @@ func (m Model) emitCompareNativeOverlay() (Model, tea.Cmd) {
 	m.nativeOverlayDirty = false
 	rowA, colA, artW, artH, okA := m.compareArtOrigin(0)
 	rowB, colB, _, _, okB := m.compareArtOrigin(1)
-	clearFirst := m.compareNativePainted || m.nativePaintCells > 0
+	// Always clear artH only (no sixelClearSlackRows — slack paints grey under the card).
 	var b strings.Builder
 	b.WriteString(decSaveCursor)
 	paint := func(row, col int, ansi string, ok bool) {
-		if !ok || ansi == "" {
+		if !ok {
 			return
 		}
-		if clearFirst {
-			b.WriteString(clearCellRect(row, col, artW, artH+sixelClearSlackRows))
+		b.WriteString(clearCellRect(row, col, artW, artH))
+		if ansi != "" {
+			fmt.Fprintf(&b, "\x1b[%d;%dH%s", row, col, ansi)
 		}
-		fmt.Fprintf(&b, "\x1b[%d;%dH%s", row, col, ansi)
 	}
 	if m.compareArtANative && m.compareArtAID == m.compareA.Summary.ID {
 		paint(rowA, colA, m.compareArtA, okA)
-	} else if okA && clearFirst {
-		b.WriteString(clearCellRect(rowA, colA, artW, artH+sixelClearSlackRows))
+	} else if okA {
+		paint(rowA, colA, "", true)
 	}
 	if m.compareArtBNative && m.compareArtBID == m.compareB.Summary.ID {
 		paint(rowB, colB, m.compareArtB, okB)
-	} else if okB && clearFirst {
-		b.WriteString(clearCellRect(rowB, colB, artW, artH+sixelClearSlackRows))
+	} else if okB {
+		paint(rowB, colB, "", true)
 	}
 	b.WriteString(decRestoreCursor)
 	seq := b.String()
@@ -279,13 +283,26 @@ func (m Model) compareNativeClearSeq() string {
 	var b strings.Builder
 	b.WriteString(decSaveCursor)
 	if okA {
-		b.WriteString(clearCellRect(rowA, colA, artW, artH+sixelClearSlackRows))
+		b.WriteString(clearCellRect(rowA, colA, artW, artH))
 	}
 	if okB {
-		b.WriteString(clearCellRect(rowB, colB, artW, artH+sixelClearSlackRows))
+		b.WriteString(clearCellRect(rowB, colB, artW, artH))
 	}
 	b.WriteString(decRestoreCursor)
 	return b.String()
+}
+
+// wipeCompareSideRect clears one art box synchronously so ↑/↓ does not leave a ghost sixel.
+func (m *Model) wipeCompareSideRect(side int) {
+	row, col, artW, artH, ok := m.compareArtOrigin(side)
+	if !ok {
+		return
+	}
+	seq := decSaveCursor + clearCellRect(row, col, artW, artH) + decRestoreCursor
+	if m.compositor != nil {
+		m.compositor.WriteDirect(seq)
+		return
+	}
 }
 
 func (m Model) nativeOverlayReady() bool {

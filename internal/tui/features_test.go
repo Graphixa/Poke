@@ -456,25 +456,68 @@ func TestFormatCompareDelta(t *testing.T) {
 }
 
 func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
-	line := ansi.Strip(compareStatLine("HP", 80, true, 40, false, ""))
+	line := ansi.Strip(compareStatLine("HP", 80, true, 22, false, ""))
 	if !strings.HasPrefix(line, "HP") || !strings.HasSuffix(strings.TrimRight(line, " "), "80") {
 		t.Fatalf("label L / value R: %q", line)
 	}
-	right := ansi.Strip(compareStatLine("Attack", 30, true, 40, false, ansi.Strip(formatCompareDelta(-52))))
+	right := ansi.Strip(compareStatLine("Attack", 30, true, 22, false, ansi.Strip(formatCompareDelta(-52))))
 	if !strings.Contains(right, "30") || !strings.HasSuffix(strings.TrimRight(right, " "), "-52") {
 		t.Fatalf("delta column: %q", right)
 	}
-	if textwidth.Width(line) != 40 || textwidth.Width(right) != 40 {
+	if textwidth.Width(line) != 22 || textwidth.Width(right) != 22 {
 		t.Fatalf("stat line width: %d %d", textwidth.Width(line), textwidth.Width(right))
 	}
 
 	m := featureModel()
 	m.layoutTh.DisableSprite = false
 	m.width, m.height = 120, 40
+	m.compareA = m.comparisonEntry(m.filtered[0])
+	m.compareB = m.comparisonEntry(m.filtered[1])
+	m.showCompare = true
 	rowA, colA, aw, ah, okA := m.compareArtOrigin(0)
 	rowB, colB, _, _, okB := m.compareArtOrigin(1)
 	if !okA || !okB || rowA != rowB || colB <= colA+aw || aw < 1 || ah < 1 {
 		t.Fatalf("origins A=%d,%d B=%d,%d size=%dx%d ok=%v,%v", rowA, colA, rowB, colB, aw, ah, okA, okB)
+	}
+	g := m.compareLayoutGeom(m.compareFooterH())
+	statsW := g.artOW
+	if statsW < 22 {
+		statsW = 22
+	}
+	padStats := (g.colW - statsW) / 2
+	if padStats < 1 {
+		t.Fatalf("stats should be inset under art, padStats=%d colW=%d statsW=%d", padStats, g.colW, statsW)
+	}
+	view := ansi.Strip(m.compareView())
+	for _, row := range strings.Split(view, "\n") {
+		if !strings.Contains(row, "HP") || !strings.Contains(row, "│") {
+			continue
+		}
+		// After outer │, expect padStats spaces before "HP" on the left half.
+		inner := strings.TrimPrefix(row, "│")
+		if idx := strings.Index(inner, "HP"); idx >= 0 && idx < padStats {
+			t.Fatalf("HP should sit in centred stats band (pad=%d), got idx=%d in %q", padStats, idx, row)
+		}
+		break
+	}
+}
+
+func TestCompareNativeClearUsesArtHOnly(t *testing.T) {
+	m := featureModel()
+	m.layoutTh.DisableSprite = false
+	m.width, m.height = 120, 40
+	row, col, artW, artH, ok := m.compareArtOrigin(0)
+	if !ok || artH < 1 {
+		t.Fatal("need art origin")
+	}
+	seq := m.compareNativeClearSeq()
+	artOnly := clearCellRect(row, col, artW, artH)
+	withSlack := clearCellRect(row, col, artW, artH+sixelClearSlackRows)
+	if !strings.Contains(seq, artOnly) {
+		t.Fatal("compare clear must erase artH rows")
+	}
+	if withSlack != artOnly && strings.Contains(seq, withSlack) {
+		t.Fatal("compare clear must not use sixelClearSlackRows (bleeds under card)")
 	}
 }
 

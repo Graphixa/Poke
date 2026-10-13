@@ -180,22 +180,41 @@ func (m Model) compareView() string {
 		body = append(body, strings.Repeat(" ", g.colW)+rule+strings.Repeat(" ", g.colW))
 	}
 
+	// Stats sit in a centred band under the art card (not stretched to column edges).
+	statsW, padStats := g.colW, 0
+	if g.drawArt {
+		statsW = g.artOW
+		if statsW < 22 {
+			statsW = 22
+		}
+		if statsW > g.colW {
+			statsW = g.colW
+		}
+		padStats = (g.colW - statsW) / 2
+	} else if g.colW > 28 {
+		statsW = 28
+		padStats = (g.colW - statsW) / 2
+	}
+	statLine := func(s string) string {
+		return textwidth.PadRight(strings.Repeat(" ", padStats)+textwidth.Truncate(s, statsW), g.colW)
+	}
+
 	av := []int{a.Stats.HP, a.Stats.Attack, a.Stats.Defense, a.Stats.SpecialAttack, a.Stats.SpecialDefense, a.Stats.Speed, a.Stats.Total()}
 	bv := []int{b.Stats.HP, b.Stats.Attack, b.Stats.Defense, b.Stats.SpecialAttack, b.Stats.SpecialDefense, b.Stats.Speed, b.Stats.Total()}
 	labels := []string{"HP", "Attack", "Defence", "Sp. Attack", "Sp. Defence", "Speed", "Total"}
 	for i, label := range labels {
 		if i == 6 {
-			body = append(body, colLine(compareStatDivider(g.colW, false))+rule+colLine(compareStatDivider(g.colW, true)))
+			body = append(body, statLine(compareStatDivider(statsW, false))+rule+statLine(compareStatDivider(statsW, true)))
 		}
 		delta := ""
 		if a.HasStats && b.HasStats {
 			delta = formatCompareDelta(bv[i] - av[i])
 		}
-		left := compareStatLine(label, av[i], a.HasStats, g.colW, a.HasStats && b.HasStats && av[i] > bv[i], "")
-		right := compareStatLine(label, bv[i], b.HasStats, g.colW, a.HasStats && b.HasStats && bv[i] > av[i], delta)
-		body = append(body, colLine(left)+rule+colLine(right))
+		left := compareStatLine(label, av[i], a.HasStats, statsW, a.HasStats && b.HasStats && av[i] > bv[i], "")
+		right := compareStatLine(label, bv[i], b.HasStats, statsW, a.HasStats && b.HasStats && bv[i] > av[i], delta)
+		body = append(body, statLine(left)+rule+statLine(right))
 	}
-	body = append(body, colLine(style.StatusMuted("Δ = B − A"))+rule+strings.Repeat(" ", g.colW))
+	body = append(body, statLine(style.StatusMuted("Δ = B − A"))+rule+strings.Repeat(" ", g.colW))
 
 	for len(body) < g.innerH {
 		body = append(body, strings.Repeat(" ", g.colW)+rule+strings.Repeat(" ", g.colW))
