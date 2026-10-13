@@ -119,8 +119,20 @@ type Model struct {
 	showFilters        bool
 	showCompare        bool
 	comparePin         *compareEntry
-	featureNotice      string
-	featureError       string
+	compareA           compareEntry
+	compareB           compareEntry
+	compareFocus       int // 0 = A, 1 = B
+	compareArtA        string
+	compareArtB        string
+	compareArtANative  bool
+	compareArtBNative  bool
+	compareArtAID      int
+	compareArtBID      int
+	compareArtCells    int
+	// compareNativePainted is true after a dual CUP+DCS paint; wipe uses compare origins.
+	compareNativePainted bool
+	featureNotice        string
+	featureError         string
 
 	ctx     context.Context
 	index   *search.Index

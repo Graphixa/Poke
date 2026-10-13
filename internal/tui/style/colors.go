@@ -61,7 +61,18 @@ func DefaultPalette() Palette {
 }
 
 // SetPalette installs the active theme colours for the process.
+// Empty Error/Warning/Success fall back to DefaultPalette so status ink always exists.
 func SetPalette(p Palette) {
+	d := DefaultPalette()
+	if p.Error == "" {
+		p.Error = d.Error
+	}
+	if p.Warning == "" {
+		p.Warning = d.Warning
+	}
+	if p.Success == "" {
+		p.Success = d.Success
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	active = p
@@ -100,6 +111,27 @@ func SecondaryColor() color.Color {
 	mu.RLock()
 	defer mu.RUnlock()
 	return fg(active.Secondary)
+}
+
+// ErrorColor is status / negative emphasis (theme error).
+func ErrorColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Error)
+}
+
+// WarningColor is status / caution emphasis (theme warning).
+func WarningColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Warning)
+}
+
+// SuccessColor is status / positive emphasis (theme success).
+func SuccessColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Success)
 }
 
 func statusStyles() (err, warn, ok, muted, loading, activeTab, inactiveTab lipgloss.Style) {

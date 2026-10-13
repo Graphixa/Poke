@@ -48,6 +48,16 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 	if !m.nativeOverlayDirty {
 		return m, nil
 	}
+	// Compare paints its own dual sixel via CUP; browse paint stays suppressed.
+	if m.showCompare {
+		if m.compareNativeReady() {
+			return m.emitCompareNativeOverlay()
+		}
+		if m.compositor != nil {
+			m.compositor.ClearNative()
+		}
+		return m, nil
+	}
 	// Keep dirty while covered so Esc can restore — but drop pending DCS so
 	// cell flushes cannot re-tail the sprite over the dialog/help.
 	if m.overlayOpen() {
@@ -80,6 +90,9 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 func (m Model) coverNativeOverlay() (Model, tea.Cmd) {
 	if m.compositor != nil {
 		m.compositor.ClearNative()
+	}
+	if m.compareNativePainted {
+		return m.emitCompareNativeClear()
 	}
 	hadPaint := m.nativePaintCells > 0 || m.nativePaintANSI != "" || m.nativePaintSpecies != 0
 	if !hadPaint {
@@ -122,6 +135,15 @@ func (m *Model) wipeNativeGraphics() tea.Cmd {
 	if m.sprites != nil {
 		m.sprites.ClearNative()
 	}
+	if m.compareNativePainted || m.showCompare {
+		_, cmd := m.emitCompareNativeClear()
+		m.nativePaintANSI = ""
+		m.nativePaintSpecies = 0
+		m.nativePaintCells = 0
+		m.nativeFollowUpPending = false
+		m.nativeOverlayDirty = false
+		return cmd
+	}
 	hadPaint := m.nativePaintCells > 0 || m.nativePaintANSI != "" || m.nativePaintSpecies != 0
 	row, col, artW, artH, ok := views.SpriteArtRegion(m.browseData())
 	m.nativePaintANSI = ""
@@ -141,6 +163,129 @@ func (m *Model) wipeNativeGraphics() tea.Cmd {
 		return nil
 	}
 	return tea.Raw(seq)
+}
+
+// compareNativeReady is true when compare can CUP-paint at least one sixel.
+func (m Model) compareNativeReady() bool {
+	if !m.showCompare || m.quitting {
+		return false
+	}
+	_, _, _, _, ok := m.compareArtOrigin(0)
+	if !ok {
+		return false
+	}
+	aOK := m.compareArtANative && m.compareArtA != "" && m.compareArtAID == m.compareA.Summary.ID
+	bOK := m.compareArtBNative && m.compareArtB != "" && m.compareArtBID == m.compareB.Summary.ID
+	return aOK || bOK
+}
+
+func (m Model) emitCompareNativeOverlay() (Model, tea.Cmd) {
+	if !m.compareNativeReady() {
+		return m, nil
+	}
+	m.nativeOverlayDirty = false
+	rowA, colA, artW, artH, okA := m.compareArtOrigin(0)
+	rowB, colB, _, _, okB := m.compareArtOrigin(1)
+	clearFirst := m.compareNativePainted || m.nativePaintCells > 0
+	var b strings.Builder
+	b.WriteString(decSaveCursor)
+	paint := func(row, col int, ansi string, ok bool) {
+		if !ok || ansi == "" {
+			return
+		}
+		if clearFirst {
+			b.WriteString(clearCellRect(row, col, artW, artH+sixelClearSlackRows))
+		}
+		fmt.Fprintf(&b, "\x1b[%d;%dH%s", row, col, ansi)
+	}
+	if m.compareArtANative && m.compareArtAID == m.compareA.Summary.ID {
+		paint(rowA, colA, m.compareArtA, okA)
+	} else if okA && clearFirst {
+		b.WriteString(clearCellRect(rowA, colA, artW, artH+sixelClearSlackRows))
+	}
+	if m.compareArtBNative && m.compareArtBID == m.compareB.Summary.ID {
+		paint(rowB, colB, m.compareArtB, okB)
+	} else if okB && clearFirst {
+		b.WriteString(clearCellRect(rowB, colB, artW, artH+sixelClearSlackRows))
+	}
+	b.WriteString(decRestoreCursor)
+	seq := b.String()
+	debuglog.Renderf("compare native overlay A=%d,%d B=%d,%d %dx%d", rowA, colA, rowB, colB, artW, artH)
+	m.compareNativePainted = true
+	m.nativePaintCells = m.compareArtCells
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	if m.composite && m.compositor != nil {
+		m.compositor.SetNative(seq)
+		m.nativeFollowUpPending = false
+		return m, func() tea.Msg { return nativeCompositeFlushMsg{} }
+	}
+	raw := tea.Raw(seq)
+	if m.nativeFollowUpPending {
+		m.nativeFollowUpPending = false
+		return m, raw
+	}
+	m.nativeFollowUpPending = true
+	return m, tea.Batch(raw, tea.Tick(nativeReassertDelay, func(time.Time) tea.Msg {
+		return nativeReassertMsg{}
+	}))
+}
+
+func (m Model) emitCompareNativeClear() (Model, tea.Cmd) {
+	had := m.compareNativePainted
+	seq := m.compareNativeClearSeq()
+	m.compareNativePainted = false
+	m.nativePaintCells = 0
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	if !had || seq == "" {
+		if m.compositor != nil {
+			m.compositor.ClearNative()
+		}
+		return m, nil
+	}
+	if m.composite && m.compositor != nil {
+		if m.quitting || m.overlayOpen() {
+			m.compositor.WriteDirect(seq)
+			return m, nil
+		}
+		m.compositor.SetNativeOnce(seq)
+		return m, nil
+	}
+	return m, tea.Raw(seq)
+}
+
+// forceCompareNativeWipe clears dual compare sixels synchronously (Esc / unpin).
+func (m *Model) forceCompareNativeWipe() {
+	seq := m.compareNativeClearSeq()
+	m.compareNativePainted = false
+	m.nativePaintCells = 0
+	m.nativePaintANSI = ""
+	m.nativePaintSpecies = 0
+	if m.compositor != nil {
+		m.compositor.ClearNative()
+		if seq != "" {
+			m.compositor.WriteDirect(seq)
+		}
+	}
+}
+
+func (m Model) compareNativeClearSeq() string {
+	rowA, colA, artW, artH, okA := m.compareArtOrigin(0)
+	rowB, colB, _, _, okB := m.compareArtOrigin(1)
+	if !okA && !okB {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(decSaveCursor)
+	if okA {
+		b.WriteString(clearCellRect(rowA, colA, artW, artH+sixelClearSlackRows))
+	}
+	if okB {
+		b.WriteString(clearCellRect(rowB, colB, artW, artH+sixelClearSlackRows))
+	}
+	b.WriteString(decRestoreCursor)
+	return b.String()
 }
 
 func (m Model) nativeOverlayReady() bool {
@@ -228,6 +373,7 @@ func (m *Model) invalidateNativePaintGeometry() {
 	m.nativePaintSpecies = 0
 	m.nativePaintCells = 0
 	m.nativeFollowUpPending = false
+	m.compareNativePainted = false
 	if m.composite && m.compositor != nil {
 		m.compositor.ClearNative()
 	}

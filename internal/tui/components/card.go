@@ -1,6 +1,7 @@
 package components
 
 import (
+	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -9,10 +10,13 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-// InnerCard draws a rounded box of fixed width×height. When title is non-empty
-// it is stamped into the top border (╭─ Title ──╮); otherwise the top edge is
-// plain (╭────────╮). Body lines are clipped to the inner content area.
+// InnerCard draws a rounded box of fixed width×height with default border ink.
 func InnerCard(title string, width, height int, bodyLines []string) string {
+	return InnerCardBorder(title, width, height, bodyLines, style.BorderColor())
+}
+
+// InnerCardBorder is InnerCard with an explicit border colour (focus chrome).
+func InnerCardBorder(title string, width, height int, bodyLines []string, borderFg color.Color) string {
 	if width < 4 {
 		width = 4
 	}
@@ -28,7 +32,7 @@ func InnerCard(title string, width, height int, bodyLines []string) string {
 		innerH = 1
 	}
 
-	border := lipgloss.NewStyle().Foreground(style.BorderColor())
+	border := lipgloss.NewStyle().Foreground(borderFg)
 	horiz := border.Render("─")
 	vert := border.Render("│")
 	topL := border.Render("╭")

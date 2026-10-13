@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -9,7 +10,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/textwidth"
+	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
 type viewOptions struct {
@@ -318,12 +321,244 @@ func (m Model) pinOrCompare() (tea.Model, tea.Cmd) {
 		m.comparePin = nil
 		return m, nil
 	}
+	m.compareA = m.comparisonEntry(m.comparePin.Summary)
+	if !m.compareA.HasStats {
+		m.compareA = *m.comparePin
+	}
+	m.compareB = m.comparisonEntry(s)
+	m.compareFocus = 1
+	*m.comparePin = m.compareA
 	m.showCompare = true
 	m.glanceHoldID = 0
-	return m.coverNativeOverlay()
+	m.resetCompareArt()
+	m.fillCompareArtFromCache(0)
+	m.fillCompareArtFromCache(1)
+	covered, wipe := m.coverNativeOverlay()
+	if covered.compareArtANative || covered.compareArtBNative {
+		covered.markNativeOverlayDirty()
+	}
+	return covered, tea.Batch(wipe, m.scheduleCompareArt())
+}
+
+func (m Model) compareFocused() compareEntry {
+	if m.compareFocus == 0 {
+		return m.compareA
+	}
+	return m.compareB
+}
+
+func (m *Model) swapCompareSides() {
+	m.compareA, m.compareB = m.compareB, m.compareA
+	m.compareArtA, m.compareArtB = m.compareArtB, m.compareArtA
+	m.compareArtANative, m.compareArtBNative = m.compareArtBNative, m.compareArtANative
+	m.compareArtAID, m.compareArtBID = m.compareArtBID, m.compareArtAID
+	if m.comparePin != nil {
+		*m.comparePin = m.compareA
+	}
+	// Focus stays on the same slot (left/right).
+	m.markNativeOverlayDirty()
+}
+
+func (m *Model) moveCompareFocused(delta int) bool {
+	cur := m.compareFocused()
+	otherID := m.compareA.Summary.ID
+	if m.compareFocus == 0 {
+		otherID = m.compareB.Summary.ID
+	}
+	start := -1
+	for i, s := range m.filtered {
+		if s.ID == cur.Summary.ID {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		start = m.cursor
+	}
+	for i := start + delta; i >= 0 && i < len(m.filtered); i += delta {
+		if m.filtered[i].ID == otherID {
+			continue
+		}
+		e := m.comparisonEntry(m.filtered[i])
+		if m.compareFocus == 0 {
+			m.compareA = e
+			m.compareArtA, m.compareArtANative, m.compareArtAID = "", false, 0
+			if m.comparePin != nil {
+				*m.comparePin = e
+			}
+		} else {
+			m.compareB = e
+			m.compareArtB, m.compareArtBNative, m.compareArtBID = "", false, 0
+			m.cursor = i
+			m.ensureListVisible()
+		}
+		m.markNativeOverlayDirty()
+		return true
+	}
+	return false
+}
+
+func (m *Model) resetCompareArt() {
+	m.compareArtA, m.compareArtB = "", ""
+	m.compareArtANative, m.compareArtBNative = false, false
+	m.compareArtAID, m.compareArtBID = 0, 0
+	m.compareArtCells = views.GlanceBucket
+}
+
+func (m Model) compareGenus(id int) string {
+	if e, ok := m.browseEntries[id]; ok && e.Genus != "" {
+		return e.Genus
+	}
+	if r := m.resources[id]; r != nil && r.HasCore && r.Species.Genus != "" {
+		return r.Species.Genus
+	}
+	return ""
+}
+
+func (m Model) pokemonForCompare(id int) (domain.Pokemon, bool) {
+	if id < 1 {
+		return domain.Pokemon{}, false
+	}
+	if r := m.resources[id]; r != nil && r.HasCore {
+		return r.Pokemon, true
+	}
+	if m.pokemonSrc != nil {
+		p, err := m.pokemonSrc.PokemonForSprite(m.ctx, id)
+		if err == nil {
+			return p, true
+		}
+	}
+	if e, ok := m.browseEntries[id]; ok {
+		return domain.Pokemon{ID: id, Slug: e.Slug, DisplayName: e.Name}, true
+	}
+	return domain.Pokemon{ID: id}, true
+}
+
+// compareNativeRenderer prefers Kitty/iTerm/Sixel frames painted via CUP overlay.
+type compareNativeRenderer interface {
+	NativeWarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
+}
+
+// compareCellRenderer is the chafa/halfblock fallback when native is unavailable.
+type compareCellRenderer interface {
+	WarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) sprite.RenderResult
+}
+
+func (m *Model) fillCompareArtFromCache(side int) {
+	e := m.compareA
+	if side == 1 {
+		e = m.compareB
+	}
+	cells := m.compareArtCells
+	if cells < sprite.SmallestFrameBucket() {
+		cells = views.GlanceBucket
+		m.compareArtCells = cells
+	}
+	p, ok := m.pokemonForCompare(e.Summary.ID)
+	if !ok || m.sprites == nil {
+		return
+	}
+	res, hit := m.sprites.LookupCached(m.ctx, p, cells)
+	if !hit || res.UsePlaceholder || res.ANSI == "" {
+		return
+	}
+	if side == 0 {
+		m.compareArtA, m.compareArtANative, m.compareArtAID = res.ANSI, res.Native, e.Summary.ID
+	} else {
+		m.compareArtB, m.compareArtBNative, m.compareArtBID = res.ANSI, res.Native, e.Summary.ID
+	}
+}
+
+func (m Model) scheduleCompareArt() tea.Cmd {
+	return tea.Batch(m.loadCompareArtSide(0), m.loadCompareArtSide(1))
+}
+
+func (m Model) loadCompareArtSide(side int) tea.Cmd {
+	e := m.compareA
+	if side == 1 {
+		e = m.compareB
+	}
+	id := e.Summary.ID
+	cells := m.compareArtCells
+	if cells < sprite.SmallestFrameBucket() {
+		cells = views.GlanceBucket
+	}
+	if id < 1 || m.sprites == nil {
+		return nil
+	}
+	if side == 0 && m.compareArtAID == id && m.compareArtA != "" {
+		return nil
+	}
+	if side == 1 && m.compareArtBID == id && m.compareArtB != "" {
+		return nil
+	}
+	sprites := m.sprites
+	ctx := m.ctx
+	p, ok := m.pokemonForCompare(id)
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		// Prefer native — dual columns reserve cells; CUP paints sixel into boxes.
+		if nr, ok := sprites.(compareNativeRenderer); ok {
+			res := nr.NativeWarmRender(ctx, p, cells)
+			if !res.UsePlaceholder && res.ANSI != "" && res.Native {
+				return compareArtMsg{side: side, speciesID: id, cells: cells, ansi: res.ANSI, native: true}
+			}
+		}
+		if res, hit := sprites.LookupCached(ctx, p, cells); hit && !res.UsePlaceholder && res.ANSI != "" {
+			return compareArtMsg{side: side, speciesID: id, cells: cells, ansi: res.ANSI, native: res.Native}
+		}
+		if wr, ok := sprites.(compareCellRenderer); ok {
+			res := wr.WarmRender(ctx, p, cells)
+			if !res.UsePlaceholder && res.ANSI != "" && !res.Native {
+				return compareArtMsg{side: side, speciesID: id, cells: cells, ansi: res.ANSI}
+			}
+		}
+		res := sprites.RenderCold(ctx, p, cells)
+		if res.UsePlaceholder || res.ANSI == "" {
+			return compareArtMsg{side: side, speciesID: id, cells: cells}
+		}
+		return compareArtMsg{side: side, speciesID: id, cells: cells, ansi: res.ANSI, native: res.Native}
+	}
+}
+
+type compareArtMsg struct {
+	side      int
+	speciesID int
+	cells     int
+	ansi      string
+	native    bool
+}
+
+func (m Model) finishCompareArt(msg compareArtMsg) (tea.Model, tea.Cmd) {
+	if !m.showCompare || msg.speciesID < 1 {
+		return m, nil
+	}
+	want := m.compareA.Summary.ID
+	if msg.side == 1 {
+		want = m.compareB.Summary.ID
+	}
+	if msg.speciesID != want {
+		return m, nil
+	}
+	if msg.side == 0 {
+		m.compareArtA, m.compareArtANative, m.compareArtAID = msg.ansi, msg.native, msg.speciesID
+	} else {
+		m.compareArtB, m.compareArtBNative, m.compareArtBID = msg.ansi, msg.native, msg.speciesID
+	}
+	m.compareArtCells = msg.cells
+	if msg.native && msg.ansi != "" {
+		m.markNativeOverlayDirty()
+	}
+	return m, nil
 }
 
 func (m *Model) closeFeature() {
+	if m.showCompare && m.compareNativePainted {
+		// Erase dual sixels before browse takes over — browse wipe won't hit these CUPs.
+		m.forceCompareNativeWipe()
+	}
 	m.showFilters = false
 	m.showCompare = false
 	m.featureError = ""
@@ -344,22 +579,24 @@ func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.showCompare {
-		if k == "up" || k == "down" {
-			delta := 1
-			if k == "up" {
-				delta = -1
+		switch k {
+		case "tab", "shift+tab":
+			m.compareFocus = 1 - m.compareFocus
+		case "up":
+			if m.moveCompareFocused(-1) {
+				return m, tea.Batch(m.syncSelectionLoads(), m.loadCompareArtSide(m.compareFocus))
 			}
-			for i := m.cursor + delta; i >= 0 && i < len(m.filtered); i += delta {
-				if m.comparePin != nil && m.filtered[i].ID == m.comparePin.Summary.ID {
-					continue
-				}
-				m.cursor = i
-				m.ensureListVisible()
-				return m, m.syncSelectionLoads()
+		case "down":
+			if m.moveCompareFocused(1) {
+				return m, tea.Batch(m.syncSelectionLoads(), m.loadCompareArtSide(m.compareFocus))
 			}
-		}
-		if k == "backspace" {
+		case " ", "space":
+			m.swapCompareSides()
+		case "backspace":
 			m.comparePin = nil
+			m.compareA = compareEntry{}
+			m.compareB = compareEntry{}
+			m.resetCompareArt()
 			m.closeFeature()
 		}
 		return m, nil

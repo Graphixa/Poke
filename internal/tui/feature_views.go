@@ -2,14 +2,18 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
+
 	"github.com/Graphixa/Pokedex/internal/output"
+	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/textwidth"
 	"github.com/Graphixa/Pokedex/internal/tui/components"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
 func featureBinding(keys, label, action string) key.Binding {
@@ -121,60 +125,362 @@ func (m Model) filterView() string {
 }
 
 func (m Model) compareView() string {
-	if m.comparePin == nil {
+	if m.comparePin == nil && m.compareA.Summary.ID == 0 {
 		return m.featureFrame("Compare", []string{"Choose a Pokémon with F3 to begin."}, [][]key.Binding{{featureBinding("esc", "esc", "back")}})
 	}
-	a := m.comparisonEntry(m.comparePin.Summary)
-	if !a.HasStats {
-		a = *m.comparePin
+	a, b := m.compareA, m.compareB
+	if a.Summary.ID == 0 && m.comparePin != nil {
+		a = m.comparisonEntry(m.comparePin.Summary)
+		if !a.HasStats {
+			a = *m.comparePin
+		}
 	}
-	s, _ := m.selected()
-	b := m.comparisonEntry(s)
-	// At small widths keep numbers and differences; wider terminals add bars.
-	inner := m.width - 4
-	col := (inner - 18) / 2
-	row := func(label, left, right, delta string) string {
-		return textwidth.PadRight(label, 9) + textwidth.PadRight(textwidth.Truncate(left, col), col) + "  " +
-			textwidth.PadRight(textwidth.Truncate(right, col), col) + " " + textwidth.PadRight(delta, 6)
+	if b.Summary.ID == 0 {
+		if s, ok := m.selected(); ok {
+			b = m.comparisonEntry(s)
+		}
 	}
-	lines := []string{row("", style.StatusMuted("PINNED"), featureAccent("SELECTED"), "Δ"),
-		row("", featureAccent(a.Summary.DisplayName), featureAccent(b.Summary.DisplayName), ""),
-		row("", output.FormatDex(a.Summary.ID), output.FormatDex(b.Summary.ID), ""),
-		row("", style.TypeSummary(a.Summary.Types), style.TypeSummary(b.Summary.Types), ""), ""}
+
+	bindings := [][]key.Binding{
+		{featureBinding("tab", "tab", "focus"), featureBinding("up", "↑/↓", "change"), featureBinding(" ", "space", "swap")},
+		{featureBinding("backspace", "⌫", "unpin"), featureBinding("esc", "esc", "back")},
+	}
+	helpM := m.help
+	helpM.SetWidth(m.width)
+	var footer []string
+	for _, row := range bindings {
+		footer = append(footer, helpM.ShortHelpView(row))
+	}
+
+	g := m.compareLayoutGeom(len(footer))
+	rule := lipgloss.NewStyle().Foreground(style.BorderColor()).Render("│")
+	body := make([]string, 0, g.innerH)
+
+	// Types: full column width, left-aligned under the border title (never centred/trimmed early).
+	colLine := func(s string) string {
+		return textwidth.PadRight(textwidth.Truncate(s, g.colW), g.colW)
+	}
+	body = append(body, colLine(compareSideHeader(a, m.compareGenus(a.Summary.ID), g.colW))+rule+
+		colLine(compareSideHeader(b, m.compareGenus(b.Summary.ID), g.colW)))
+
+	if g.drawArt {
+		leftBorder, rightBorder := style.BorderColor(), style.BorderColor()
+		if m.compareFocus == 0 {
+			leftBorder = style.PrimaryColor()
+		} else {
+			rightBorder = style.PrimaryColor()
+		}
+		leftCard := m.compareArtCard(0, a, g.artW, g.artH, g.artOW, g.artOH, leftBorder)
+		rightCard := m.compareArtCard(1, b, g.artW, g.artH, g.artOW, g.artOH, rightBorder)
+		leftLines := padCompareBlock(leftCard, g.colW, g.artOH, g.padL)
+		rightLines := padCompareBlock(rightCard, g.colW, g.artOH, g.padL)
+		for i := 0; i < g.artOH; i++ {
+			body = append(body, leftLines[i]+rule+rightLines[i])
+		}
+		body = append(body, strings.Repeat(" ", g.colW)+rule+strings.Repeat(" ", g.colW))
+	}
+
 	av := []int{a.Stats.HP, a.Stats.Attack, a.Stats.Defense, a.Stats.SpecialAttack, a.Stats.SpecialDefense, a.Stats.Speed, a.Stats.Total()}
 	bv := []int{b.Stats.HP, b.Stats.Attack, b.Stats.Defense, b.Stats.SpecialAttack, b.Stats.SpecialDefense, b.Stats.Speed, b.Stats.Total()}
-	for i, label := range []string{"HP", "Attack", "Defence", "Sp. Atk", "Sp. Def", "Speed", "Total"} {
-		left, right, delta := "—", "—", "—"
-		stat := func(v int, higher bool) string {
-			text := fmt.Sprintf("%3d", v)
-			if i < 6 && col >= 16 {
-				width := min(20, col-5)
-				filled := min(width, max(0, v*width/255))
-				text += " " + strings.Repeat("█", filled) + style.StatusMuted(strings.Repeat("░", width-filled))
-			}
-			if higher {
-				return featureAccent(text)
-			}
-			return text
+	labels := []string{"HP", "Attack", "Defence", "Sp. Attack", "Sp. Defence", "Speed", "Total"}
+	for i, label := range labels {
+		if i == 6 {
+			body = append(body, colLine(compareStatDivider(g.colW, false))+rule+colLine(compareStatDivider(g.colW, true)))
 		}
-		if a.HasStats {
-			left = stat(av[i], b.HasStats && av[i] > bv[i])
-		}
-		if b.HasStats {
-			right = stat(bv[i], a.HasStats && bv[i] > av[i])
-		}
+		delta := ""
 		if a.HasStats && b.HasStats {
-			delta = fmt.Sprintf("%+d", bv[i]-av[i])
-			if av[i] == bv[i] {
-				delta = "="
+			delta = formatCompareDelta(bv[i] - av[i])
+		}
+		left := compareStatLine(label, av[i], a.HasStats, g.colW, a.HasStats && b.HasStats && av[i] > bv[i], "")
+		right := compareStatLine(label, bv[i], b.HasStats, g.colW, a.HasStats && b.HasStats && bv[i] > av[i], delta)
+		body = append(body, colLine(left)+rule+colLine(right))
+	}
+	body = append(body, colLine(style.StatusMuted("Δ = B − A"))+rule+strings.Repeat(" ", g.colW))
+
+	for len(body) < g.innerH {
+		body = append(body, strings.Repeat(" ", g.colW)+rule+strings.Repeat(" ", g.colW))
+	}
+	if len(body) > g.innerH {
+		body = body[:g.innerH]
+	}
+
+	top := compareDualTitle(
+		fmt.Sprintf("%s %s", a.Summary.DisplayName, output.FormatDex(a.Summary.ID)),
+		fmt.Sprintf("%s %s", b.Summary.DisplayName, output.FormatDex(b.Summary.ID)),
+		m.width, m.compareFocus == 0,
+	)
+	border := lipgloss.NewStyle().Foreground(style.BorderColor())
+	bot := border.Render("╰") + strings.Repeat(border.Render("─"), max(0, m.width-2)) + border.Render("╯")
+	vert := border.Render("│")
+
+	var frame strings.Builder
+	frame.WriteString(top)
+	frame.WriteByte('\n')
+	for i, line := range body {
+		cell := textwidth.PadRight(textwidth.Truncate(line, g.innerW), g.innerW)
+		frame.WriteString(vert + cell + vert)
+		if i < len(body)-1 {
+			frame.WriteByte('\n')
+		}
+	}
+	frame.WriteByte('\n')
+	frame.WriteString(bot)
+	return " Compare\n" + frame.String() + "\n" + strings.Join(footer, "\n")
+}
+
+// compareLayoutGeom is shared by compareView and dual native CUP painting.
+type compareLayoutGeom struct {
+	innerW, innerH, colW       int
+	drawArt                    bool
+	artW, artH, artOW, artOH   int
+	padL                       int
+}
+
+func (m Model) compareFooterH() int {
+	// Matches compareView's two help rows.
+	return 2
+}
+
+func (m Model) compareLayoutGeom(footerH int) compareLayoutGeom {
+	if footerH < 1 {
+		footerH = m.compareFooterH()
+	}
+	frameH := m.height - footerH - 1
+	if frameH < 10 {
+		frameH = 10
+	}
+	g := compareLayoutGeom{
+		innerW: m.width - 2,
+		innerH: frameH - 2,
+	}
+	if g.innerW < 20 {
+		g.innerW = 20
+	}
+	g.colW = (g.innerW - 1) / 2
+	if g.colW < 10 {
+		g.colW = 10
+	}
+	showArt := !m.layoutTh.DisableSprite && m.width >= 56 && m.height >= 20
+	bucket := views.GlanceBucket
+	if m.compareArtCells >= sprite.SmallestFrameBucket() {
+		bucket = m.compareArtCells
+	}
+	g.artW, g.artH = sprite.FrameSizeFor(bucket)
+	g.artOW, g.artOH = g.artW+2, g.artH+2
+	const statsBlock = 10 // 6 stats + divider + total + Δ + gap
+	g.drawArt = showArt && g.artOW <= g.colW && g.artOH+statsBlock <= g.innerH
+	if g.drawArt {
+		g.padL = (g.colW - g.artOW) / 2
+		if g.padL < 0 {
+			g.padL = 0
+		}
+	}
+	return g
+}
+
+// compareArtOrigin returns 1-indexed CUP row/col for side 0 (A) or 1 (B).
+func (m Model) compareArtOrigin(side int) (row, col, artW, artH int, ok bool) {
+	g := m.compareLayoutGeom(m.compareFooterH())
+	if !g.drawArt || m.width < 1 || m.height < 1 {
+		return 0, 0, 0, 0, false
+	}
+	// row1=outside title, row2=top border, row3=types, row4=card top, row5=art
+	artPadY := (g.artOH - 2 - g.artH) / 2
+	if artPadY < 0 {
+		artPadY = 0
+	}
+	row = 1 + 1 + 1 + 1 + 1 + artPadY
+	artPadX := (g.artOW - 2 - g.artW) / 2
+	if artPadX < 0 {
+		artPadX = 0
+	}
+	if side == 0 {
+		col = 2 + g.padL + 1 + artPadX
+	} else {
+		col = 2 + g.colW + 1 + g.padL + 1 + artPadX
+	}
+	return row, col, g.artW, g.artH, true
+}
+
+func formatCompareDelta(diff int) string {
+	if diff == 0 {
+		return style.StatusMuted("0")
+	}
+	s := fmt.Sprintf("%+d", diff)
+	if diff > 0 {
+		return lipgloss.NewStyle().Foreground(style.SuccessColor()).Render(s)
+	}
+	return lipgloss.NewStyle().Foreground(style.ErrorColor()).Render(s)
+}
+
+func compareSideHeader(e compareEntry, genus string, colW int) string {
+	head := style.TypeSummary(e.Summary.Types)
+	if genus != "" {
+		head += " · " + genus
+	}
+	return textwidth.PadRight(textwidth.Truncate(head, colW), colW)
+}
+
+func compareStatLine(label string, v int, has bool, colW int, higher bool, delta string) string {
+	const labelW = 12 // "Sp. Defence"
+	deltaW := 0
+	if delta != "" {
+		deltaW = 6
+	}
+	valBudget := colW - labelW - deltaW
+	if valBudget < 4 {
+		valBudget = 4
+	}
+	val := "—"
+	if has {
+		val = fmt.Sprintf("%d", v)
+		if higher {
+			val = featureAccent(val)
+		}
+	}
+	gap := valBudget - textwidth.Width(val)
+	if gap < 1 {
+		gap = 1
+		val = textwidth.Truncate(val, valBudget-1)
+	}
+	line := textwidth.PadRight(label, labelW) + strings.Repeat(" ", gap) + val
+	if delta != "" {
+		pad := deltaW - textwidth.Width(delta)
+		if pad < 1 {
+			pad = 1
+		}
+		line += strings.Repeat(" ", pad) + delta
+	}
+	return textwidth.PadRight(textwidth.Truncate(line, colW), colW)
+}
+
+func compareStatDivider(colW int, withDelta bool) string {
+	const labelW = 12
+	deltaW := 0
+	if withDelta {
+		deltaW = 6
+	}
+	valBudget := colW - labelW - deltaW
+	if valBudget < 4 {
+		valBudget = 4
+	}
+	line := strings.Repeat(" ", labelW) + strings.Repeat("─", min(valBudget, 15))
+	if withDelta {
+		line += " " + strings.Repeat("─", 3)
+	}
+	return textwidth.PadRight(textwidth.Truncate(line, colW), colW)
+}
+
+func padCompareBlock(block string, width, height, padL int) []string {
+	src := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	out := make([]string, height)
+	pad := strings.Repeat(" ", padL)
+	for i := 0; i < height; i++ {
+		line := pad
+		if i < len(src) {
+			line = pad + src[i]
+		}
+		if !strings.Contains(line, "\x1b") {
+			line = textwidth.PadRight(textwidth.Truncate(line, width), width)
+		} else {
+			for textwidth.Width(line) < width && !strings.Contains(line, "\x1bP") {
+				line += " "
 			}
 		}
-		lines = append(lines, row(label, left, right, delta))
+		out[i] = line
 	}
-	if m.height >= 20 {
-		lines = append(lines, "", style.StatusMuted("Δ selected − pinned · — unavailable"))
+	return out
+}
+
+func compareDualTitle(left, right string, width int, leftFocus bool) string {
+	border := lipgloss.NewStyle().Foreground(style.BorderColor())
+	accent := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
+	muted := lipgloss.NewStyle().Foreground(style.PrimaryColor())
+	topL, topR := border.Render("╭"), border.Render("╮")
+	horiz := border.Render("─")
+	inner := width - 2
+	if inner < 10 {
+		inner = 10
 	}
-	return m.featureFrame("Compare · base stats", lines, [][]key.Binding{
-		{featureBinding("up", "↑/↓", "opponent"), featureBinding("backspace", "⌫", "unpin"), featureBinding("esc", "esc", "back")},
-	})
+	half := inner / 2
+	fit := func(label string, budget int, focus bool) string {
+		lab := " " + label + " "
+		if textwidth.Width(lab) > budget-2 {
+			lab = textwidth.Truncate(lab, max(3, budget-2))
+		}
+		st := muted
+		if focus {
+			st = accent
+		}
+		rendered := st.Render(lab)
+		used := 1 + lipgloss.Width(rendered) // leading ─ + label
+		remain := budget - used
+		if remain < 1 {
+			remain = 1
+		}
+		return horiz + rendered + strings.Repeat(horiz, remain)
+	}
+	return topL + fit(left, half, leftFocus) + fit(right, inner-half, !leftFocus) + topR
+}
+
+func (m Model) compareArtCard(side int, e compareEntry, artW, artH, cardW, cardH int, borderFg color.Color) string {
+	ansi := ""
+	native := false
+	if side == 0 && m.compareArtAID == e.Summary.ID {
+		ansi, native = m.compareArtA, m.compareArtANative
+	} else if side == 1 && m.compareArtBID == e.Summary.ID {
+		ansi, native = m.compareArtB, m.compareArtBNative
+	}
+	if ansi == "" && m.imageSpeciesID == e.Summary.ID && !m.imagePlaceholder && m.imageANSI != "" && !m.imageNative {
+		ansi = m.imageANSI
+	}
+	var inner string
+	switch {
+	case ansi != "" && !native:
+		inner = components.SpritePanel(ansi, artW, artH, false)
+	case ansi != "" && native:
+		// Cell reservation only — DCS is CUP-painted by emitCompareNativeOverlay.
+		blank := make([]string, artH)
+		for i := range blank {
+			blank[i] = strings.Repeat(" ", artW)
+		}
+		inner = strings.Join(blank, "\n")
+	default:
+		inner = components.SpritePlaceholder(e.Summary.DisplayName, artW, artH)
+	}
+	body := comparePadArtInCard(inner, artW, artH, cardW-2, cardH-2)
+	return components.InnerCardBorder("", cardW, cardH, strings.Split(body, "\n"), borderFg)
+}
+
+func comparePadArtInCard(art string, artW, artH, innerW, innerH int) string {
+	left := (innerW - artW) / 2
+	if left < 0 {
+		left = 0
+	}
+	top := (innerH - artH) / 2
+	if top < 0 {
+		top = 0
+	}
+	padL := strings.Repeat(" ", left)
+	lines := strings.Split(art, "\n")
+	out := make([]string, 0, innerH)
+	for i := 0; i < top; i++ {
+		out = append(out, strings.Repeat(" ", innerW))
+	}
+	for _, line := range lines {
+		row := padL + line
+		if !strings.Contains(line, "\x1b") {
+			for lipgloss.Width(row) < innerW {
+				row += " "
+			}
+		}
+		out = append(out, row)
+	}
+	for len(out) < innerH {
+		out = append(out, strings.Repeat(" ", innerW))
+	}
+	if len(out) > innerH {
+		out = out[:innerH]
+	}
+	return strings.Join(out, "\n")
 }

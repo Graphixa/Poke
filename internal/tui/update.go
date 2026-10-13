@@ -36,7 +36,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case favouriteSavedMsg:
 		return m.finishFavouriteSave(msg)
+	case compareArtMsg:
+		return m.finishCompareArt(msg)
 	case nativeReassertMsg:
+		if m.showCompare {
+			if m.compareNativeReady() {
+				m.markNativeOverlayDirty()
+			}
+			return m, nil
+		}
 		if m.nativeOverlayReady() {
 			m.markNativeOverlayDirty()
 		}

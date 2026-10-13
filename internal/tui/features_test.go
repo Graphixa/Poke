@@ -306,10 +306,14 @@ func TestComparePinCloseUnpinAndMissingStats(t *testing.T) {
 	m = featureKey(m, tea.KeyDown)
 	m = featureKey(m, tea.KeyF3)
 	view := ansi.Strip(m.featureView())
-	for _, want := range []string{"Charmander", "Charizard", "309", "534", "+225", "base stats"} {
+	for _, want := range []string{"Charmander #004", "Charizard #006", "HP", "309", "534", "+225", "Compare"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q: %s", want, view)
 		}
+	}
+	// Mirrored labels on both sides of the rule.
+	if strings.Count(view, "Attack") < 2 || strings.Count(view, "│") < 5 {
+		t.Fatalf("expected mirrored stat labels / vertical rule:\n%s", view)
 	}
 	if !m.showCompare || m.comparePin.Summary.ID != 4 {
 		t.Fatal("pin/compare failed")
@@ -421,20 +425,111 @@ func TestCompareNavigationSkipsPinAndPreservesSearch(t *testing.T) {
 	m = featureKey(m, tea.KeyF3)
 	m = featureKey(m, tea.KeyDown)
 	m = featureKey(m, tea.KeyF3)
+	if m.compareFocus != 1 || m.compareA.Summary.ID != 4 || m.compareB.Summary.ID != 6 {
+		t.Fatalf("open state A=%d B=%d focus=%d", m.compareA.Summary.ID, m.compareB.Summary.ID, m.compareFocus)
+	}
 	m = featureKey(m, tea.KeyDown)
-	s, _ := m.selected()
-	if s.ID != 25 || !m.showCompare {
-		t.Fatal("opponent did not advance")
+	if m.compareB.Summary.ID != 25 || !m.showCompare {
+		t.Fatalf("focused B did not advance, B=%d", m.compareB.Summary.ID)
 	}
 	m = featureKey(m, tea.KeyUp)
 	m = featureKey(m, tea.KeyUp)
-	s, _ = m.selected()
-	if s.ID != 6 {
-		t.Fatal("must not compare pin against itself")
+	if m.compareB.Summary.ID != 6 {
+		t.Fatalf("must not compare A against itself, B=%d", m.compareB.Summary.ID)
 	}
 	m = featureKey(m, tea.KeyEscape)
 	if m.showCompare || m.comparePin.Summary.ID != 4 {
 		t.Fatal("back lost pin")
+	}
+}
+
+func TestFormatCompareDelta(t *testing.T) {
+	if got := ansi.Strip(formatCompareDelta(0)); got != "0" {
+		t.Fatalf("tie = %q", got)
+	}
+	if got := ansi.Strip(formatCompareDelta(19)); got != "+19" {
+		t.Fatalf("pos = %q", got)
+	}
+	if got := ansi.Strip(formatCompareDelta(-19)); got != "-19" {
+		t.Fatalf("neg = %q", got)
+	}
+}
+
+func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
+	line := ansi.Strip(compareStatLine("HP", 80, true, 40, false, ""))
+	if !strings.HasPrefix(line, "HP") || !strings.HasSuffix(strings.TrimRight(line, " "), "80") {
+		t.Fatalf("label L / value R: %q", line)
+	}
+	right := ansi.Strip(compareStatLine("Attack", 30, true, 40, false, ansi.Strip(formatCompareDelta(-52))))
+	if !strings.Contains(right, "30") || !strings.HasSuffix(strings.TrimRight(right, " "), "-52") {
+		t.Fatalf("delta column: %q", right)
+	}
+	if textwidth.Width(line) != 40 || textwidth.Width(right) != 40 {
+		t.Fatalf("stat line width: %d %d", textwidth.Width(line), textwidth.Width(right))
+	}
+
+	m := featureModel()
+	m.layoutTh.DisableSprite = false
+	m.width, m.height = 120, 40
+	rowA, colA, aw, ah, okA := m.compareArtOrigin(0)
+	rowB, colB, _, _, okB := m.compareArtOrigin(1)
+	if !okA || !okB || rowA != rowB || colB <= colA+aw || aw < 1 || ah < 1 {
+		t.Fatalf("origins A=%d,%d B=%d,%d size=%dx%d ok=%v,%v", rowA, colA, rowB, colB, aw, ah, okA, okB)
+	}
+}
+
+func TestCompareNativeReadyPaintsNotBrowse(t *testing.T) {
+	m := featureModel()
+	m.layoutTh.DisableSprite = false
+	m.width, m.height = 120, 40
+	m.showCompare = true
+	m.compareA = m.comparisonEntry(m.filtered[0])
+	m.compareB = m.comparisonEntry(m.filtered[1])
+	m.compareArtA = "\x1bP0;0;8q#1~~~\x1b\\"
+	m.compareArtB = "\x1bP0;0;8q#2~~~\x1b\\"
+	m.compareArtANative, m.compareArtBNative = true, true
+	m.compareArtAID, m.compareArtBID = m.compareA.Summary.ID, m.compareB.Summary.ID
+	m.compareArtCells = 16
+	m.nativeOverlayDirty = true
+	if m.nativeOverlayReady() {
+		t.Fatal("browse native must stay suppressed")
+	}
+	if !m.compareNativeReady() {
+		t.Fatal("compare dual sixel should be ready")
+	}
+	next, cmd := m.scheduleNativeOverlay()
+	if cmd == nil || next.nativeOverlayDirty {
+		t.Fatal("compare should emit dual paint and clear dirty")
+	}
+	if !next.compareNativePainted {
+		t.Fatal("compare paint flag")
+	}
+}
+
+func TestCompareTabSwapMirroredStats(t *testing.T) {
+	m := featureModel()
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyDown)
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyTab)
+	if m.compareFocus != 0 {
+		t.Fatal("tab should focus A")
+	}
+	view := ansi.Strip(m.featureView())
+	if !strings.Contains(view, "Charmander #004") || !strings.Contains(view, "Charizard #006") {
+		t.Fatalf("missing dual border titles:\n%s", view)
+	}
+	if strings.Count(view, "HP") < 2 || strings.Count(view, "Speed") < 2 {
+		t.Fatalf("stat labels must appear on both sides:\n%s", view)
+	}
+	if !strings.HasPrefix(strings.TrimLeft(view, "\n"), " Compare") && !strings.Contains(view, "\n Compare\n") {
+		if !strings.Contains(view, " Compare\n╭") {
+			t.Fatalf("Compare title should sit outside the border:\n%s", view)
+		}
+	}
+	m = featureKey(m, ' ')
+	if m.compareA.Summary.ID != 6 || m.compareB.Summary.ID != 4 || m.compareFocus != 0 {
+		t.Fatalf("space swap failed A=%d B=%d focus=%d", m.compareA.Summary.ID, m.compareB.Summary.ID, m.compareFocus)
 	}
 }
 
