@@ -155,9 +155,15 @@ func (m Model) compareView() string {
 	rule := lipgloss.NewStyle().Foreground(style.BorderColor()).Render("│")
 	body := make([]string, 0, g.innerH)
 
-	colLine := func(s string) string {
-		return textwidth.PadRight(textwidth.Truncate(s, g.colW), g.colW)
+	// Name/type align with the art card's left edge (padL).
+	headLine := func(s string, colW int) string {
+		budget := colW - g.padL
+		if budget < 1 {
+			budget = 1
+		}
+		return compareFit(strings.Repeat(" ", g.padL)+textwidth.Truncate(s, budget), colW)
 	}
+	blank := strings.Repeat(" ", g.colWA) + rule + strings.Repeat(" ", g.colWB)
 	nameA := fmt.Sprintf("%s %s", a.Summary.DisplayName, output.FormatDex(a.Summary.ID))
 	nameB := fmt.Sprintf("%s %s", b.Summary.DisplayName, output.FormatDex(b.Summary.ID))
 	if m.compareFocus == 0 {
@@ -165,32 +171,28 @@ func (m Model) compareView() string {
 	} else {
 		nameB = featureAccent(nameB)
 	}
-	body = append(body, colLine(nameA)+rule+colLine(nameB))
-	body = append(body, colLine(compareSideHeader(a, m.compareGenus(a.Summary.ID)))+rule+
-		colLine(compareSideHeader(b, m.compareGenus(b.Summary.ID))))
+	body = append(body, blank)
+	body = append(body, headLine(nameA, g.colWA)+rule+headLine(nameB, g.colWB))
+	body = append(body, headLine(compareSideHeader(a, m.compareGenus(a.Summary.ID)), g.colWA)+rule+
+		headLine(compareSideHeader(b, m.compareGenus(b.Summary.ID)), g.colWB))
+	body = append(body, blank)
 
 	av := []int{a.Stats.HP, a.Stats.Attack, a.Stats.Defense, a.Stats.SpecialAttack, a.Stats.SpecialDefense, a.Stats.Speed, a.Stats.Total()}
 	bv := []int{b.Stats.HP, b.Stats.Attack, b.Stats.Defense, b.Stats.SpecialAttack, b.Stats.SpecialDefense, b.Stats.Speed, b.Stats.Total()}
 	labels := []string{"HP", "Attack", "Defence", "Sp. Attack", "Sp. Defence", "Speed", "Total"}
-	statLinesA := make([]string, 0, 8)
-	statLinesB := make([]string, 0, 8)
-	for i, label := range labels {
-		if i == 6 {
-			div := compareStatDivider(g.coreW)
-			statLinesA = append(statLinesA, div)
-			statLinesB = append(statLinesB, div)
+	deltas := make([]string, len(labels))
+	if a.HasStats && b.HasStats {
+		for i := range labels {
+			deltas[i] = formatCompareDelta(bv[i] - av[i])
 		}
-		delta := ""
-		if a.HasStats && b.HasStats {
-			delta = formatCompareDelta(bv[i] - av[i])
-		}
-		statLinesA = append(statLinesA, compareStatCore(label, av[i], a.HasStats, g.coreW))
-		right := compareStatCore(label, bv[i], b.HasStats, g.coreW)
-		if delta != "" {
-			right += " " + delta
-		}
-		statLinesB = append(statLinesB, right)
 	}
+	budgetA, budgetB := g.coreW, g.coreW
+	if g.drawArt {
+		budgetA = g.colWA - g.padL - g.artOW - g.gap
+		budgetB = g.colWB - g.padL - g.artOW - g.gap
+	}
+	statLinesA := compareStatLines(labels, av, a.HasStats, nil, budgetA)
+	statLinesB := compareStatLines(labels, bv, b.HasStats, deltas, budgetB)
 
 	if g.drawArt {
 		leftBorder, rightBorder := style.BorderColor(), style.BorderColor()
@@ -211,16 +213,16 @@ func (m Model) compareView() string {
 			if i < len(statLinesB) {
 				sb = statLinesB[i]
 			}
-			body = append(body, compareArtStatRow(g, artA[i], sa)+rule+compareArtStatRow(g, artB[i], sb))
+			body = append(body, compareArtStatRow(g, artA[i], sa, g.colWA)+rule+compareArtStatRow(g, artB[i], sb, g.colWB))
 		}
 	} else {
 		for i := range statLinesA {
-			body = append(body, colLine(statLinesA[i])+rule+colLine(statLinesB[i]))
+			body = append(body, compareFit(statLinesA[i], g.colWA)+rule+compareFit(statLinesB[i], g.colWB))
 		}
 	}
 
 	for len(body) < g.innerH {
-		body = append(body, strings.Repeat(" ", g.colW)+rule+strings.Repeat(" ", g.colW))
+		body = append(body, blank)
 	}
 	if len(body) > g.innerH {
 		body = body[:g.innerH]
@@ -234,7 +236,11 @@ func (m Model) compareView() string {
 	frame.WriteString(compareFrameTitle(m.width))
 	frame.WriteByte('\n')
 	for i, line := range body {
-		cell := textwidth.PadRight(textwidth.Truncate(line, g.innerW), g.innerW)
+		// Halves already fill colWA|colWB exactly — never Truncate the joined ANSI row.
+		cell := line
+		if textwidth.Width(cell) < g.innerW {
+			cell = textwidth.PadRight(cell, g.innerW)
+		}
 		frame.WriteString(vert + cell + vert)
 		if i < len(body)-1 {
 			frame.WriteByte('\n')
@@ -258,19 +264,25 @@ func compareFrameTitle(width int) string {
 	return prefix + strings.Repeat(horiz, remain) + border.Render("╮")
 }
 
-func compareArtStatRow(g compareLayoutGeom, artLine, stat string) string {
-	gap := strings.Repeat(" ", g.gap)
-	pad := strings.Repeat(" ", g.padL)
-	statBudget := g.colW - g.padL - g.artOW - g.gap
+func compareFit(s string, width int) string {
+	return textwidth.PadRight(textwidth.Truncate(s, width), width)
+}
+
+func compareArtStatRow(g compareLayoutGeom, artLine, stat string, colW int) string {
+	statBudget := colW - g.padL - g.artOW - g.gap
 	if statBudget < 1 {
 		statBudget = 1
 	}
-	return textwidth.PadRight(pad+artLine+gap+textwidth.Truncate(stat, statBudget), g.colW)
+	// Fixed columns: never let ANSI art width steal the stats budget.
+	art := compareFit(artLine, g.artOW)
+	st := compareFit(stat, statBudget)
+	return compareFit(strings.Repeat(" ", g.padL)+art+strings.Repeat(" ", g.gap)+st, colW)
 }
 
 // compareLayoutGeom is shared by compareView and dual native CUP painting.
 type compareLayoutGeom struct {
-	innerW, innerH, colW     int
+	innerW, innerH           int
+	colWA, colWB             int // exact halves: colWA+1+colWB == innerW
 	drawArt                  bool
 	artW, artH, artOW, artOH int
 	padL, gap, coreW, blockH int
@@ -298,14 +310,15 @@ func (m Model) compareLayoutGeom(footerH int) compareLayoutGeom {
 	if g.innerW < 20 {
 		g.innerW = 20
 	}
-	g.colW = (g.innerW - 1) / 2
-	if g.colW < 10 {
-		g.colW = 10
-	}
+	// Split so colWA + rule + colWB == innerW. When both sides have stats, bias a few
+	// columns to B for the Δ column (sep + Δ + padR) instead of a hard 56/44 split.
+	g.colWA = (g.innerW - 1) / 2
+	g.colWB = g.innerW - 1 - g.colWA
 	const (
-		headerRows = 2 // name + type
+		headerRows = 4 // blank + name + type + blank
 		statsRows  = 8 // 6 stats + divider + total
 		minCoreW   = 18
+		deltaBias  = 6 // sep(2) + Δ(~3–4) + padR(1)
 	)
 	showArt := !m.layoutTh.DisableSprite && m.width >= 72 && m.height >= 16
 	bucket := views.GlanceBucket
@@ -319,19 +332,25 @@ func (m Model) compareLayoutGeom(footerH int) compareLayoutGeom {
 		g.blockH = statsRows
 	}
 	needW := g.padL + g.artOW + g.gap + minCoreW
-	g.drawArt = showArt && needW <= g.colW && headerRows+g.blockH <= g.innerH
+	if m.compareA.HasStats && m.compareB.HasStats {
+		keep := needW
+		if !showArt {
+			keep = 12
+		}
+		if g.colWA-deltaBias >= keep {
+			g.colWA -= deltaBias
+			g.colWB += deltaBias
+		}
+	}
+	colMin := g.colWA
+	if g.colWB < colMin {
+		colMin = g.colWB
+	}
+	g.drawArt = showArt && needW <= colMin && headerRows+g.blockH <= g.innerH
 	if g.drawArt {
-		budget := g.colW - g.padL - g.artOW - g.gap
-		// Leave a little room so B's Δ isn't clipped off the core band.
-		g.coreW = budget
-		if budget >= 25 {
-			g.coreW = budget - 7
-		}
-		if g.coreW < minCoreW {
-			g.coreW = min(minCoreW, budget)
-		}
+		g.coreW = colMin - g.padL - g.artOW - g.gap
 	} else {
-		g.coreW = g.colW
+		g.coreW = colMin
 		if g.coreW > 28 {
 			g.coreW = 28
 		}
@@ -345,12 +364,13 @@ func (m Model) compareArtOrigin(side int) (row, col, artW, artH int, ok bool) {
 	if !g.drawArt || m.width < 1 || m.height < 1 {
 		return 0, 0, 0, 0, false
 	}
-	// row1=top border, row2=name, row3=type, row4=card top, row5=art
+	// row1=top border, then blank+name+type+blank, card top, then art content.
 	artPadY := (g.artOH - 2 - g.artH) / 2
 	if artPadY < 0 {
 		artPadY = 0
 	}
-	row = 1 + 2 + 1 + 1 + artPadY
+	const headerRows = 4
+	row = 1 + headerRows + 1 + 1 + artPadY // border + header + card top + first content
 	artPadX := (g.artOW - 2 - g.artW) / 2
 	if artPadX < 0 {
 		artPadX = 0
@@ -358,7 +378,7 @@ func (m Model) compareArtOrigin(side int) (row, col, artW, artH int, ok bool) {
 	if side == 0 {
 		col = 2 + g.padL + 1 + artPadX
 	} else {
-		col = 2 + g.colW + 1 + g.padL + 1 + artPadX
+		col = 2 + g.colWA + 1 + g.padL + 1 + artPadX
 	}
 	return row, col, g.artW, g.artH, true
 }
@@ -382,33 +402,100 @@ func compareSideHeader(e compareEntry, genus string) string {
 	return head
 }
 
-// compareStatCore is the symmetrical label+value band (no Δ). Labels use primary accent.
-func compareStatCore(label string, v int, has bool, coreW int) string {
-	const labelW = 12 // "Sp. Defence"
-	valBudget := coreW - labelW
-	if valBudget < 4 {
-		valBudget = 4
+// compareStatLines packs label | flex | value [| sep | Δ] [| padR].
+// Rule before Total: ─×label + gap + ─×value + break + ─×Δ (when Δ present).
+func compareStatLines(labels []string, vals []int, has bool, deltas []string, budget int) []string {
+	if budget < 1 {
+		budget = 1
 	}
-	val := "—"
-	if has {
-		val = fmt.Sprintf("%d", v)
+	labelW := 0
+	for _, l := range labels {
+		if w := textwidth.Width(l); w > labelW {
+			labelW = w
+		}
 	}
-	gap := valBudget - textwidth.Width(val)
-	if gap < 1 {
+	valsS := make([]string, len(labels))
+	deltasS := make([]string, len(labels))
+	valW, deltaW := 0, 0
+	for i := range labels {
+		s := "—"
+		if has {
+			s = fmt.Sprintf("%d", vals[i])
+		}
+		valsS[i] = s
+		if w := textwidth.Width(s); w > valW {
+			valW = w
+		}
+		if deltas != nil && i < len(deltas) && deltas[i] != "" {
+			deltasS[i] = deltas[i]
+			if w := textwidth.Width(deltas[i]); w > deltaW {
+				deltaW = w
+			}
+		}
+	}
+	sep := 0
+	if deltaW > 0 {
+		sep = 2 // clear break between value and Δ
+	}
+	need := labelW + 1 + valW + sep + deltaW
+	spare := budget - need
+	padR := 0
+	if spare >= 1 {
+		padR = 1
+		spare--
+	}
+	gap := 1 + max(0, spare)
+	if labelW+gap+valW+sep+deltaW+padR > budget {
 		gap = 1
-		val = textwidth.Truncate(val, valBudget-1)
+		room := budget - labelW - gap - sep - padR
+		if deltaW > 0 {
+			if room < valW+deltaW {
+				// Shrink Δ first, then values.
+				if room > valW+1 {
+					deltaW = room - valW
+				} else {
+					valW = max(1, room/2)
+					deltaW = max(1, room-valW)
+				}
+			}
+		} else if room < valW {
+			valW = max(1, room)
+		}
 	}
-	return featureAccent(textwidth.PadRight(label, labelW)) + strings.Repeat(" ", gap) + val
-}
 
-func compareStatDivider(coreW int) string {
-	const labelW = 12
-	valBudget := coreW - labelW
-	if valBudget < 4 {
-		valBudget = 4
+	padNum := func(s string, w int) string {
+		if textwidth.Width(s) > w {
+			s = textwidth.Truncate(s, w)
+		}
+		return strings.Repeat(" ", w-textwidth.Width(s)) + s
 	}
-	line := strings.Repeat(" ", labelW) + strings.Repeat("─", min(valBudget, 15))
-	return textwidth.PadRight(textwidth.Truncate(line, coreW), coreW)
+	row := func(label, val, delta string) string {
+		line := featureAccent(textwidth.PadRight(label, labelW)) + strings.Repeat(" ", gap) + padNum(val, valW)
+		if deltaW > 0 {
+			line += strings.Repeat(" ", sep) + padNum(delta, deltaW)
+		}
+		if padR > 0 {
+			line += strings.Repeat(" ", padR)
+		}
+		return compareFit(line, budget)
+	}
+	div := strings.Repeat("─", labelW) + strings.Repeat(" ", gap) + strings.Repeat("─", valW)
+	if deltaW > 0 {
+		div += strings.Repeat(" ", sep) + strings.Repeat("─", deltaW)
+	}
+	if padR > 0 {
+		div += strings.Repeat(" ", padR)
+	}
+	div = compareFit(div, budget)
+
+	out := make([]string, 0, len(labels)+1)
+	for i, label := range labels {
+		if i == len(labels)-1 {
+			out = append(out, div)
+		}
+		out = append(out, row(label, valsS[i], deltasS[i]))
+	}
+	return out
 }
 
 func padCompareBlock(block string, width, height, padL int) []string {

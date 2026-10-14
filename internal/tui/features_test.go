@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/textwidth"
@@ -476,22 +477,65 @@ func TestFormatCompareDelta(t *testing.T) {
 	}
 }
 
-func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
-	coreA := ansi.Strip(compareStatCore("HP", 80, true, 18))
-	coreB := ansi.Strip(compareStatCore("HP", 60, true, 18))
-	if !strings.HasPrefix(coreA, "HP") || !strings.HasSuffix(strings.TrimRight(coreA, " "), "80") {
-		t.Fatalf("label L / value R: %q", coreA)
+func TestCompareStatLinesContentSized(t *testing.T) {
+	labels := []string{"HP", "Attack", "Total"}
+	lines := compareStatLines(labels, []int{39, 52, 309}, true, nil, 22)
+	if len(lines) != 4 { // 3 stats + divider before Total
+		t.Fatalf("want 4 lines, got %d %#v", len(lines), lines)
 	}
-	if textwidth.Width(coreA) != textwidth.Width(coreB) {
-		t.Fatalf("cores must match width: %q (%d) vs %q (%d)", coreA, textwidth.Width(coreA), coreB, textwidth.Width(coreB))
+	plain := make([]string, len(lines))
+	for i, l := range lines {
+		plain[i] = ansi.Strip(l)
+		if textwidth.Width(l) != 22 {
+			t.Fatalf("line %d width %d want 22: %q", i, textwidth.Width(l), plain[i])
+		}
+	}
+	if !strings.HasPrefix(plain[0], "HP") || !strings.Contains(plain[0], "39") {
+		t.Fatalf("HP row: %q", plain[0])
+	}
+	div := plain[2]
+	if !strings.Contains(div, "─") || strings.ContainsAny(div, "0123456789") {
+		t.Fatalf("divider should be dashes only: %q", div)
+	}
+	if !strings.HasPrefix(strings.TrimRight(div, " "), "──────") {
+		t.Fatalf("divider should underline labels: %q", div)
 	}
 
+	withΔ := compareStatLines(labels, []int{58, 64, 405}, true, []string{"+19", "+12", "+96"}, 28)
+	got := ansi.Strip(withΔ[0])
+	if !strings.Contains(got, "58") || !strings.Contains(got, "+19") || strings.Contains(got, "…") {
+		t.Fatalf("Δ column without truncating: %q", got)
+	}
+	idx := strings.Index(got, "58")
+	rest := got[idx+2:]
+	spaces := 0
+	for _, r := range rest {
+		if r != ' ' {
+			break
+		}
+		spaces++
+	}
+	if spaces < 2 || !strings.HasPrefix(strings.TrimLeft(rest, " "), "+19") {
+		t.Fatalf("want ≥2 spaces between value and Δ: %q", got)
+	}
+	if strings.TrimRight(got, " ") == got {
+		t.Fatalf("roomy budget should keep padR after Δ: %q", got)
+	}
+	dDiv := ansi.Strip(withΔ[2])
+	trim := strings.TrimSpace(dDiv)
+	if !strings.Contains(trim, "  ") || !strings.Contains(trim, "──") {
+		t.Fatalf("Δ divider should break between value and Δ: %q", dDiv)
+	}
+}
+
+func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
 	m := featureModel()
 	m.layoutTh.DisableSprite = false
 	m.width, m.height = 120, 40
 	m.compareA = m.comparisonEntry(m.filtered[0])
 	m.compareB = m.comparisonEntry(m.filtered[1])
 	m.showCompare = true
+	m.compareFocus = 1 // focused B art uses primary border (ANSI-heavier)
 	rowA, colA, aw, ah, okA := m.compareArtOrigin(0)
 	rowB, colB, _, _, okB := m.compareArtOrigin(1)
 	if !okA || !okB || rowA != rowB || colB <= colA+aw || aw < 1 || ah < 1 {
@@ -502,13 +546,20 @@ func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
 		t.Fatalf("expected side-by-side art+stats geom, drawArt=%v coreW=%d", g.drawArt, g.coreW)
 	}
 	view := ansi.Strip(m.compareView())
-	if !strings.HasPrefix(strings.TrimLeft(view, "\n"), "╭─ Compare") && !strings.Contains(view, "╭─ Compare") {
+	if !strings.Contains(view, "╭─ Compare") {
 		t.Fatalf("Compare should be the border title:\n%s", view)
 	}
-	if strings.HasPrefix(strings.TrimLeft(view, "\n"), " Compare") {
-		t.Fatalf("Compare must not sit outside the frame:\n%s", view)
+	if strings.Contains(view, "3…") || strings.Contains(view, "5…") || strings.Contains(view, "30…") {
+		t.Fatalf("stats truncated despite room:\n%s", view)
 	}
-	// HP sits beside art (after artOW inset), same on both halves.
+	for _, want := range []string{"39", "52", "309", "78", "84", "534"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing stat value %q:\n%s", want, view)
+		}
+	}
+	if g.colWA+1+g.colWB != g.innerW {
+		t.Fatalf("column split %d+%d+1 = %d want innerW %d", g.colWA, g.colWB, g.colWA+g.colWB+1, g.innerW)
+	}
 	artInset := g.padL + g.artOW + g.gap
 	for _, row := range strings.Split(view, "\n") {
 		if !strings.Contains(row, "HP") || !strings.Contains(row, "│") {
@@ -524,6 +575,96 @@ func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
 			t.Fatalf("HP should sit beside art (inset≥%d), A=%d B=%d in %q", artInset, aIdx, bIdx, row)
 		}
 		break
+	}
+}
+
+func TestCompareMediumWidthKeepsDeltaValues(t *testing.T) {
+	m := featureModel()
+	m.layoutTh.DisableSprite = false
+	m.compareA = m.comparisonEntry(m.filtered[0])
+	m.compareB = m.comparisonEntry(m.filtered[1])
+	m.showCompare = true
+	// Medium widths used to set coreW=full budget then bolt Δ on → "58…" with empty gap.
+	for _, width := range []int{100, 110, 120} {
+		m.width, m.height = width, 40
+		g := m.compareLayoutGeom(m.compareFooterH())
+		if !g.drawArt {
+			continue
+		}
+		view := ansi.Strip(m.compareView())
+		for _, want := range []string{"39", "309", "78", "534"} {
+			if !strings.Contains(view, want) {
+				t.Fatalf("width %d missing %q:\n%s", width, want, view)
+			}
+		}
+		if strings.Contains(view, "78…") || strings.Contains(view, "53…") || strings.Contains(view, "39…") {
+			t.Fatalf("width %d truncated values despite room:\n%s", width, view)
+		}
+	}
+}
+
+func TestCompareColumnSplitFillsInnerWidth(t *testing.T) {
+	m := featureModel()
+	m.layoutTh.DisableSprite = false
+	for _, width := range []int{80, 100, 120, 121, 140} {
+		m.width, m.height = width, 40
+		g := m.compareLayoutGeom(m.compareFooterH())
+		if g.colWA+1+g.colWB != g.innerW {
+			t.Fatalf("width %d: split %d + 1 + %d = %d want %d", width, g.colWA, g.colWB, g.colWA+1+g.colWB, g.innerW)
+		}
+		if g.colWB < g.colWA {
+			t.Fatalf("width %d: B should be ≥ A, got A=%d B=%d", width, g.colWA, g.colWB)
+		}
+	}
+
+	m.compareA = m.comparisonEntry(m.filtered[0])
+	m.compareB = m.comparisonEntry(m.filtered[1])
+	m.showCompare = true
+	m.width, m.height = 120, 40
+	g := m.compareLayoutGeom(m.compareFooterH())
+	if !m.compareA.HasStats || !m.compareB.HasStats {
+		t.Fatal("fixture should have stats for Δ bias")
+	}
+	if g.colWB < g.colWA+6 {
+		t.Fatalf("with Δs, B should gain bias columns: A=%d B=%d", g.colWA, g.colWB)
+	}
+	if g.colWA+1+g.colWB != g.innerW {
+		t.Fatalf("biased split must still fill innerW: %d+%d+1=%d want %d", g.colWA, g.colWB, g.colWA+1+g.colWB, g.innerW)
+	}
+
+	// Body rows must fill innerW exactly — spare/missing columns show up as uneven halves.
+	m.width, m.height = 121, 40
+	m.compareFocus = 1
+	// Fat ANSI art used to inflate half A and Truncate ate B's values ("7…", "8…").
+	fat := strings.Repeat(lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Render("█"), 40)
+	fatArt := strings.Repeat(fat+"\n", 8)
+	m.compareArtA, m.compareArtAID, m.compareArtANative = fatArt, m.compareA.Summary.ID, false
+	m.compareArtB, m.compareArtBID, m.compareArtBNative = fatArt, m.compareB.Summary.ID, false
+	g = m.compareLayoutGeom(m.compareFooterH())
+	view := m.compareView()
+	for i, row := range strings.Split(view, "\n") {
+		if !strings.HasPrefix(row, "│") || !strings.HasSuffix(ansi.Strip(row), "│") {
+			continue
+		}
+		if strings.Contains(row, "tab focus") {
+			break
+		}
+		plain := ansi.Strip(row)
+		if !strings.HasPrefix(plain, "│") || !strings.HasSuffix(plain, "│") {
+			continue
+		}
+		if w := textwidth.Width(row) - 2; w != g.innerW {
+			t.Fatalf("row %d width %d want innerW %d\n%s", i, w, g.innerW, plain)
+		}
+		if strings.Contains(plain, "…") && (strings.Contains(plain, "HP") || strings.Contains(plain, "Total")) {
+			t.Fatalf("stats truncated despite fitted halves:\n%s", plain)
+		}
+	}
+	plainView := ansi.Strip(view)
+	for _, want := range []string{"78", "84", "534", "39", "52", "309"} {
+		if !strings.Contains(plainView, want) {
+			t.Fatalf("missing value %q after fat-art layout:\n%s", want, plainView)
+		}
 	}
 }
 
