@@ -48,14 +48,18 @@ func PadSearchLine(line string, width int) string {
 // ListRow is one browse list entry.
 type ListRow struct {
 	Favourite     bool
+	Comparing     bool   // compare pin — name-adjacent ⇄
 	DividerBefore bool
 	SectionLabel  string // muted chrome row before this entry (e.g. "Favourites · 6")
 	Summary       domain.SpeciesSummary
 	Selected      bool
 }
 
+// CompareListMark is appended to a pinned compare species' display name.
+const CompareListMark = " ⇄"
+
 // List renders the filtered species list. Empty lists show a plain-text cue.
-func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbreviateTypes func([]string, int) string) string {
+func List(rows []ListRow, width, height int, nameCol int) string {
 	if height < 1 {
 		height = 1
 	}
@@ -73,7 +77,11 @@ func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbrev
 	}
 	if nameCol < 1 {
 		for _, row := range rows {
-			if w := textwidth.Width(row.Summary.DisplayName); w > nameCol {
+			w := textwidth.Width(row.Summary.DisplayName)
+			if row.Comparing {
+				w += textwidth.Width(CompareListMark)
+			}
+			if w > nameCol {
 				nameCol = w
 			}
 		}
@@ -114,8 +122,7 @@ func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbrev
 		rightW := textwidth.Width(dex) + 1 // one column of padding after right-aligned ID
 		available := width - textwidth.Width(marker)
 		if available < 8+rightW {
-			name := textwidth.Truncate(row.Summary.DisplayName, available)
-			lines = append(lines, textwidth.PadRight(marker+name, width))
+			lines = append(lines, textwidth.PadRight(marker+listDisplayName(row, available), width))
 			continue
 		}
 		col := nameCol
@@ -125,38 +132,12 @@ func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbrev
 		if col < 1 {
 			col = 1
 		}
-		namePart := marker + textwidth.PadRight(textwidth.Truncate(row.Summary.DisplayName, col), col)
+		namePart := marker + textwidth.PadRight(listDisplayName(row, col), col)
 		midW := width - textwidth.Width(namePart) - rightW
 		if midW < 0 {
 			midW = 0
 		}
-		mid := strings.Repeat(" ", midW)
-		if showTypes && midW >= 4 {
-			typeBudget := midW
-			types := ""
-			if abbreviateTypes != nil {
-				types = abbreviateTypes(row.Summary.Types, typeBudget)
-			} else {
-				types = textwidth.Truncate(style.TypeSummary(row.Summary.Types), typeBudget)
-			}
-			tw := textwidth.Width(types)
-			if tw > midW {
-				types = textwidth.Truncate(types, midW)
-				tw = textwidth.Width(types)
-			}
-			if types != "" {
-				leftGap := (midW - tw) / 2
-				if leftGap < 0 {
-					leftGap = 0
-				}
-				rightGap := midW - tw - leftGap
-				if rightGap < 0 {
-					rightGap = 0
-				}
-				mid = strings.Repeat(" ", leftGap) + types + strings.Repeat(" ", rightGap)
-			}
-		}
-		line := namePart + mid + dex + " "
+		line := namePart + strings.Repeat(" ", midW) + dex + " "
 		if textwidth.Width(line) < width {
 			line = textwidth.PadRight(line, width)
 		} else if textwidth.Width(line) > width {
@@ -165,6 +146,19 @@ func List(rows []ListRow, width, height int, showTypes bool, nameCol int, abbrev
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func listDisplayName(row ListRow, budget int) string {
+	mark := ""
+	if row.Comparing {
+		mark = CompareListMark
+	}
+	mw := textwidth.Width(mark)
+	nameBudget := budget - mw
+	if nameBudget < 1 {
+		nameBudget = 1
+	}
+	return textwidth.Truncate(row.Summary.DisplayName, nameBudget) + mark
 }
 
 // SpritePlaceholder renders an unbordered frame with a centred [ Name ].

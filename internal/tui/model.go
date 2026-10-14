@@ -36,8 +36,6 @@ type Options struct {
 	Context  context.Context
 	// DisableSprite forces the sprite panel off regardless of terminal size.
 	DisableSprite bool
-	// ListTypes includes coloured type labels in browse list rows.
-	ListTypes bool
 	// BrowseEntries maps species ID → browse.json row (stats + About; optional).
 	BrowseEntries map[int]domain.BrowseEntry
 	// DossierWarmer pre-assembles dossier core or full dossiers in the background.
@@ -152,7 +150,6 @@ type Model struct {
 	favPinCount int // quick-link rows prepended in All view (0 when Favourites-only)
 	cursor      int
 	listOff     int
-	listTypes   bool
 
 	browseEntries map[int]domain.BrowseEntry
 
@@ -255,7 +252,6 @@ func NewModel(opts Options) Model {
 		warmEvents:    opts.WarmEvents,
 		onUIReady:     opts.OnUIReady,
 		pokemonSrc:    opts.Pokemon,
-		listTypes:     opts.ListTypes,
 		browseEntries: opts.BrowseEntries,
 	}
 	m.favourites = make(map[int]bool, len(opts.Favourites))
@@ -353,12 +349,18 @@ func (m *Model) layout() LayoutFlags {
 }
 
 func (m *Model) listColumn() listColumnSpec {
-	spec := listColumnSpec{ShowTypes: m.listTypes}
+	var spec listColumnSpec
 	if m.index == nil {
 		return spec
 	}
 	for _, s := range m.index.All() {
 		if w := textwidth.Width(s.DisplayName); w > spec.MaxNameWidth {
+			spec.MaxNameWidth = w
+		}
+	}
+	// Pin mark is name-adjacent; keep the full display name when comparing.
+	if m.comparePin != nil {
+		if w := textwidth.Width(m.comparePin.Summary.DisplayName) + textwidth.Width(components.CompareListMark); w > spec.MaxNameWidth {
 			spec.MaxNameWidth = w
 		}
 	}

@@ -267,7 +267,7 @@ func TestFavouriteDividerDoesNotHideSelectionWhenScrolling(t *testing.T) {
 		if m.hasFavouriteDivider() {
 			extra++
 		}
-		list := components.List(d.Rows[d.ListOff:], 28, m.listVisibleRows()+extra, false, 0, nil)
+		list := components.List(d.Rows[d.ListOff:], 28, m.listVisibleRows()+extra, 0)
 		mark := ">   "
 		if m.favourites[m.filtered[i].ID] {
 			mark = "> ★ "
@@ -295,6 +295,22 @@ func TestSortMissingStatsAndFavouritePriority(t *testing.T) {
 	// Quick-link Eevee + full speed order (Eevee still in place).
 	if !reflect.DeepEqual(featureIDs(m), []int{133, 25, 4, 133, 6}) {
 		t.Fatalf("favourites quick-link: %v", featureIDs(m))
+	}
+}
+
+func TestComparePinShowsNameAdjacentMark(t *testing.T) {
+	m := featureModel()
+	m.width, m.height = 100, 30
+	m = featureKey(m, tea.KeyF3) // pin Charmander
+	view := ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "Charmander ⇄") {
+		t.Fatalf("pinned row should show name-adjacent ⇄:\n%s", view)
+	}
+	if strings.Contains(view, "F3 vs") {
+		t.Fatalf("title/hint must not carry F3 vs:\n%s", view)
+	}
+	if strings.Contains(view, "Pokedex ·") && strings.Contains(view, "vs") {
+		t.Fatalf("list title must stay plain Pokedex:\n%s", view)
 	}
 }
 

@@ -95,7 +95,6 @@ type Render struct {
 
 type TUI struct {
 	ShowSprite bool `yaml:"show_sprite"`
-	ListTypes  bool `yaml:"list_types"`
 }
 
 // Theme selects the TUI colour palette (FontGet-compatible YAML themes).
@@ -129,7 +128,6 @@ func Default() Config {
 		},
 		TUI: TUI{
 			ShowSprite: true,
-			ListTypes:  false,
 		},
 		Theme: Theme{Name: "catppuccin"},
 		Network: Network{

@@ -15,15 +15,13 @@ const (
 	minUsableWidth   = 40
 	minUsableHeight  = 12
 
-	listNamePad         = 0 // name column is the longest species name
-	listMarkerCols      = 4 // "> ★ " / ">   " cursor+star gutter
-	listGapNameDex      = 1
-	listDexCols         = 5  // #NNNN
-	listTypeReserve     = 14 // Grass/Poison-sized dual type
-	listRightPad        = 1  // one cell between dex and the pane edge
-	listShareMinNoTypes = 25
-	listShareMaxNoTypes = 30
-	listShareWithTypes  = 50
+	listNamePad    = 0 // name column is the longest species name
+	listMarkerCols = 4 // "> ★ " / ">   " cursor+star gutter
+	listGapNameDex = 1
+	listDexCols    = 5 // #NNNN
+	listRightPad   = 1 // one cell between dex and the pane edge
+	listShareMin   = 25
+	listShareMax   = 30
 
 	browseFooterRows      = 1
 	browseFrameBorderRows = 2
@@ -31,7 +29,6 @@ const (
 
 // listColumnSpec sizes the browse list pane from content, not leftover sprite space.
 type listColumnSpec struct {
-	ShowTypes    bool
 	MaxNameWidth int
 }
 
@@ -42,36 +39,26 @@ func nameColumnWidth(maxName int) int {
 	return maxName + listNamePad
 }
 
-func listContentInner(showTypes bool, maxName int) int {
-	inner := listMarkerCols + nameColumnWidth(maxName) + listGapNameDex + listDexCols + listRightPad
-	if showTypes {
-		inner += listTypeReserve
-	}
-	return inner
+func listContentInner(maxName int) int {
+	return listMarkerCols + nameColumnWidth(maxName) + listGapNameDex + listDexCols + listRightPad
 }
 
 func listPaneWidth(termW int, spec listColumnSpec) int {
 	if termW < 20 {
 		return termW / 2
 	}
-	left := listContentInner(spec.ShowTypes, spec.MaxNameWidth) + 1 // combined-frame left border
-	if spec.ShowTypes {
-		if target := termW * listShareWithTypes / 100; left < target {
-			left = target
-		}
-	} else {
-		lo := termW * listShareMinNoTypes / 100
-		hi := termW * listShareMaxNoTypes / 100
-		if hi < lo {
-			hi = lo
-		}
-		if left < lo {
-			left = lo
-		} else if left > hi {
-			left = hi
-			if need := listContentInner(false, spec.MaxNameWidth) + 1; left < need {
-				left = need
-			}
+	left := listContentInner(spec.MaxNameWidth) + 1 // combined-frame left border
+	lo := termW * listShareMin / 100
+	hi := termW * listShareMax / 100
+	if hi < lo {
+		hi = lo
+	}
+	if left < lo {
+		left = lo
+	} else if left > hi {
+		left = hi
+		if need := listContentInner(spec.MaxNameWidth) + 1; left < need {
+			left = need
 		}
 	}
 	maxLeft := termW - sprite.MinRightHeaderWidth - 1
@@ -105,7 +92,7 @@ type LayoutFlags struct {
 	// SpriteSize is the chosen longest-side step when the sprite panel is shown.
 	SpriteSize int
 	// LeftWidth / RightWidth are panel column widths for the combined frame
-	// (list sized from names/types; right gets the remainder for the sprite).
+	// (list sized from names; right gets the remainder for the sprite).
 	LeftWidth  int
 	RightWidth int
 }

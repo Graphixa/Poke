@@ -214,7 +214,6 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		Prefill:       req.Prefill,
 		Context:       runCtx,
 		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
-		ListTypes:     svc.Config.TUI.ListTypes,
 	}
 	favouriteStore := favourites.Store{Path: filepath.Join(filepath.Dir(svc.Paths.ConfigFile), "favourites.json")}
 	if ids, err := favouriteStore.Load(); err != nil {

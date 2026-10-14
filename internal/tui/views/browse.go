@@ -70,7 +70,6 @@ type BrowseData struct {
 	Rows        []components.ListRow
 	ListOff     int
 	ListRows    int
-	ListTypes   bool
 	ListNameCol int // padded name column; 0 derives from visible rows
 
 	Selected    domain.SpeciesSummary
@@ -175,7 +174,7 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 				listH--
 			}
 			visible := visibleRows(d.Rows, d.ListOff, listH)
-			body = prefix + components.List(visible, d.Width, listH, d.ListTypes, d.ListNameCol, abbreviate)
+			body = prefix + components.List(visible, d.Width, listH, d.ListNameCol)
 		} else {
 			body = renderRight(d, d.Width, bodyH)
 		}
@@ -228,7 +227,7 @@ func renderLeft(d BrowseData, width, height int) string {
 		listH = 3
 	}
 	visible := visibleRows(d.Rows, d.ListOff, listH)
-	list := components.List(visible, width, listH, d.ListTypes, d.ListNameCol, abbreviate)
+	list := components.List(visible, width, listH, d.ListNameCol)
 	col := lipgloss.JoinVertical(lipgloss.Left, search, sep, list)
 	colLines := strings.Split(col, "\n")
 	if len(colLines) > height {
@@ -619,43 +618,6 @@ func visibleRows(rows []components.ListRow, off, count int) []components.ListRow
 		end = len(rows)
 	}
 	return rows[off:end]
-}
-
-func abbreviate(types []string, maxW int) string {
-	if len(types) == 0 {
-		return style.TypeSummary(types)
-	}
-	joined := output.JoinTypes(types)
-	if maxW <= 0 || len(joined) <= maxW {
-		return style.TypeSummary(types)
-	}
-	if len(types) < 2 {
-		return style.TypeLabelText(types[0], truncate(joined, maxW))
-	}
-	first := output.TitleFromSlug(types[0])
-	second := output.TitleFromSlug(types[1])
-	if len([]rune(second)) > 4 {
-		second = string([]rune(second)[:4])
-	}
-	if len(first)+1+len(second) <= maxW {
-		return style.TypeLabelText(types[0], first) + "/" + style.TypeLabelText(types[1], second)
-	}
-	if len(first)+1 >= maxW {
-		return style.TypeLabelText(types[0], truncate(first, maxW))
-	}
-	second = truncate(second, maxW-len(first)-1)
-	return style.TypeLabelText(types[0], first) + "/" + style.TypeLabelText(types[1], second)
-}
-
-func truncate(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	if n <= 1 {
-		return string(runes[:n])
-	}
-	return string(runes[:n-1]) + "…"
 }
 
 func max(a, b int) int {

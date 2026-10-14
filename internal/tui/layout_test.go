@@ -10,7 +10,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/tui"
 	"github.com/Graphixa/Pokedex/internal/tui/components"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
@@ -101,12 +100,6 @@ func TestListFirstColumns(t *testing.T) {
 		t.Fatalf("RightWidth=%d want fixed glance %d", f.RightWidth, views.GlanceRightInnerWidth()+1)
 	}
 
-	m = tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}, ListTypes: true})
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
-	f = m.LayoutFlags()
-	if f.RightWidth != views.GlanceRightInnerWidth()+1 {
-		t.Fatalf("typed list still keeps fixed right pane: got %d", f.RightWidth)
-	}
 }
 
 func TestSpriteShowsWhenBodyFits(t *testing.T) {
@@ -210,47 +203,10 @@ func TestBrowseSnapshotRegions(t *testing.T) {
 	}
 }
 
-func TestBrowseListRowsShowColoredTypes(t *testing.T) {
+func TestBrowseListRowsNoTypes(t *testing.T) {
 	rows := []components.ListRow{
 		{Summary: domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}}, Selected: true},
-		{Summary: domain.SpeciesSummary{ID: 10, DisplayName: "Caterpie", Types: []string{"bug"}}},
-	}
-	out := views.Browse(views.BrowseData{
-		Width: 44, Height: 5,
-		OnePane: true, ShowListPane: true,
-		Rows: rows, ListTypes: true,
-	})
-	plain := stripANSI(out)
-	lines := strings.Split(plain, "\n")
-	if !strings.Contains(lines[1], ">   Bulbasaur") || !strings.Contains(lines[1], "#001") || !strings.Contains(lines[1], "Grass/Poison") {
-		t.Fatalf("selected list row = %q", lines[1])
-	}
-	assertDexRightAligned(t, lines[1], "#001")
-	nameAt := strings.Index(lines[1], "Bulbasaur")
-	dexAt := strings.Index(lines[1], "#001")
-	typeAt := strings.Index(lines[1], "Grass")
-	if nameAt < 0 || typeAt < 0 || dexAt < 0 || typeAt < nameAt+len("Bulbasaur") || typeAt > dexAt {
-		t.Fatalf("type should sit between name and id, row=%q", lines[1])
-	}
-	if !strings.Contains(lines[2], "Caterpie") || !strings.Contains(lines[2], "#010") || !strings.Contains(lines[2], "Bug") {
-		t.Fatalf("second list row = %q", lines[2])
-	}
-	assertDexRightAligned(t, lines[2], "#010")
-	for _, want := range []string{
-		style.TypeLabel("grass"),
-		style.TypeLabel("poison"),
-		style.TypeLabel("bug"),
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("missing coloured type label %q in:\n%q", want, out)
-		}
-	}
-}
-
-func TestBrowseListRowsHideTypesByDefault(t *testing.T) {
-	rows := []components.ListRow{
-		{Summary: domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}}, Selected: true},
-		{Summary: domain.SpeciesSummary{ID: 10, DisplayName: "Caterpie", Types: []string{"bug"}}},
+		{Summary: domain.SpeciesSummary{ID: 10, DisplayName: "Caterpie", Types: []string{"bug"}}, Comparing: true},
 	}
 	out := views.Browse(views.BrowseData{
 		Width: 44, Height: 5,
@@ -258,15 +214,10 @@ func TestBrowseListRowsHideTypesByDefault(t *testing.T) {
 		Rows: rows,
 	})
 	plain := stripANSI(out)
-	for _, want := range []string{"Bulbasaur", "#001", "Caterpie", "#010"} {
+	for _, want := range []string{"Bulbasaur", "#001", "Caterpie ⇄", "#010"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("missing %q in list:\n%s", want, plain)
 		}
-	}
-	nameAt := strings.Index(plain, "Bulbasaur")
-	dexAt := strings.Index(plain, "#001")
-	if nameAt < 0 || dexAt < 0 {
-		t.Fatalf("missing name/id:\n%s", plain)
 	}
 	assertDexRightAligned(t, strings.Split(plain, "\n")[1], "#001")
 	for _, unwanted := range []string{"Grass", "Poison", "Bug"} {
@@ -280,7 +231,7 @@ func TestBrowseListVeryNarrowPrioritizesSelectedName(t *testing.T) {
 	out := components.List([]components.ListRow{{
 		Summary:  domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}},
 		Selected: true,
-	}}, 12, 1, false, 0, nil)
+	}}, 12, 1, 0)
 	if got, want := stripANSI(out), ">   Bulbasa…"; got != want {
 		t.Fatalf("narrow list row = %q, want %q", got, want)
 	}

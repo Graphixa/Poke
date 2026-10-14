@@ -157,11 +157,7 @@ func (m Model) collectionSize() int {
 
 // listBorderTitle is the left-pane top-edge title: base + [ matched/total ], narrowed as needed.
 func (m Model) listBorderTitle(leftW int) string {
-	base := "Pokedex"
-	if m.comparePin != nil {
-		base = "Pokedex · F3 vs " + m.comparePin.Summary.DisplayName
-	}
-	return fitListBorderTitle(base, m.matchedCount(), m.collectionSize(), leftW)
+	return fitListBorderTitle("Pokedex", m.matchedCount(), m.collectionSize(), leftW)
 }
 
 func fitListBorderTitle(base string, matched, total, leftW int) string {
@@ -187,11 +183,7 @@ func (m Model) listHint() string {
 	if !m.layout().OnePane {
 		return ""
 	}
-	hint := fmt.Sprintf("%d/%d", m.matchedCount(), m.collectionSize())
-	if m.comparePin != nil {
-		hint = "F3 vs " + m.comparePin.Summary.DisplayName + " · " + hint
-	}
-	return hint
+	return fmt.Sprintf("%d/%d", m.matchedCount(), m.collectionSize())
 }
 
 func (m Model) requestQuit() (tea.Model, tea.Cmd) {

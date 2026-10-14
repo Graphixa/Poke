@@ -50,6 +50,7 @@ func (m Model) browseData() views.BrowseData {
 			Summary:       s,
 			Selected:      i == m.cursor,
 			Favourite:     m.favourites[s.ID],
+			Comparing:     m.comparePin != nil && m.comparePin.Summary.ID == s.ID,
 			DividerBefore: m.favPinCount > 0 && i == m.favPinCount,
 		}
 		if i == 0 && favLabel != "" {
@@ -79,7 +80,6 @@ func (m Model) browseData() views.BrowseData {
 		Rows:          rows,
 		ListOff:       m.listOff,
 		ListRows:      m.listVisibleRows(),
-		ListTypes:     m.listTypes,
 		ListNameCol:   nameColumnWidth(m.listColumn().MaxNameWidth),
 		ShowSprite:    lay.ShowSprite,
 		VerboseFooter: lay.VerboseFooter,
