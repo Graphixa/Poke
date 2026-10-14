@@ -155,17 +155,42 @@ func (m Model) compareView() string {
 	rule := lipgloss.NewStyle().Foreground(style.BorderColor()).Render("│")
 	body := make([]string, 0, g.innerH)
 
-	// Types: indent 1 to line up with border title after ╭─ ; full remaining width.
-	const typeIndent = 1
-	typeLine := func(s string) string {
-		budget := g.colW - typeIndent
-		if budget < 1 {
-			budget = 1
-		}
-		return textwidth.PadRight(strings.Repeat(" ", typeIndent)+textwidth.Truncate(s, budget), g.colW)
+	colLine := func(s string) string {
+		return textwidth.PadRight(textwidth.Truncate(s, g.colW), g.colW)
 	}
-	body = append(body, typeLine(compareSideHeader(a, m.compareGenus(a.Summary.ID)))+rule+
-		typeLine(compareSideHeader(b, m.compareGenus(b.Summary.ID))))
+	nameA := fmt.Sprintf("%s %s", a.Summary.DisplayName, output.FormatDex(a.Summary.ID))
+	nameB := fmt.Sprintf("%s %s", b.Summary.DisplayName, output.FormatDex(b.Summary.ID))
+	if m.compareFocus == 0 {
+		nameA = featureAccent(nameA)
+	} else {
+		nameB = featureAccent(nameB)
+	}
+	body = append(body, colLine(nameA)+rule+colLine(nameB))
+	body = append(body, colLine(compareSideHeader(a, m.compareGenus(a.Summary.ID)))+rule+
+		colLine(compareSideHeader(b, m.compareGenus(b.Summary.ID))))
+
+	av := []int{a.Stats.HP, a.Stats.Attack, a.Stats.Defense, a.Stats.SpecialAttack, a.Stats.SpecialDefense, a.Stats.Speed, a.Stats.Total()}
+	bv := []int{b.Stats.HP, b.Stats.Attack, b.Stats.Defense, b.Stats.SpecialAttack, b.Stats.SpecialDefense, b.Stats.Speed, b.Stats.Total()}
+	labels := []string{"HP", "Attack", "Defence", "Sp. Attack", "Sp. Defence", "Speed", "Total"}
+	statLinesA := make([]string, 0, 8)
+	statLinesB := make([]string, 0, 8)
+	for i, label := range labels {
+		if i == 6 {
+			div := compareStatDivider(g.coreW)
+			statLinesA = append(statLinesA, div)
+			statLinesB = append(statLinesB, div)
+		}
+		delta := ""
+		if a.HasStats && b.HasStats {
+			delta = formatCompareDelta(bv[i] - av[i])
+		}
+		statLinesA = append(statLinesA, compareStatCore(label, av[i], a.HasStats, g.coreW))
+		right := compareStatCore(label, bv[i], b.HasStats, g.coreW)
+		if delta != "" {
+			right += " " + delta
+		}
+		statLinesB = append(statLinesB, right)
+	}
 
 	if g.drawArt {
 		leftBorder, rightBorder := style.BorderColor(), style.BorderColor()
@@ -176,52 +201,22 @@ func (m Model) compareView() string {
 		}
 		leftCard := m.compareArtCard(0, a, g.artW, g.artH, g.artOW, g.artOH, leftBorder)
 		rightCard := m.compareArtCard(1, b, g.artW, g.artH, g.artOW, g.artOH, rightBorder)
-		leftLines := padCompareBlock(leftCard, g.colW, g.artOH, g.padL)
-		rightLines := padCompareBlock(rightCard, g.colW, g.artOH, g.padL)
-		for i := 0; i < g.artOH; i++ {
-			body = append(body, leftLines[i]+rule+rightLines[i])
+		artA := padCompareBlock(leftCard, g.artOW, g.blockH, 0)
+		artB := padCompareBlock(rightCard, g.artOW, g.blockH, 0)
+		for i := 0; i < g.blockH; i++ {
+			sa, sb := "", ""
+			if i < len(statLinesA) {
+				sa = statLinesA[i]
+			}
+			if i < len(statLinesB) {
+				sb = statLinesB[i]
+			}
+			body = append(body, compareArtStatRow(g, artA[i], sa)+rule+compareArtStatRow(g, artB[i], sb))
 		}
-		body = append(body, strings.Repeat(" ", g.colW)+rule+strings.Repeat(" ", g.colW))
-	}
-
-	// Shared core band (label+value) both sides; Δ hangs off to the right of B only.
-	coreW, padCore := g.colW, 0
-	if g.drawArt {
-		coreW = g.artOW
-		if coreW < 18 {
-			coreW = 18
+	} else {
+		for i := range statLinesA {
+			body = append(body, colLine(statLinesA[i])+rule+colLine(statLinesB[i]))
 		}
-		if coreW > g.colW {
-			coreW = g.colW
-		}
-		padCore = (g.colW - coreW) / 2
-	} else if g.colW > 28 {
-		coreW = 28
-		padCore = (g.colW - coreW) / 2
-	}
-	placeCore := func(core, delta string) string {
-		line := strings.Repeat(" ", padCore) + core
-		if delta != "" {
-			line += " " + delta
-		}
-		return textwidth.PadRight(textwidth.Truncate(line, g.colW), g.colW)
-	}
-
-	av := []int{a.Stats.HP, a.Stats.Attack, a.Stats.Defense, a.Stats.SpecialAttack, a.Stats.SpecialDefense, a.Stats.Speed, a.Stats.Total()}
-	bv := []int{b.Stats.HP, b.Stats.Attack, b.Stats.Defense, b.Stats.SpecialAttack, b.Stats.SpecialDefense, b.Stats.Speed, b.Stats.Total()}
-	labels := []string{"HP", "Attack", "Defence", "Sp. Attack", "Sp. Defence", "Speed", "Total"}
-	for i, label := range labels {
-		if i == 6 {
-			div := compareStatDivider(coreW)
-			body = append(body, placeCore(div, "")+rule+placeCore(div, ""))
-		}
-		delta := ""
-		if a.HasStats && b.HasStats {
-			delta = formatCompareDelta(bv[i] - av[i])
-		}
-		left := compareStatCore(label, av[i], a.HasStats, coreW)
-		right := compareStatCore(label, bv[i], b.HasStats, coreW)
-		body = append(body, placeCore(left, "")+rule+placeCore(right, delta))
 	}
 
 	for len(body) < g.innerH {
@@ -231,17 +226,12 @@ func (m Model) compareView() string {
 		body = body[:g.innerH]
 	}
 
-	top := compareDualTitle(
-		fmt.Sprintf("%s %s", a.Summary.DisplayName, output.FormatDex(a.Summary.ID)),
-		fmt.Sprintf("%s %s", b.Summary.DisplayName, output.FormatDex(b.Summary.ID)),
-		m.width, m.compareFocus == 0,
-	)
 	border := lipgloss.NewStyle().Foreground(style.BorderColor())
-	bot := border.Render("╰") + strings.Repeat(border.Render("─"), max(0, m.width-2)) + border.Render("╯")
 	vert := border.Render("│")
+	bot := border.Render("╰") + strings.Repeat(border.Render("─"), max(0, m.width-2)) + border.Render("╯")
 
 	var frame strings.Builder
-	frame.WriteString(top)
+	frame.WriteString(compareFrameTitle(m.width))
 	frame.WriteByte('\n')
 	for i, line := range body {
 		cell := textwidth.PadRight(textwidth.Truncate(line, g.innerW), g.innerW)
@@ -252,15 +242,38 @@ func (m Model) compareView() string {
 	}
 	frame.WriteByte('\n')
 	frame.WriteString(bot)
-	return " Compare\n" + frame.String() + "\n" + strings.Join(footer, "\n")
+	return frame.String() + "\n" + strings.Join(footer, "\n")
+}
+
+func compareFrameTitle(width int) string {
+	border := lipgloss.NewStyle().Foreground(style.BorderColor())
+	titleSt := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
+	horiz := border.Render("─")
+	label := " Compare "
+	prefix := border.Render("╭") + horiz + titleSt.Render(label) + horiz
+	remain := width - lipgloss.Width(prefix) - 1
+	if remain < 0 {
+		remain = 0
+	}
+	return prefix + strings.Repeat(horiz, remain) + border.Render("╮")
+}
+
+func compareArtStatRow(g compareLayoutGeom, artLine, stat string) string {
+	gap := strings.Repeat(" ", g.gap)
+	pad := strings.Repeat(" ", g.padL)
+	statBudget := g.colW - g.padL - g.artOW - g.gap
+	if statBudget < 1 {
+		statBudget = 1
+	}
+	return textwidth.PadRight(pad+artLine+gap+textwidth.Truncate(stat, statBudget), g.colW)
 }
 
 // compareLayoutGeom is shared by compareView and dual native CUP painting.
 type compareLayoutGeom struct {
-	innerW, innerH, colW       int
-	drawArt                    bool
-	artW, artH, artOW, artOH   int
-	padL                       int
+	innerW, innerH, colW     int
+	drawArt                  bool
+	artW, artH, artOW, artOH int
+	padL, gap, coreW, blockH int
 }
 
 func (m Model) compareFooterH() int {
@@ -271,13 +284,16 @@ func (m Model) compareLayoutGeom(footerH int) compareLayoutGeom {
 	if footerH < 1 {
 		footerH = m.compareFooterH()
 	}
-	frameH := m.height - footerH - 1
+	// Full-screen frame: no outside title row.
+	frameH := m.height - footerH
 	if frameH < 10 {
 		frameH = 10
 	}
 	g := compareLayoutGeom{
 		innerW: m.width - 2,
 		innerH: frameH - 2,
+		padL:   1,
+		gap:    1,
 	}
 	if g.innerW < 20 {
 		g.innerW = 20
@@ -286,19 +302,38 @@ func (m Model) compareLayoutGeom(footerH int) compareLayoutGeom {
 	if g.colW < 10 {
 		g.colW = 10
 	}
-	showArt := !m.layoutTh.DisableSprite && m.width >= 56 && m.height >= 20
+	const (
+		headerRows = 2 // name + type
+		statsRows  = 8 // 6 stats + divider + total
+		minCoreW   = 18
+	)
+	showArt := !m.layoutTh.DisableSprite && m.width >= 72 && m.height >= 16
 	bucket := views.GlanceBucket
 	if m.compareArtCells >= sprite.SmallestFrameBucket() {
 		bucket = m.compareArtCells
 	}
 	g.artW, g.artH = sprite.FrameSizeFor(bucket)
 	g.artOW, g.artOH = g.artW+2, g.artH+2
-	const statsBlock = 9 // 6 stats + divider + total + gap
-	g.drawArt = showArt && g.artOW <= g.colW && g.artOH+statsBlock <= g.innerH
+	g.blockH = g.artOH
+	if statsRows > g.blockH {
+		g.blockH = statsRows
+	}
+	needW := g.padL + g.artOW + g.gap + minCoreW
+	g.drawArt = showArt && needW <= g.colW && headerRows+g.blockH <= g.innerH
 	if g.drawArt {
-		g.padL = (g.colW - g.artOW) / 2
-		if g.padL < 0 {
-			g.padL = 0
+		budget := g.colW - g.padL - g.artOW - g.gap
+		// Leave a little room so B's Δ isn't clipped off the core band.
+		g.coreW = budget
+		if budget >= 25 {
+			g.coreW = budget - 7
+		}
+		if g.coreW < minCoreW {
+			g.coreW = min(minCoreW, budget)
+		}
+	} else {
+		g.coreW = g.colW
+		if g.coreW > 28 {
+			g.coreW = 28
 		}
 	}
 	return g
@@ -310,12 +345,12 @@ func (m Model) compareArtOrigin(side int) (row, col, artW, artH int, ok bool) {
 	if !g.drawArt || m.width < 1 || m.height < 1 {
 		return 0, 0, 0, 0, false
 	}
-	// row1=outside title, row2=top border, row3=types, row4=card top, row5=art
+	// row1=top border, row2=name, row3=type, row4=card top, row5=art
 	artPadY := (g.artOH - 2 - g.artH) / 2
 	if artPadY < 0 {
 		artPadY = 0
 	}
-	row = 1 + 1 + 1 + 1 + 1 + artPadY
+	row = 1 + 2 + 1 + 1 + artPadY
 	artPadX := (g.artOW - 2 - g.artW) / 2
 	if artPadX < 0 {
 		artPadX = 0
@@ -395,37 +430,6 @@ func padCompareBlock(block string, width, height, padL int) []string {
 		out[i] = line
 	}
 	return out
-}
-
-func compareDualTitle(left, right string, width int, leftFocus bool) string {
-	border := lipgloss.NewStyle().Foreground(style.BorderColor())
-	accent := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
-	muted := lipgloss.NewStyle().Foreground(style.PrimaryColor())
-	topL, topR := border.Render("╭"), border.Render("╮")
-	horiz := border.Render("─")
-	inner := width - 2
-	if inner < 10 {
-		inner = 10
-	}
-	half := inner / 2
-	fit := func(label string, budget int, focus bool) string {
-		lab := " " + label + " "
-		if textwidth.Width(lab) > budget-2 {
-			lab = textwidth.Truncate(lab, max(3, budget-2))
-		}
-		st := muted
-		if focus {
-			st = accent
-		}
-		rendered := st.Render(lab)
-		used := 1 + lipgloss.Width(rendered) // leading ─ + label
-		remain := budget - used
-		if remain < 1 {
-			remain = 1
-		}
-		return horiz + rendered + strings.Repeat(horiz, remain)
-	}
-	return topL + fit(left, half, leftFocus) + fit(right, inner-half, !leftFocus) + topR
 }
 
 func (m Model) compareArtCard(side int, e compareEntry, artW, artH, cardW, cardH int, borderFg color.Color) string {

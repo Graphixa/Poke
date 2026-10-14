@@ -498,30 +498,30 @@ func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
 		t.Fatalf("origins A=%d,%d B=%d,%d size=%dx%d ok=%v,%v", rowA, colA, rowB, colB, aw, ah, okA, okB)
 	}
 	g := m.compareLayoutGeom(m.compareFooterH())
-	coreW := g.artOW
-	if coreW < 18 {
-		coreW = 18
-	}
-	padCore := (g.colW - coreW) / 2
-	if padCore < 1 {
-		t.Fatalf("stats should be inset under art, padCore=%d colW=%d coreW=%d", padCore, g.colW, coreW)
+	if !g.drawArt || g.coreW < 18 {
+		t.Fatalf("expected side-by-side art+stats geom, drawArt=%v coreW=%d", g.drawArt, g.coreW)
 	}
 	view := ansi.Strip(m.compareView())
+	if !strings.HasPrefix(strings.TrimLeft(view, "\n"), "╭─ Compare") && !strings.Contains(view, "╭─ Compare") {
+		t.Fatalf("Compare should be the border title:\n%s", view)
+	}
+	if strings.HasPrefix(strings.TrimLeft(view, "\n"), " Compare") {
+		t.Fatalf("Compare must not sit outside the frame:\n%s", view)
+	}
+	// HP sits beside art (after artOW inset), same on both halves.
+	artInset := g.padL + g.artOW + g.gap
 	for _, row := range strings.Split(view, "\n") {
 		if !strings.Contains(row, "HP") || !strings.Contains(row, "│") {
 			continue
 		}
 		inner := strings.TrimPrefix(row, "│")
-		if idx := strings.Index(inner, "HP"); idx >= 0 && idx < padCore {
-			t.Fatalf("HP should sit in centred core band (pad=%d), got idx=%d in %q", padCore, idx, row)
-		}
-		// B core starts after rule; Δ may follow but both HP labels share the same inset.
 		parts := strings.SplitN(inner, "│", 2)
-		if len(parts) == 2 {
-			aIdx, bIdx := strings.Index(parts[0], "HP"), strings.Index(parts[1], "HP")
-			if aIdx != bIdx {
-				t.Fatalf("asymmetric HP inset A=%d B=%d in %q", aIdx, bIdx, row)
-			}
+		if len(parts) != 2 {
+			break
+		}
+		aIdx, bIdx := strings.Index(parts[0], "HP"), strings.Index(parts[1], "HP")
+		if aIdx < artInset || bIdx < artInset || aIdx != bIdx {
+			t.Fatalf("HP should sit beside art (inset≥%d), A=%d B=%d in %q", artInset, aIdx, bIdx, row)
 		}
 		break
 	}
@@ -604,15 +604,13 @@ func TestCompareTabSwapMirroredStats(t *testing.T) {
 	}
 	view := ansi.Strip(m.featureView())
 	if !strings.Contains(view, "Charmander #004") || !strings.Contains(view, "Charizard #006") {
-		t.Fatalf("missing dual border titles:\n%s", view)
+		t.Fatalf("missing in-column titles:\n%s", view)
 	}
 	if strings.Count(view, "HP") < 2 || strings.Count(view, "Speed") < 2 {
 		t.Fatalf("stat labels must appear on both sides:\n%s", view)
 	}
-	if !strings.HasPrefix(strings.TrimLeft(view, "\n"), " Compare") && !strings.Contains(view, "\n Compare\n") {
-		if !strings.Contains(view, " Compare\n╭") {
-			t.Fatalf("Compare title should sit outside the border:\n%s", view)
-		}
+	if !strings.Contains(view, "╭─ Compare") {
+		t.Fatalf("Compare should be the border title:\n%s", view)
 	}
 	m = featureKey(m, ' ')
 	if m.compareA.Summary.ID != 6 || m.compareB.Summary.ID != 4 || m.compareFocus != 0 {
