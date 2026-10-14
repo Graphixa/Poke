@@ -359,6 +359,20 @@ func (m *Model) swapCompareSides() {
 	m.markNativeOverlayDirty()
 }
 
+func (m *Model) syncCompareCursorToFocus() {
+	id := m.compareFocused().Summary.ID
+	if id < 1 {
+		return
+	}
+	for i, s := range m.filtered {
+		if s.ID == id {
+			m.cursor = i
+			m.ensureListVisible()
+			return
+		}
+	}
+}
+
 func (m *Model) moveCompareFocused(delta int) bool {
 	cur := m.compareFocused()
 	otherID := m.compareA.Summary.ID
@@ -390,9 +404,9 @@ func (m *Model) moveCompareFocused(delta int) bool {
 		} else {
 			m.compareB = e
 			m.compareArtB, m.compareArtBNative, m.compareArtBID = "", false, 0
-			m.cursor = i
-			m.ensureListVisible()
 		}
+		m.cursor = i
+		m.ensureListVisible()
 		// Drop the old sixel immediately; async load will repaint this side.
 		m.wipeCompareSideRect(side)
 		m.markNativeOverlayDirty()
@@ -585,6 +599,7 @@ func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch k {
 		case "tab", "shift+tab":
 			m.compareFocus = 1 - m.compareFocus
+			m.syncCompareCursorToFocus()
 		case "up":
 			if m.moveCompareFocused(-1) {
 				return m, tea.Batch(m.syncSelectionLoads(), m.loadCompareArtSide(m.compareFocus))
@@ -595,12 +610,7 @@ func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		case " ", "space":
 			m.swapCompareSides()
-		case "backspace":
-			m.comparePin = nil
-			m.compareA = compareEntry{}
-			m.compareB = compareEntry{}
-			m.resetCompareArt()
-			m.closeFeature()
+			m.syncCompareCursorToFocus()
 		}
 		return m, nil
 	}

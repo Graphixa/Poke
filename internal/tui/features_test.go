@@ -328,12 +328,15 @@ func TestComparePinCloseUnpinAndMissingStats(t *testing.T) {
 	if !strings.Contains(m.featureView(), "—") {
 		t.Fatal("missing stats shown as zero")
 	}
-	m = featureKey(m, tea.KeyBackspace)
-	if m.comparePin != nil || m.showCompare {
-		t.Fatal("unpin failed")
+	view = ansi.Strip(m.featureView())
+	if strings.Contains(view, "Δ = B") || strings.Contains(view, "unpin") {
+		t.Fatalf("legend/unpin must be gone:\n%s", view)
 	}
-	m = featureKey(m, tea.KeyF3)
-	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyEscape)
+	for m.cursor > 0 {
+		m = featureKey(m, tea.KeyUp)
+	}
+	m = featureKey(m, tea.KeyF3) // same-species F3 unpins from browse
 	if m.comparePin != nil || m.showCompare {
 		t.Fatal("same-species F3 must unpin")
 	}
@@ -353,7 +356,9 @@ func TestFeatureViewsFitSmallTerminals(t *testing.T) {
 			}
 			view := m.View().Content
 			if size[0] >= 40 && size[1] >= 18 {
-				if !strings.Contains(view, "esc") {
+				// Compare packs help on one line; esc may truncate below ~52 cols.
+				needEsc := !compare || size[0] >= 52
+				if needEsc && !strings.Contains(view, "esc") {
 					t.Fatal("close action missing")
 				}
 				if compare && !strings.Contains(view, "Total") {
@@ -456,16 +461,13 @@ func TestFormatCompareDelta(t *testing.T) {
 }
 
 func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
-	line := ansi.Strip(compareStatLine("HP", 80, true, 22, false, ""))
-	if !strings.HasPrefix(line, "HP") || !strings.HasSuffix(strings.TrimRight(line, " "), "80") {
-		t.Fatalf("label L / value R: %q", line)
+	coreA := ansi.Strip(compareStatCore("HP", 80, true, 18))
+	coreB := ansi.Strip(compareStatCore("HP", 60, true, 18))
+	if !strings.HasPrefix(coreA, "HP") || !strings.HasSuffix(strings.TrimRight(coreA, " "), "80") {
+		t.Fatalf("label L / value R: %q", coreA)
 	}
-	right := ansi.Strip(compareStatLine("Attack", 30, true, 22, false, ansi.Strip(formatCompareDelta(-52))))
-	if !strings.Contains(right, "30") || !strings.HasSuffix(strings.TrimRight(right, " "), "-52") {
-		t.Fatalf("delta column: %q", right)
-	}
-	if textwidth.Width(line) != 22 || textwidth.Width(right) != 22 {
-		t.Fatalf("stat line width: %d %d", textwidth.Width(line), textwidth.Width(right))
+	if textwidth.Width(coreA) != textwidth.Width(coreB) {
+		t.Fatalf("cores must match width: %q (%d) vs %q (%d)", coreA, textwidth.Width(coreA), coreB, textwidth.Width(coreB))
 	}
 
 	m := featureModel()
@@ -480,25 +482,51 @@ func TestCompareStatColumnsAndArtOrigin(t *testing.T) {
 		t.Fatalf("origins A=%d,%d B=%d,%d size=%dx%d ok=%v,%v", rowA, colA, rowB, colB, aw, ah, okA, okB)
 	}
 	g := m.compareLayoutGeom(m.compareFooterH())
-	statsW := g.artOW
-	if statsW < 22 {
-		statsW = 22
+	coreW := g.artOW
+	if coreW < 18 {
+		coreW = 18
 	}
-	padStats := (g.colW - statsW) / 2
-	if padStats < 1 {
-		t.Fatalf("stats should be inset under art, padStats=%d colW=%d statsW=%d", padStats, g.colW, statsW)
+	padCore := (g.colW - coreW) / 2
+	if padCore < 1 {
+		t.Fatalf("stats should be inset under art, padCore=%d colW=%d coreW=%d", padCore, g.colW, coreW)
 	}
 	view := ansi.Strip(m.compareView())
 	for _, row := range strings.Split(view, "\n") {
 		if !strings.Contains(row, "HP") || !strings.Contains(row, "│") {
 			continue
 		}
-		// After outer │, expect padStats spaces before "HP" on the left half.
 		inner := strings.TrimPrefix(row, "│")
-		if idx := strings.Index(inner, "HP"); idx >= 0 && idx < padStats {
-			t.Fatalf("HP should sit in centred stats band (pad=%d), got idx=%d in %q", padStats, idx, row)
+		if idx := strings.Index(inner, "HP"); idx >= 0 && idx < padCore {
+			t.Fatalf("HP should sit in centred core band (pad=%d), got idx=%d in %q", padCore, idx, row)
+		}
+		// B core starts after rule; Δ may follow but both HP labels share the same inset.
+		parts := strings.SplitN(inner, "│", 2)
+		if len(parts) == 2 {
+			aIdx, bIdx := strings.Index(parts[0], "HP"), strings.Index(parts[1], "HP")
+			if aIdx != bIdx {
+				t.Fatalf("asymmetric HP inset A=%d B=%d in %q", aIdx, bIdx, row)
+			}
 		}
 		break
+	}
+}
+
+func TestCompareTabSyncsListCursor(t *testing.T) {
+	m := featureModel()
+	m = featureKey(m, tea.KeyF3)      // pin 4
+	m = featureKey(m, tea.KeyDown)    // 6
+	m = featureKey(m, tea.KeyF3)      // compare, focus B=6
+	m = featureKey(m, tea.KeyDown)    // B → 25
+	if m.compareB.Summary.ID != 25 || m.cursor != 2 {
+		t.Fatalf("B advance B=%d cursor=%d", m.compareB.Summary.ID, m.cursor)
+	}
+	m = featureKey(m, tea.KeyTab) // focus A=4
+	if m.compareFocus != 0 || m.filtered[m.cursor].ID != 4 {
+		t.Fatalf("tab must sync cursor to A, focus=%d cursorID=%d", m.compareFocus, m.filtered[m.cursor].ID)
+	}
+	m = featureKey(m, tea.KeyDown)
+	if m.compareA.Summary.ID != 6 || m.filtered[m.cursor].ID != 6 {
+		t.Fatalf("↑/↓ on A should change A, A=%d cursorID=%d", m.compareA.Summary.ID, m.filtered[m.cursor].ID)
 	}
 }
 
