@@ -29,55 +29,16 @@ type RootRequest struct {
 	Invocation string
 }
 
-type RootHandler interface {
-	RunRoot(context.Context, RootRequest) error
-}
-
-type RootHandlerFunc func(context.Context, RootRequest) error
-
-func (f RootHandlerFunc) RunRoot(ctx context.Context, request RootRequest) error {
-	return f(ctx, request)
-}
-
 type Options struct {
 	InvocationPath string
 	Paths          config.Paths
 	Getenv         func(string) string
-	Editor         config.CommandRunner
-	Handler        RootHandler
-	Search         SearchHandler
-	Random         RandomHandler
+	App            AppHandler
 	Cache          CacheCommands
-	Theme          ThemeHandler
-	Reset          ResetHandler
-	RenderTest     RenderTestHandler
 	Stdout         io.Writer
 	Stderr         io.Writer
 	// OnDebug is invoked when --debug is set. path may be empty for the default log file.
 	OnDebug func(path string) error
-}
-
-// RenderTestHandler runs the chafa vs halfblock vs termimg compare command.
-type RenderTestHandler interface {
-	RunRenderTest(context.Context, RenderTestRequest) error
-}
-
-// RenderTestRequest is defined in app but mirrored here for CLI wiring.
-type RenderTestRequest struct {
-	Target     string
-	Iterations int
-	SkipVisual bool
-}
-
-// ThemeHandler launches the interactive theme selector.
-type ThemeHandler interface {
-	Theme(context.Context) error
-}
-
-// ResetHandler clears cache + config for first-run retesting.
-// DEV: remove before release.
-type ResetHandler interface {
-	Reset() error
 }
 
 // CacheCommands handles cache maintenance subcommands.
@@ -132,7 +93,7 @@ func NewRoot(options Options) *cobra.Command {
 		Args:          cobra.MaximumNArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Version:       version.Current().String(),
+		Version:       version.String(),
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
 	cmd.SetOut(options.Stdout)
@@ -175,10 +136,10 @@ func NewRoot(options Options) *cobra.Command {
 		if mode != InlineNone && target == "" {
 			return fmt.Errorf("--%s requires a Pokémon name or number", mode)
 		}
-		if options.Handler == nil {
+		if options.App == nil {
 			return nil
 		}
-		return options.Handler.RunRoot(cmd.Context(), RootRequest{
+		return options.App.RunRoot(cmd.Context(), RootRequest{
 			Target: target, InlineMode: mode, Invocation: invocation,
 		})
 	}
@@ -190,8 +151,6 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newSearchCommand(options))
 	cmd.AddCommand(newRandomCommand(options))
 	cmd.AddCommand(newThemeCommand(options))
-	cmd.AddCommand(newResetCommand(options))
-	registerTestCommand(cmd, options)
 	return cmd
 }
 
@@ -201,10 +160,10 @@ func newSearchCommand(options Options) *cobra.Command {
 		Short: "Search the species index",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if options.Search == nil {
+			if options.App == nil {
 				return fmt.Errorf("search is unavailable")
 			}
-			return options.Search.Search(cmd.Context(), args[0])
+			return options.App.Search(cmd.Context(), args[0])
 		},
 	}
 }
@@ -230,10 +189,10 @@ func newRandomCommand(options Options) *cobra.Command {
 		case evolution:
 			mode = InlineEvolution
 		}
-		if options.Random == nil {
+		if options.App == nil {
 			return fmt.Errorf("random is unavailable")
 		}
-		return options.Random.Random(cmd.Context(), mode)
+		return options.App.Random(cmd.Context(), mode)
 	}
 	return cmd
 }
@@ -244,7 +203,7 @@ func newVersionCommand(stdout io.Writer) *cobra.Command {
 		Short: "Print build version",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			_, err := fmt.Fprintln(stdout, version.Current())
+			_, err := fmt.Fprintln(stdout, version.String())
 			return err
 		},
 	}
@@ -286,10 +245,7 @@ func newConfigCommand(options Options) *cobra.Command {
 			if options.Getenv == nil {
 				return fmt.Errorf("environment lookup is unavailable")
 			}
-			if options.Editor == nil {
-				return fmt.Errorf("editor launcher is unavailable")
-			}
-			return config.Edit(options.Paths.ConfigFile, options.Getenv, options.Editor)
+			return config.Edit(options.Paths.ConfigFile, options.Getenv)
 		},
 	})
 	return parent
@@ -365,25 +321,10 @@ func newThemeCommand(options Options) *cobra.Command {
 		Long:  "Launch an interactive TUI to select and preview colour themes (FontGet-style).",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if options.Theme == nil {
+			if options.App == nil {
 				return fmt.Errorf("theme selector is unavailable")
 			}
-			return options.Theme.Theme(cmd.Context())
-		},
-	}
-}
-
-func newResetCommand(options Options) *cobra.Command {
-	return &cobra.Command{
-		Use:   "reset",
-		Short: "Clear cache and config (re-run first-run setup)",
-		Long:  "Deletes the cache directory and config file so the next poke run shows the first-run wizard.",
-		Args:  cobra.NoArgs,
-		RunE: func(*cobra.Command, []string) error {
-			if options.Reset == nil {
-				return fmt.Errorf("reset is unavailable")
-			}
-			return options.Reset.Reset()
+			return options.App.Theme(cmd.Context())
 		},
 	}
 }

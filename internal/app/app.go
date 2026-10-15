@@ -22,13 +22,8 @@ type Runtime struct {
 	Args           []string
 	Getenv         func(string) string
 	Directories    config.DirectoryResolver
-	Editor         config.CommandRunner
-	Handler        cli.RootHandler
-	Search         cli.SearchHandler
-	Random         cli.RandomHandler
+	App            cli.AppHandler
 	Cache          cli.CacheCommands
-	Theme          cli.ThemeHandler
-	Reset          cli.ResetHandler
 	Rand           IntnRand
 	Stdout         io.Writer
 	Stderr         io.Writer
@@ -43,7 +38,6 @@ func OSRuntime() Runtime {
 		Args:           os.Args[1:],
 		Getenv:         os.Getenv,
 		Directories:    config.OSDirectoryResolver(),
-		Editor:         config.ExecRunner{},
 		Stdout:         os.Stdout,
 		Stderr:         os.Stderr,
 		Rand:           rand.New(rand.NewSource(rand.Int63())),
@@ -68,12 +62,8 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		cacheCmds = defaultCache
 	}
 
-	handler := runtime.Handler
-	searchHandler := runtime.Search
-	randomHandler := runtime.Random
-	themeHandler := runtime.Theme
-	resetHandler := runtime.Reset
-	if handler == nil || searchHandler == nil || randomHandler == nil || themeHandler == nil {
+	app := runtime.App
+	if app == nil {
 		appHandler := &Handler{
 			Services: services,
 			Stdout:   runtime.Stdout,
@@ -84,33 +74,7 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		if appHandler.Browse == nil {
 			appHandler.Browse = appHandler.openBrowse
 		}
-		if handler == nil {
-			handler = appHandler
-		}
-		if searchHandler == nil {
-			searchHandler = appHandler
-		}
-		if randomHandler == nil {
-			randomHandler = appHandler
-		}
-		if themeHandler == nil {
-			themeHandler = appHandler
-		}
-	}
-	if resetHandler == nil {
-		resetHandler = defaultCache
-	}
-	var testRunner renderTestRunner
-	if h, ok := handler.(*Handler); ok {
-		testRunner = h
-	} else {
-		testRunner = &Handler{
-			Services: services,
-			Stdout:   runtime.Stdout,
-			Stderr:   runtime.Stderr,
-			Rand:     runtime.Rand,
-			Paths:    paths,
-		}
+		app = appHandler
 	}
 
 	// Apply configured theme before any TUI runs.
@@ -122,14 +86,8 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		InvocationPath: runtime.InvocationPath,
 		Paths:          paths,
 		Getenv:         runtime.Getenv,
-		Editor:         runtime.Editor,
-		Handler:        handler,
-		Search:         searchHandler,
-		Random:         randomHandler,
+		App:            app,
 		Cache:          cacheCmds,
-		Theme:          themeHandler,
-		Reset:          resetHandler,
-		RenderTest:     renderTestAdapter{testRunner},
 		Stdout:         runtime.Stdout,
 		Stderr:         runtime.Stderr,
 		OnDebug: func(path string) error {
@@ -145,26 +103,6 @@ func Execute(ctx context.Context, runtime Runtime) error {
 	})
 	root.SetArgs(runtime.Args)
 	return root.ExecuteContext(ctx)
-}
-
-// renderTestRunner is implemented by Handler.
-type renderTestRunner interface {
-	RunRenderTest(context.Context, RenderTestRequest) error
-}
-
-type renderTestAdapter struct {
-	r renderTestRunner
-}
-
-func (a renderTestAdapter) RunRenderTest(ctx context.Context, req cli.RenderTestRequest) error {
-	if a.r == nil {
-		return fmt.Errorf("poke test is unavailable")
-	}
-	return a.r.RunRenderTest(ctx, RenderTestRequest{
-		Target:     req.Target,
-		Iterations: req.Iterations,
-		SkipVisual: req.SkipVisual,
-	})
 }
 
 // ApplyTheme loads and installs the configured colour theme.

@@ -82,7 +82,7 @@ func NewClient(opts Options) *Client {
 		ua = "poke-cli"
 	}
 	if !strings.Contains(ua, "/") {
-		ua = ua + "/" + version.Current().Version
+		ua = ua + "/" + version.Version
 	}
 	httpClient := opts.HTTPClient
 	if httpClient == nil {

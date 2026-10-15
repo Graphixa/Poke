@@ -23,7 +23,6 @@ func testRuntime(t *testing.T, args ...string) (Runtime, *bytes.Buffer, *bytes.B
 			UserConfigDir: func() (string, error) { return filepath.Join(t.TempDir(), "config"), nil },
 			UserCacheDir:  func() (string, error) { return filepath.Join(t.TempDir(), "cache"), nil },
 		},
-		Editor: config.ExecRunner{},
 		Stdout: stdout,
 		Stderr: stderr,
 	}

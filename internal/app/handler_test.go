@@ -249,9 +249,7 @@ func TestMainInlineNotFoundWritesStderr(t *testing.T) {
 			UserConfigDir: func() (string, error) { return filepath.Join(t.TempDir(), "config"), nil },
 			UserCacheDir:  func() (string, error) { return filepath.Join(t.TempDir(), "cache"), nil },
 		},
-		Handler: handler,
-		Search:  handler,
-		Random:  handler,
+		App: handler,
 		Cache: cli.CacheCommandsFuncs{
 			RefreshFunc: func(context.Context) error { return nil },
 			ClearFunc:   func() error { return nil },

@@ -77,8 +77,7 @@ type Cache struct {
 }
 
 type Render struct {
-	// SpriteMode selects sprite output: auto | image | text | chafa | halfblock | off
-	// (legacy values kitty, iterm, sixel map to image; braille/ascii map to text).
+	// SpriteMode selects sprite output: auto | image | text | chafa | halfblock | off.
 	SpriteMode string `yaml:"sprite_mode"`
 	// SpriteSource selects pixel (nearest) or artwork (filtered) resize/assets.
 	// Product default is artwork; pixel remains for tests and fallbacks.
@@ -156,12 +155,10 @@ func (c Config) Validate() error {
 	positiveDuration("cache.move_ttl", c.Cache.MoveTTL.Duration)
 	positiveDuration("network.timeout", c.Network.Timeout.Duration)
 	switch c.Render.SpriteMode {
-	case "", "auto", "off", "image", "text", "kitty", "iterm", "sixel", "chafa", "halfblock":
+	case "", "auto", "off", "image", "text", "chafa", "halfblock":
 		// Allowed.
-	case "braille", "ascii":
-		// Migrated in Load.
 	default:
-		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "text", "chafa", "halfblock", "off", "kitty", "iterm", "sixel"`)
+		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "text", "chafa", "halfblock", "off"`)
 	}
 	switch c.Render.SpriteSource {
 	case "", "pixel", "artwork":
@@ -218,31 +215,15 @@ func (c Config) EffectiveSpriteMode() string {
 	switch c.Render.SpriteMode {
 	case "off":
 		return "off"
-	case "image", "kitty", "iterm", "sixel":
+	case "image":
 		return "image"
 	case "text", "chafa":
 		return "chafa"
 	case "halfblock":
 		return "halfblock"
-	case "braille", "ascii":
-		return "halfblock"
 	default:
 		return "auto"
 	}
-}
-
-// MigrateDeprecatedRenderModes maps retired renderer values onto supported ones.
-func (c *Config) MigrateDeprecatedRenderModes() []string {
-	if c == nil {
-		return nil
-	}
-	var warns []string
-	switch c.Render.SpriteMode {
-	case "braille", "ascii":
-		warns = append(warns, `render.sprite_mode: "`+c.Render.SpriteMode+`" is deprecated; using "halfblock"`)
-		c.Render.SpriteMode = "halfblock"
-	}
-	return warns
 }
 
 // EffectiveSixelColors returns 64, 128, or 256. Unsupported values fall back to 64.
@@ -377,7 +358,6 @@ func (r DirectoryResolver) Resolve() (Paths, error) {
 
 // Load overlays a YAML file on the defaults. Unknown fields are ignored so
 // newer config files remain usable by older patch releases.
-// The returned warnings describe in-memory migration of deprecated values.
 func Load(path string) (Config, []string, error) {
 	cfg := Default()
 	data, err := os.ReadFile(path)
@@ -390,11 +370,10 @@ func Load(path string) (Config, []string, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, nil, fmt.Errorf("parse config: %w", err)
 	}
-	warns := cfg.MigrateDeprecatedRenderModes()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, nil, fmt.Errorf("validate config: %w", err)
 	}
-	return cfg, warns, nil
+	return cfg, nil, nil
 }
 
 // Initialize atomically creates a default config and never replaces an
@@ -484,20 +463,6 @@ func SetThemeName(path, name string) error {
 	return Save(path, cfg)
 }
 
-type CommandRunner interface {
-	Run(name string, args ...string) error
-}
-
-type ExecRunner struct{}
-
-func (ExecRunner) Run(name string, args ...string) error {
-	cmd := exec.Command(name, args...) // #nosec G204 -- user $VISUAL/$EDITOR or platform default
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
 func SelectEditor(getenv func(string) string, goos string) []string {
 	for _, variable := range []string{"VISUAL", "EDITOR"} {
 		if command := strings.TrimSpace(getenv(variable)); command != "" {
@@ -510,7 +475,7 @@ func SelectEditor(getenv func(string) string, goos string) []string {
 	return []string{"vi"}
 }
 
-func Edit(path string, getenv func(string) string, runner CommandRunner) error {
+func Edit(path string, getenv func(string) string) error {
 	if _, err := Initialize(path); err != nil {
 		return err
 	}
@@ -519,7 +484,11 @@ func Edit(path string, getenv func(string) string, runner CommandRunner) error {
 		return errors.New("no editor command configured")
 	}
 	args := append(command[1:], path)
-	if err := runner.Run(command[0], args...); err != nil {
+	cmd := exec.Command(command[0], args...) // #nosec G204 -- user $VISUAL/$EDITOR or platform default
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("open config in %s: %w", command[0], err)
 	}
 	return nil

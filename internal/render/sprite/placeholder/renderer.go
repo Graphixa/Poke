@@ -5,8 +5,8 @@ import (
 	"image"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/mattn/go-runewidth"
 )
 
 // Renderer always succeeds, producing a centred [ Name ] label.
@@ -35,14 +35,14 @@ func (r Renderer) Render(_ context.Context, _ image.Image, opts sprite.RenderOpt
 		name = "???"
 	}
 	label := "[ " + name + " ]"
-	if runewidth.StringWidth(label) > w {
+	if lipgloss.Width(label) > w {
 		label = truncate(label, w)
 	}
 	return sprite.Frame{Text: centre(label, w, h), Backend: "placeholder"}, nil
 }
 
 func centre(label string, w, h int) string {
-	lw := runewidth.StringWidth(label)
+	lw := lipgloss.Width(label)
 	padLeft := (w - lw) / 2
 	if padLeft < 0 {
 		padLeft = 0
@@ -72,13 +72,13 @@ func truncate(s string, max int) string {
 	if max < 1 {
 		return ""
 	}
-	if runewidth.StringWidth(s) <= max {
+	if lipgloss.Width(s) <= max {
 		return s
 	}
 	var b strings.Builder
 	width := 0
 	for _, r := range s {
-		rw := runewidth.RuneWidth(r)
+		rw := lipgloss.Width(string(r))
 		if width+rw > max {
 			break
 		}

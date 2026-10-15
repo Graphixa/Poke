@@ -19,7 +19,13 @@ func (h *recordingHandler) RunRoot(_ context.Context, request RootRequest) error
 	return nil
 }
 
-func commandForTest(t *testing.T, invocation string, handler RootHandler) (*bytes.Buffer, *bytes.Buffer, func(...string) error) {
+func (*recordingHandler) Search(context.Context, string) error { return nil }
+
+func (*recordingHandler) Random(context.Context, InlineMode) error { return nil }
+
+func (*recordingHandler) Theme(context.Context) error { return nil }
+
+func commandForTest(t *testing.T, invocation string, app AppHandler) (*bytes.Buffer, *bytes.Buffer, func(...string) error) {
 	t.Helper()
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -29,9 +35,8 @@ func commandForTest(t *testing.T, invocation string, handler RootHandler) (*byte
 			ConfigFile: filepath.Join(t.TempDir(), "config.yaml"),
 			CacheDir:   filepath.Join(t.TempDir(), "cache"),
 		},
-		Getenv:  func(string) string { return "" },
-		Editor:  &recordingRunner{},
-		Handler: handler,
+		Getenv: func(string) string { return "" },
+		App:    app,
 		Stdout:  stdout,
 		Stderr:  stderr,
 	})
@@ -133,7 +138,7 @@ func TestDebugFlagInvokesCallback(t *testing.T) {
 			CacheDir:   filepath.Join(t.TempDir(), "cache"),
 		},
 		Getenv:  func(string) string { return "" },
-		Handler: &recordingHandler{},
+		App:     &recordingHandler{},
 		Stdout:  stdout,
 		Stderr:  stderr,
 		OnDebug: func(path string) error {
@@ -148,10 +153,4 @@ func TestDebugFlagInvokesCallback(t *testing.T) {
 	if !strings.HasSuffix(got, "x.log") {
 		t.Fatalf("debug path = %q", got)
 	}
-}
-
-type recordingRunner struct{}
-
-func (*recordingRunner) Run(string, ...string) error {
-	return nil
 }

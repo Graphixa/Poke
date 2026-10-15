@@ -12,7 +12,7 @@ import (
 )
 
 func TestUpdateAndCacheCommands(t *testing.T) {
-	var refreshed, cleared, reset int
+	var refreshed, cleared int
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	root := cli.NewRoot(cli.Options{
@@ -29,7 +29,6 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 			WarmSpritesFunc: func(context.Context) error { return nil },
 			UpdateFunc:      func(context.Context) error { refreshed++; return nil },
 		},
-		Reset: resetFunc(func() error { reset++; return nil }),
 	})
 
 	root.SetArgs([]string{"update"})
@@ -52,18 +51,10 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	root.SetArgs([]string{"reset"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if refreshed != 2 || cleared != 1 || reset != 1 {
-		t.Fatalf("refreshed=%d cleared=%d reset=%d want update+refresh=2", refreshed, cleared, reset)
+	if refreshed != 2 || cleared != 1 {
+		t.Fatalf("refreshed=%d cleared=%d want update+refresh=2", refreshed, cleared)
 	}
 	if !strings.Contains(stdout.String(), "cache") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
-
-type resetFunc func() error
-
-func (f resetFunc) Reset() error { return f() }

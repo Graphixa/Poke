@@ -50,19 +50,6 @@ type Sprites struct {
 	OfficialArtwork string
 }
 
-// Images is the preferred name for source-asset URLs.
-type Images struct {
-	PixelFrontDefault string
-	OfficialArtwork   string
-}
-
-func (s Sprites) Images() Images {
-	return Images{
-		PixelFrontDefault: s.FrontDefault,
-		OfficialArtwork:   s.OfficialArtwork,
-	}
-}
-
 // BrowseEntry is the compact, in-memory row used for list selection and glance
 // stats/About (so the right pane does not wait on dossier core).
 type BrowseEntry struct {

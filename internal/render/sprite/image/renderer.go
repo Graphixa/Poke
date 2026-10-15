@@ -181,7 +181,7 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		threshold = 16
 	}
 	if r.proto == protocolSixel {
-		out, err := encodeSixel(src, w, h, opts)
+		out, err := spritesixel.EncodeFromCells(src, w, h, opts)
 		if err != nil {
 			return sprite.Frame{}, err
 		}
@@ -214,11 +214,6 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		return sprite.Frame{}, err
 	}
 	return sprite.Frame{Text: out, Backend: "image", Native: true}, nil
-}
-
-// encodeSixel builds a single valid DECSIXEL DCS via mattn/go-sixel.
-func encodeSixel(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderOptions) (string, error) {
-	return spritesixel.EncodeFromCells(src, cellsW, cellsH, opts)
 }
 
 // RenderPNG is a convenience used by the engine when PNG bytes are already loaded.
@@ -276,5 +271,5 @@ func clearSixelRegion(cellsW, cellsH int, bg color.RGBA) (string, error) {
 			img.Set(x, y, bg)
 		}
 	}
-	return encodeSixel(img, cellsW, cellsH, sprite.RenderOptions{BackgroundColor: bg})
+	return spritesixel.EncodeFromCells(img, cellsW, cellsH, sprite.RenderOptions{BackgroundColor: bg})
 }

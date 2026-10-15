@@ -12,7 +12,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/uiimage"
 )
 
-func TestFromImageAndGenerateANSIBlock(t *testing.T) {
+func TestFromImageAndGenerateANSIBlockOpts(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
 	for y := 0; y < 8; y++ {
 		for x := 0; x < 8; x++ {
@@ -27,14 +27,7 @@ func TestFromImageAndGenerateANSIBlock(t *testing.T) {
 		t.Fatalf("unexpected image data: %+v len=%d", data, len(data.Pixels))
 	}
 
-	out := uiimage.GenerateANSIBlock(data, 16, 16)
-	if strings.TrimSpace(out) == "" {
-		t.Fatal("expected non-empty chafa ANSI output")
-	}
-
 	for _, q := range []uiimage.QualityPreset{
-		uiimage.QualityBaseline,
-		uiimage.QualitySharp,
 		uiimage.QualityMosaic,
 		uiimage.QualityMosaicFast,
 	} {

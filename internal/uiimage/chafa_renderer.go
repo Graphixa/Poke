@@ -14,44 +14,15 @@ const (
 	defaultCellHeightPx int32 = 20
 )
 
-// SymbolPreset selects which Unicode mosaic glyphs Chafa may use.
-type SymbolPreset int
-
-const (
-	// SymbolsAll is the previous default (everything except "bad" glyphs).
-	SymbolsAll SymbolPreset = iota
-	// SymbolsDefault mirrors Chafa CLI defaults: block+border+space −wide −inverted.
-	SymbolsDefault
-	// SymbolsHalfQuad is best for pixel-art sharpness (half + quarter blocks).
-	SymbolsHalfQuad
-	// SymbolsMosaic adds sextant/octant for denser shape fidelity on modern fonts.
-	SymbolsMosaic
-)
-
-// QualityPreset bundles Chafa knobs that most affect recognisability.
+// QualityPreset bundles Chafa knobs for mosaic sprite rendering.
 type QualityPreset int
 
 const (
-	// QualityBaseline matches the first chafa experiment (ALL symbols, stock knobs).
-	QualityBaseline QualityPreset = iota
-	// QualitySharp tunes for Pokémon pixel art in symbol mode.
-	QualitySharp
 	// QualityMosaic prioritises structural detail via denser Unicode mosaics.
-	QualityMosaic
+	QualityMosaic QualityPreset = iota
 	// QualityMosaicFast keeps mosaic symbols but lowers work factor for TUI latency.
 	QualityMosaicFast
 )
-
-// GenerateANSIBlock compiles raw pixel data into a TUI-compatible ANSI text block.
-// Uses QualitySharp defaults for better sprite fidelity.
-func GenerateANSIBlock(data *ImageData, targetWidthCells, targetHeightCells int) string {
-	return GenerateANSIBlockOpts(data, RenderOpts{
-		Width:   targetWidthCells,
-		Height:  targetHeightCells,
-		Mode:    chafa.CHAFA_CANVAS_MODE_TRUECOLOR,
-		Quality: QualitySharp,
-	})
-}
 
 // RenderOpts controls Chafa canvas geometry, colour mode, and quality knobs.
 type RenderOpts struct {
@@ -60,41 +31,19 @@ type RenderOpts struct {
 	Mode    chafa.CanvasMode
 	Stretch bool // if true, fill the full cell box (may distort)
 
-	// Quality applies a named preset; individual fields below override when set.
 	Quality QualityPreset
 
-	Symbols         SymbolPreset
-	WorkFactor      float32 // 0..1
-	ColorSpace      chafa.ColorSpace
-	ColorExtractor  chafa.ColorExtractor
-	Dither          chafa.DitherMode
+	workFactor      float32
+	colorSpace      chafa.ColorSpace
+	colorExtractor  chafa.ColorExtractor
+	dither          chafa.DitherMode
 	CellWidthPx     int32
 	CellHeightPx    int32
 	Background      color.RGBA // if A>0, composite transparent pixels first
 	TransparencyThr float32    // 0 = leave Chafa default; else alpha cutoff 0..1
-
-	useSymbols        bool
-	useWorkFactor     bool
-	useColorSpace     bool
-	useColorExtractor bool
-	useDither         bool
 }
 
-// WithSymbols returns opts with an explicit symbol preset.
-func (o RenderOpts) WithSymbols(s SymbolPreset) RenderOpts {
-	o.Symbols = s
-	o.useSymbols = true
-	return o
-}
-
-// WithWorkFactor returns opts with an explicit Chafa work factor (0..1).
-func (o RenderOpts) WithWorkFactor(f float32) RenderOpts {
-	o.WorkFactor = f
-	o.useWorkFactor = true
-	return o
-}
-
-// GenerateANSIBlockOpts is the configurable form of GenerateANSIBlock.
+// GenerateANSIBlockOpts compiles raw pixel data into a TUI-compatible ANSI text block.
 func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 	if data == nil || len(data.Pixels) == 0 {
 		return ""
@@ -116,7 +65,7 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 
 	symbolMap := chafa.SymbolMapNew()
 	defer chafa.SymbolMapUnref(symbolMap)
-	applySymbolPreset(symbolMap, opts.Symbols)
+	chafa.SymbolMapApplySelectors(symbolMap, "block+half+quad+sextant+octant+border+space-wide-inverted")
 
 	config := chafa.CanvasConfigNew()
 	defer chafa.CanvasConfigUnref(config)
@@ -144,10 +93,10 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 	chafa.CanvasConfigSetGeometry(config, w, h)
 	chafa.CanvasConfigSetSymbolMap(config, symbolMap)
 	chafa.CanvasConfigSetCanvasMode(config, opts.Mode)
-	chafa.CanvasConfigSetWorkFactor(config, opts.WorkFactor)
-	chafa.CanvasConfigSetColorSpace(config, opts.ColorSpace)
-	chafa.CanvasConfigSetColorExtractor(config, opts.ColorExtractor)
-	chafa.CanvasConfigSetDitherMode(config, opts.Dither)
+	chafa.CanvasConfigSetWorkFactor(config, opts.workFactor)
+	chafa.CanvasConfigSetColorSpace(config, opts.colorSpace)
+	chafa.CanvasConfigSetColorExtractor(config, opts.colorExtractor)
+	chafa.CanvasConfigSetDitherMode(config, opts.dither)
 	// Preprocessing contrast boost is costly; leave it off for interactive browse.
 	chafa.CanvasConfigSetPreprocessingEnabled(config, false)
 
@@ -179,71 +128,16 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 
 func applyQualityPreset(opts RenderOpts) RenderOpts {
 	switch opts.Quality {
-	case QualitySharp:
-		if !opts.useSymbols {
-			opts.Symbols = SymbolsHalfQuad
-		}
-		if !opts.useWorkFactor {
-			opts.WorkFactor = 1.0
-		}
-		if !opts.useColorSpace {
-			opts.ColorSpace = chafa.CHAFA_COLOR_SPACE_DIN99D
-		}
-		if !opts.useColorExtractor {
-			opts.ColorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_MEDIAN
-		}
-		if !opts.useDither {
-			opts.Dither = chafa.CHAFA_DITHER_MODE_NONE
-		}
 	case QualityMosaic:
-		if !opts.useSymbols {
-			opts.Symbols = SymbolsMosaic
-		}
-		if !opts.useWorkFactor {
-			opts.WorkFactor = 1.0
-		}
-		if !opts.useColorSpace {
-			opts.ColorSpace = chafa.CHAFA_COLOR_SPACE_DIN99D
-		}
-		if !opts.useColorExtractor {
-			opts.ColorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_MEDIAN
-		}
-		if !opts.useDither {
-			opts.Dither = chafa.CHAFA_DITHER_MODE_NONE
-		}
-	case QualityMosaicFast:
-		// Same mosaic glyph set; cheaper colour math for browse selection latency.
-		if !opts.useSymbols {
-			opts.Symbols = SymbolsMosaic
-		}
-		if !opts.useWorkFactor {
-			opts.WorkFactor = 0.5
-		}
-		if !opts.useColorSpace {
-			opts.ColorSpace = chafa.CHAFA_COLOR_SPACE_RGB
-		}
-		if !opts.useColorExtractor {
-			opts.ColorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_AVERAGE
-		}
-		if !opts.useDither {
-			opts.Dither = chafa.CHAFA_DITHER_MODE_NONE
-		}
-	default: // QualityBaseline
-		if !opts.useSymbols {
-			opts.Symbols = SymbolsAll
-		}
-		if !opts.useWorkFactor {
-			opts.WorkFactor = 0.5
-		}
-		if !opts.useColorSpace {
-			opts.ColorSpace = chafa.CHAFA_COLOR_SPACE_RGB
-		}
-		if !opts.useColorExtractor {
-			opts.ColorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_AVERAGE
-		}
-		if !opts.useDither {
-			opts.Dither = chafa.CHAFA_DITHER_MODE_NONE
-		}
+		opts.workFactor = 1.0
+		opts.colorSpace = chafa.CHAFA_COLOR_SPACE_DIN99D
+		opts.colorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_MEDIAN
+		opts.dither = chafa.CHAFA_DITHER_MODE_NONE
+	default: // QualityMosaicFast
+		opts.workFactor = 0.5
+		opts.colorSpace = chafa.CHAFA_COLOR_SPACE_RGB
+		opts.colorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_AVERAGE
+		opts.dither = chafa.CHAFA_DITHER_MODE_NONE
 	}
 	if opts.CellWidthPx == 0 {
 		opts.CellWidthPx = defaultCellWidthPx
@@ -252,20 +146,6 @@ func applyQualityPreset(opts RenderOpts) RenderOpts {
 		opts.CellHeightPx = defaultCellHeightPx
 	}
 	return opts
-}
-
-func applySymbolPreset(symbolMap *chafa.SymbolMap, preset SymbolPreset) {
-	switch preset {
-	case SymbolsDefault:
-		chafa.SymbolMapApplySelectors(symbolMap, "block+border+space-wide-inverted")
-	case SymbolsHalfQuad:
-		// Maintainer tip for pixel art: half+quad with median extractor.
-		chafa.SymbolMapApplySelectors(symbolMap, "half+quad+space")
-	case SymbolsMosaic:
-		chafa.SymbolMapApplySelectors(symbolMap, "block+half+quad+sextant+octant+border+space-wide-inverted")
-	default:
-		chafa.SymbolMapAddByTags(symbolMap, chafa.CHAFA_SYMBOL_TAG_ALL)
-	}
 }
 
 func packRGB(c color.RGBA) uint32 {

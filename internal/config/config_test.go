@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
@@ -172,66 +171,20 @@ func TestSelectEditor(t *testing.T) {
 	}
 }
 
-type recordingRunner struct {
-	name string
-	args []string
-}
-
-func (r *recordingRunner) Run(name string, args ...string) error {
-	r.name = name
-	r.args = append([]string(nil), args...)
-	return nil
-}
-
-func TestMigrateDeprecatedRenderModes(t *testing.T) {
-	cfg := Default()
-	cfg.Render.SpriteMode = "braille"
-	warns := cfg.MigrateDeprecatedRenderModes()
-	if len(warns) != 1 || cfg.Render.SpriteMode != "halfblock" {
-		t.Fatalf("mode=%q warns=%v", cfg.Render.SpriteMode, warns)
-	}
-	if cfg.EffectiveSpriteMode() != "halfblock" {
-		t.Fatalf("effective=%q", cfg.EffectiveSpriteMode())
-	}
-	cfg.Render.SpriteMode = "ascii"
-	_ = cfg.MigrateDeprecatedRenderModes()
-	if cfg.Render.SpriteMode != "halfblock" {
-		t.Fatalf("ascii mapped to %q", cfg.Render.SpriteMode)
-	}
-}
-
-func TestLoadSurfacesDeprecatedModeWarnings(t *testing.T) {
+func TestLoadRejectsLegacySpriteModes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	data := []byte("render:\n  sprite_mode: braille\n")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("render:\n  sprite_mode: braille\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, warns, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Render.SpriteMode != "halfblock" {
-		t.Fatalf("mode=%q", cfg.Render.SpriteMode)
-	}
-	if len(warns) != 1 {
-		t.Fatalf("warns=%v", warns)
+	if _, _, err := Load(path); err == nil {
+		t.Fatal("expected reject of legacy sprite_mode")
 	}
 }
 
-func TestEditInitializesAndLaunchesSelectedEditor(t *testing.T) {
+func TestEditInitializesConfigFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	runner := &recordingRunner{}
-	getenv := func(name string) string {
-		if name == "VISUAL" {
-			return "code --wait"
-		}
-		return ""
-	}
-	if err := Edit(path, getenv, runner); err != nil {
+	if _, err := Initialize(path); err != nil {
 		t.Fatal(err)
-	}
-	if runner.name != "code" || strings.Join(runner.args, "|") != "--wait|"+path {
-		t.Fatalf("runner call = %q %#v", runner.name, runner.args)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("config was not initialized: %v", err)

@@ -49,8 +49,8 @@ func EffectiveSixelColors(n int) int {
 	}
 }
 
-// ChafaRenderVersion bumps when external/in-process chafa invocation args change.
-const ChafaRenderVersion = "exec-v1"
+// ChafaRenderVersion bumps when in-process chafa invocation args change.
+const ChafaRenderVersion = "lib-v1"
 
 // QualityProfile selects chafa conversion quality.
 type QualityProfile string

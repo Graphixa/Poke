@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,9 +23,7 @@ type Services struct {
 
 // BuildServices loads config and wires the PokeAPI client and cache service.
 func BuildServices(paths config.Paths, cfg config.Config, httpClient *http.Client, clock cache.Clock) (*Services, error) {
-	if clock == nil {
-		clock = SystemClock{}
-	}
+	// nil clock → cache uses its system clock.
 	client := pokeapi.NewClient(pokeapi.Options{
 		Timeout:    cfg.Network.Timeout.Duration,
 		Retries:    cfg.Network.Retries,
@@ -182,28 +179,6 @@ func (c cacheCommands) Update(ctx context.Context) error {
 	}
 	if err := cacheUpdateProgress(ctx, c.stderr, run); err != nil {
 		return err
-	}
-	return nil
-}
-
-// Reset clears cache and deletes the config file so first-run setup runs again.
-func (c cacheCommands) Reset() error {
-	svc, err := c.services()
-	if err != nil {
-		return err
-	}
-	cachePath := svc.Cache.Path()
-	configPath := svc.Paths.ConfigFile
-	if err := svc.Cache.Clear(); err != nil {
-		return fmt.Errorf("clear cache: %w", err)
-	}
-	if err := os.Remove(configPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove config: %w", err)
-	}
-	if c.stdout != nil {
-		fmt.Fprintf(c.stdout, "Cleared cache at %s\n", cachePath)
-		fmt.Fprintf(c.stdout, "Removed config at %s\n", configPath)
-		fmt.Fprintln(c.stdout, "Run poke to start setup")
 	}
 	return nil
 }

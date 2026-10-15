@@ -40,13 +40,6 @@ func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.Rende
 	if src == nil {
 		return sprite.Frame{}, fmt.Errorf("chafa: nil image")
 	}
-	if bin, ok := Detect(); ok {
-		if frame, err := renderExec(ctx, bin, src, opts); err == nil {
-			return frame, nil
-		} else if ctx.Err() != nil {
-			return sprite.Frame{}, ctx.Err()
-		}
-	}
 	return r.renderLib(ctx, src, opts)
 }
 

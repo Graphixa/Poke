@@ -10,9 +10,27 @@ import (
 	"github.com/Graphixa/Pokedex/internal/config"
 )
 
+type searchRandomStub struct {
+	searchQ    string
+	randomMode cli.InlineMode
+}
+
+func (s *searchRandomStub) RunRoot(context.Context, cli.RootRequest) error { return nil }
+
+func (s *searchRandomStub) Search(_ context.Context, q string) error {
+	s.searchQ = q
+	return nil
+}
+
+func (s *searchRandomStub) Random(_ context.Context, mode cli.InlineMode) error {
+	s.randomMode = mode
+	return nil
+}
+
+func (s *searchRandomStub) Theme(context.Context) error { return nil }
+
 func TestSearchAndRandomRouting(t *testing.T) {
-	var searchQ string
-	var randomMode cli.InlineMode
+	stub := &searchRandomStub{}
 	stdout := &bytes.Buffer{}
 	root := cli.NewRoot(cli.Options{
 		InvocationPath: "poke",
@@ -22,30 +40,23 @@ func TestSearchAndRandomRouting(t *testing.T) {
 		},
 		Stdout: stdout,
 		Stderr: &bytes.Buffer{},
-		Search: cli.SearchHandlerFunc(func(_ context.Context, q string) error {
-			searchQ = q
-			return nil
-		}),
-		Random: cli.RandomHandlerFunc(func(_ context.Context, mode cli.InlineMode) error {
-			randomMode = mode
-			return nil
-		}),
+		App:    stub,
 	})
 
 	root.SetArgs([]string{"search", "char"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if searchQ != "char" {
-		t.Fatalf("search query = %q", searchQ)
+	if stub.searchQ != "char" {
+		t.Fatalf("search query = %q", stub.searchQ)
 	}
 
 	root.SetArgs([]string{"random", "--stats"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if randomMode != cli.InlineStats {
-		t.Fatalf("random mode = %q", randomMode)
+	if stub.randomMode != cli.InlineStats {
+		t.Fatalf("random mode = %q", stub.randomMode)
 	}
 }
 
@@ -58,7 +69,7 @@ func TestRandomMutuallyExclusiveFlags(t *testing.T) {
 		},
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
-		Random: cli.RandomHandlerFunc(func(context.Context, cli.InlineMode) error { return nil }),
+		App:    &searchRandomStub{},
 	})
 	root.SetArgs([]string{"random", "--info", "--stats"})
 	if err := root.Execute(); err == nil {
