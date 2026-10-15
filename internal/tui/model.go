@@ -113,7 +113,7 @@ type Model struct {
 	quitAfterFavourite bool
 	viewOptions        viewOptions
 	draftOptions       viewOptions
-	filterRow          int
+	filterStep         int // 0 Collection, 1 Type, 2 Sort
 	showFilters        bool
 	showCompare        bool
 	comparePin         *compareEntry

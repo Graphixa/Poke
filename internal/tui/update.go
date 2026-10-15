@@ -271,7 +271,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.Filters) {
 		m.showFilters = true
 		m.draftOptions = m.viewOptions
-		m.filterRow = 0
+		m.filterStep = 0
 		m.glanceHoldID = 0
 		return m.coverNativeOverlay()
 	}
@@ -298,11 +298,19 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Clear) {
-		if m.queryValue() == "" || m.layout().TooSmall {
+		if m.layout().TooSmall {
 			return m.requestQuit()
 		}
-		m.clearQuery()
-		return m, m.syncSelectionLoads()
+		if m.queryValue() != "" {
+			m.clearQuery()
+			return m, m.syncSelectionLoads()
+		}
+		if m.viewOptions != (viewOptions{}) {
+			m.viewOptions = viewOptions{}
+			m.refilter()
+			return m, m.syncSelectionLoads()
+		}
+		return m.requestQuit()
 	}
 
 	if key.Matches(msg, m.keys.Up) {

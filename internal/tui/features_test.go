@@ -52,31 +52,133 @@ func TestViewOptionsApplyCancelAndIntersectSearch(t *testing.T) {
 	m.search.SetValue("char")
 	m.refilter()
 	m = featureKey(m, tea.KeyF2)
-	m = featureKey(m, tea.KeyDown)
-	m = featureKey(m, tea.KeyRight) // Normal excludes both search matches.
-	if !strings.Contains(m.featureView(), "0 matches") {
+	if m.filterStep != 0 || !strings.Contains(ansi.Strip(m.View().Content), "Filter and Sort") {
+		t.Fatal("wizard must open on Collection")
+	}
+	m = featureKey(m, tea.KeyEnter) // → Type
+	m = featureKey(m, tea.KeyDown)  // Normal excludes both search matches.
+	view := ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "0 matches") || !strings.Contains(view, "POKÉMON TYPE") {
 		t.Fatal("draft count does not respect search")
+	}
+	if strings.Contains(view, "search kept") {
+		t.Fatal("search-kept chrome must stay gone")
 	}
 	if !reflect.DeepEqual(featureIDs(m), []int{4, 6}) {
 		t.Fatal("draft mutated browse list")
 	}
 	m = featureKey(m, tea.KeyEscape)
-	if m.viewOptions.Type != 0 || m.queryValue() != "char" {
+	if m.viewOptions.Type != 0 || m.queryValue() != "char" || m.showFilters {
 		t.Fatal("cancel changed view/search")
 	}
 	m = featureKey(m, tea.KeyF2)
-	m = featureKey(m, tea.KeyDown)
-	m = featureKey(m, tea.KeyRight)
-	m = featureKey(m, tea.KeyRight) // Fire.
-	m = featureKey(m, tea.KeyEnter)
+	m = featureKey(m, tea.KeyEnter) // Type
+	m = featureKey(m, tea.KeyDown)  // Normal
+	m = featureKey(m, tea.KeyDown)  // Fire
+	m = featureKey(m, tea.KeySpace) // apply from Type step
 	if m.showFilters || m.viewOptions.Type != 2 || !reflect.DeepEqual(featureIDs(m), []int{4, 6}) {
 		t.Fatal("apply failed")
 	}
 	m = featureKey(m, tea.KeyF2)
 	m = featureKey(m, tea.KeyBackspace)
-	m = featureKey(m, tea.KeyEnter)
+	m = featureKey(m, tea.KeyEnter) // still Collection after reset → Type
+	m = featureKey(m, tea.KeyEnter) // → Sort
+	m = featureKey(m, tea.KeyEnter) // apply on last step
 	if m.viewOptions != (viewOptions{}) || m.queryValue() != "char" {
 		t.Fatal("reset must preserve search")
+	}
+}
+
+func TestFilterWizardChromeAndStepNav(t *testing.T) {
+	m := featureModel()
+	m = featureKey(m, tea.KeyF2)
+	view := ansi.Strip(m.View().Content)
+	for _, want := range []string{"Filter and Sort", "COLLECTION", "All Pokémon", "matches", "↑/↓", "esc"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q in:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "1/3") || strings.Contains(view, "search kept") {
+		t.Fatal("no step fraction or search-kept chrome")
+	}
+	m = featureKey(m, tea.KeyDown) // Favourites only
+	if !m.draftOptions.FavouritesOnly {
+		t.Fatal("↓ on Collection must toggle favourites")
+	}
+	m = featureKey(m, tea.KeyRight) // → Type
+	if m.filterStep != 1 {
+		t.Fatal("→ must advance step")
+	}
+	view = ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "POKÉMON TYPE") || !strings.Contains(view, "┃") {
+		t.Fatalf("type step needs label + scroll thumb:\n%s", view)
+	}
+	if !strings.Contains(view, "┃") {
+		t.Fatal("scroll thumb missing")
+	}
+	labels := make([]string, len(filterTypes))
+	for i, tname := range filterTypes {
+		if i == 0 {
+			labels[i] = "All"
+		} else {
+			labels[i] = tname
+		}
+	}
+	top := filterChoiceWindow(labels, 0, 7, 40, false)
+	mid := filterChoiceWindow(labels, len(labels)/2, 7, 40, false)
+	colAt := func(rows []string) int {
+		for _, line := range rows {
+			plain := ansi.Strip(line)
+			if j := strings.IndexAny(plain, "│┃"); j >= 0 {
+				return j
+			}
+		}
+		return -1
+	}
+	if a, b := colAt(top), colAt(mid); a < 0 || a != b {
+		t.Fatalf("scroll track must stay fixed across scroll, top=%d mid=%d", a, b)
+	}
+	m = featureKey(m, tea.KeyLeft)
+	if m.filterStep != 0 {
+		t.Fatal("← must go back")
+	}
+	m = featureKey(m, tea.KeyEnter)
+	m = featureKey(m, tea.KeyEnter) // → Sort
+	view = ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "SORT METHOD") || !strings.Contains(view, "Favourites · All types · Default") {
+		t.Fatalf("sort step needs draft summary:\n%s", view)
+	}
+	m = featureKey(m, tea.KeyEscape)
+	if m.showFilters || m.viewOptions.FavouritesOnly {
+		t.Fatal("esc must discard draft")
+	}
+}
+
+func TestEscClearsFilterBeforeQuit(t *testing.T) {
+	m := featureModel()
+	m.viewOptions = viewOptions{Type: 2, Sort: 1}
+	m.refilter()
+	m = featureKey(m, tea.KeyEscape)
+	if m.viewOptions != (viewOptions{}) || m.quitting {
+		t.Fatal("esc must clear filter/sort before quit")
+	}
+	m = featureKey(m, tea.KeyEscape)
+	if !m.quitting {
+		t.Fatal("second esc with nothing to clear must quit")
+	}
+}
+
+func TestFilterOverlayKeepsBackdropPeek(t *testing.T) {
+	bg := strings.Repeat("L", 20) + "\n" + strings.Repeat("M", 20) + "\n" + strings.Repeat("R", 20)
+	card := "ABCD\nEFGH\nIJKL"
+	out := overlayCenterCard(bg, card, 20, 3)
+	for i, line := range strings.Split(out, "\n") {
+		if textwidth.Width(line) != 20 {
+			t.Fatalf("line %d width=%d %q", i, textwidth.Width(line), line)
+		}
+		if line[0] == ' ' || line[len(line)-1] == ' ' {
+			t.Fatalf("backdrop wiped beside card on line %d: %q", i, line)
+		}
 	}
 }
 

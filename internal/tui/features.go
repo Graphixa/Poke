@@ -606,32 +606,51 @@ func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// Filter wizard: Collection → Type → Sort.
 	switch k {
-	case "up", "shift+tab":
-		m.filterRow = (m.filterRow + 2) % 3
-	case "down", "tab":
-		m.filterRow = (m.filterRow + 1) % 3
-	case "left", "right", "space":
-		delta := 1
-		if k == "left" {
-			delta = -1
+	case "up":
+		m.nudgeFilterChoice(-1)
+	case "down":
+		m.nudgeFilterChoice(1)
+	case "left", "shift+tab":
+		if m.filterStep > 0 {
+			m.filterStep--
 		}
-		switch m.filterRow {
-		case 0:
-			m.draftOptions.FavouritesOnly = !m.draftOptions.FavouritesOnly
-		case 1:
-			m.draftOptions.Type = (m.draftOptions.Type + delta + len(filterTypes)) % len(filterTypes)
-		case 2:
-			m.draftOptions.Sort = (m.draftOptions.Sort + delta + len(filterSorts)) % len(filterSorts)
+	case "right", "tab":
+		if m.filterStep < 2 {
+			m.filterStep++
 		}
 	case "backspace":
 		m.draftOptions = viewOptions{}
+	case " ", "space":
+		return m.applyFilterDraft()
 	case "enter":
-		m.viewOptions = m.draftOptions
-		m.featureNotice = ""
-		m.closeFeature()
-		m.refilter()
-		return m, m.syncSelectionLoads()
+		if m.filterStep < 2 {
+			m.filterStep++
+			return m, nil
+		}
+		return m.applyFilterDraft()
 	}
 	return m, nil
+}
+
+func (m *Model) nudgeFilterChoice(delta int) {
+	switch m.filterStep {
+	case 0:
+		m.draftOptions.FavouritesOnly = !m.draftOptions.FavouritesOnly
+	case 1:
+		n := len(filterTypes)
+		m.draftOptions.Type = (m.draftOptions.Type + delta + n) % n
+	case 2:
+		n := len(filterSorts)
+		m.draftOptions.Sort = (m.draftOptions.Sort + delta + n) % n
+	}
+}
+
+func (m Model) applyFilterDraft() (tea.Model, tea.Cmd) {
+	m.viewOptions = m.draftOptions
+	m.featureNotice = ""
+	m.closeFeature()
+	m.refilter()
+	return m, m.syncSelectionLoads()
 }

@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
@@ -29,9 +30,6 @@ func (m Model) featureView() string {
 	if m.featureError != "" {
 		return m.featureFrame("Favourites", strings.Split(lipgloss.NewStyle().Width(w-4).Render(m.featureError), "\n"),
 			[][]key.Binding{{featureBinding("enter", "enter / esc", "close")}})
-	}
-	if m.showFilters {
-		return m.filterView()
 	}
 	return m.compareView()
 }
@@ -56,72 +54,237 @@ func featureAccent(s string) string {
 	return lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true).Render(s)
 }
 
-func (m Model) filterView() string {
-	collection := "All Pokémon"
-	if m.draftOptions.FavouritesOnly {
-		collection = "Favourites only"
+var filterStepPrompts = []string{"COLLECTION", "POKÉMON TYPE", "SORT METHOD"}
+
+// filterView paints a wizard modal over a dimmed browse backdrop.
+func (m Model) filterView(browse string) string {
+	w, h := m.width, m.height
+	if w < 40 || h < 18 {
+		return lipgloss.Place(max(1, w), max(1, h), lipgloss.Center, lipgloss.Center,
+			textwidth.Truncate("Resize to 40 × 18", max(1, w))+"\n"+textwidth.Truncate("Esc closes this view", max(1, w)))
 	}
-	values := []string{collection, output.TitleFromSlug(filterTypes[m.draftOptions.Type]), filterSorts[m.draftOptions.Sort]}
-	labels := []string{"Collection", "Type", "Sort"}
-	descriptions := []string{"Choose all Pokémon or your saved favourites.", "Filter by either of a Pokémon's types.", "Favourites stay first within the chosen order."}
-	lines := []string{style.StatusMuted("Choose a field, then change its value."), ""}
-	for i, label := range labels {
-		prefix := "  "
-		value := values[i]
-		if i == m.filterRow {
-			prefix = "> "
-			value = "‹ " + value + " ›"
-		}
-		row := prefix + textwidth.PadRight(label, 12) + value
-		if i == m.filterRow {
-			row = featureAccent(row)
-		}
-		lines = append(lines, row)
+	helpM := m.help
+	helpM.SetWidth(w)
+	// Compact ShortHelp so 40-col keeps esc; ←/⌫ still work unbound in the footer.
+	footer := helpM.ShortHelpView([]key.Binding{
+		featureBinding("esc", "esc", "cancel"),
+		featureBinding("up", "↑/↓", "choose"),
+		featureBinding("enter", "enter", "next"),
+		featureBinding(" ", "space", "apply"),
+	})
+	bodyH := h - 1
+	if bodyH < 8 {
+		bodyH = h
+		footer = ""
 	}
+	cardW := min(56, w-4)
+	if cardW < 36 {
+		cardW = min(w, 36)
+	}
+	card := m.filterWizardCard(cardW)
+	bg := lipgloss.NewStyle().Faint(true).Render(ansi.Strip(browse))
+	merged := overlayCenterCard(bg, card, w, bodyH)
+	if footer == "" {
+		return merged
+	}
+	return merged + "\n" + textwidth.PadRight(textwidth.Truncate(footer, w), w)
+}
+
+func (m Model) filterWizardCard(cardW int) string {
+	step := m.filterStep
+	if step < 0 {
+		step = 0
+	}
+	if step > 2 {
+		step = 2
+	}
+	innerW := cardW - 2
+	var body []string
+	body = append(body, "")
+	body = append(body, featureAccent("  "+filterStepPrompts[step]))
+	body = append(body, "")
+	body = append(body, m.filterStepChoices(innerW-2)...)
+	body = append(body, "")
 	count := len(m.filterSpecies(m.index.Search(m.queryValue()), m.draftOptions))
-	lines = append(lines, "", style.StatusMuted(descriptions[m.filterRow]), "", featureAccent(fmt.Sprintf("%d matches", count))+" · search is kept")
-	if count == 0 {
-		lines = append(lines, style.StatusMuted("Try another type or reset these filters."))
-	} else if m.queryValue() != "" {
-		lines = append(lines, "Search: "+m.queryValue())
+	body = append(body, "  "+featureAccent(fmt.Sprintf("%d matches", count)))
+	if step == 2 {
+		body = append(body, "  "+style.StatusMuted(m.filterDraftSummary()))
 	}
-	if m.height >= 24 {
-		choices, active := []string{"All Pokémon", "Favourites only"}, 0
+	body = append(body, "")
+	footer := filterStepDots(step)
+	if count == 0 {
+		footer += "  " + style.StatusMuted("Try another type or reset.")
+	}
+	body = append(body, "  "+footer)
+	body = append(body, "")
+	return components.InnerCard("Filter and Sort", cardW, len(body)+2, body)
+}
+
+func (m Model) filterDraftSummary() string {
+	collection := "All"
+	if m.draftOptions.FavouritesOnly {
+		collection = "Favourites"
+	}
+	typ := "All types"
+	if m.draftOptions.Type > 0 && m.draftOptions.Type < len(filterTypes) {
+		typ = output.TitleFromSlug(filterTypes[m.draftOptions.Type])
+	}
+	sort := filterSorts[0]
+	if m.draftOptions.Sort >= 0 && m.draftOptions.Sort < len(filterSorts) {
+		sort = filterSorts[m.draftOptions.Sort]
+	}
+	return collection + " · " + typ + " · " + sort
+}
+
+func filterStepDots(step int) string {
+	parts := make([]string, 3)
+	for i := range parts {
+		if i == step {
+			parts[i] = featureAccent("●")
+		} else {
+			parts[i] = style.StatusMuted("○")
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func (m Model) filterStepChoices(width int) []string {
+	const window = 7
+	switch m.filterStep {
+	case 0:
+		opts := []string{"All Pokémon", "Favourites only"}
+		active := 0
 		if m.draftOptions.FavouritesOnly {
 			active = 1
 		}
-		switch m.filterRow {
-		case 1:
-			choices, active = filterTypes, m.draftOptions.Type
-		case 2:
-			choices, active = filterSorts, m.draftOptions.Sort
-		}
-		lines = append(lines, "", featureAccent("Choices"))
-		line := ""
-		for i, choice := range choices {
-			if m.filterRow == 1 {
-				choice = output.TitleFromSlug(choice)
-			}
-			if i == active {
-				choice = featureAccent("[" + choice + "]")
+		return filterChoiceWindow(opts, active, window, width, false)
+	case 1:
+		labels := make([]string, len(filterTypes))
+		for i, t := range filterTypes {
+			if i == 0 {
+				labels[i] = "All"
 			} else {
-				choice = style.StatusMuted(choice)
+				labels[i] = output.TitleFromSlug(t)
 			}
-			if textwidth.Width(line)+textwidth.Width(choice)+3 > m.width-4 && line != "" {
-				lines = append(lines, line)
-				line = ""
-			}
-			if line != "" {
-				line += " · "
-			}
-			line += choice
 		}
-		lines = append(lines, line)
+		return filterChoiceWindow(labels, m.draftOptions.Type, window, width, true)
+	default:
+		return filterChoiceWindow(filterSorts, m.draftOptions.Sort, window, width, false)
 	}
-	return m.featureFrame("Filter & sort", lines, [][]key.Binding{
-		{featureBinding("up", "↑/↓", "field"), featureBinding("right", "←/→", "change")},
-		{featureBinding("enter", "enter", "apply"), featureBinding("backspace", "⌫", "reset"), featureBinding("esc", "esc", "cancel")},
-	})
+}
+
+func filterChoiceWindow(opts []string, active, window, width int, colorTypes bool) []string {
+	if active < 0 {
+		active = 0
+	}
+	if active >= len(opts) {
+		active = len(opts) - 1
+	}
+	if window > len(opts) {
+		window = len(opts)
+	}
+	start := active - window/2
+	if start < 0 {
+		start = 0
+	}
+	if start+window > len(opts) {
+		start = len(opts) - window
+	}
+	bar := len(opts) > window
+	// Fixed column from the longest label in the full list (not the visible window).
+	colW := 0
+	for _, o := range opts {
+		if w := 2 + textwidth.Width(o); w > colW { // "> "/"  " are 2 cells
+			colW = w
+		}
+	}
+	if bar {
+		colW += 2 // small gap before the track
+		colW = min(colW, max(4, width-2))
+	} else {
+		colW = min(colW, width)
+	}
+	out := make([]string, 0, window)
+	for row := 0; row < window; row++ {
+		i := start + row
+		label := opts[i]
+		prefix := "  "
+		if i == active {
+			prefix = "> "
+		}
+		text := prefix + label
+		if colorTypes && i > 0 {
+			colored := style.TypeLabelText(filterTypes[i], label)
+			if i == active {
+				text = featureAccent(prefix) + colored
+			} else {
+				text = prefix + colored
+			}
+		} else if i == active {
+			text = featureAccent(text)
+		} else {
+			text = style.StatusMuted(text)
+		}
+		line := "  " + textwidth.PadRight(textwidth.Truncate(text, colW), colW)
+		if bar {
+			line += " " + filterScrollThumb(row, window, start, len(opts))
+		}
+		out = append(out, textwidth.Truncate(line, width))
+	}
+	return out
+}
+
+// filterScrollThumb is a 1-col track (│) with a moving thumb (┃).
+func filterScrollThumb(row, window, start, total int) string {
+	thumbH := max(1, (window*window)/total)
+	maxStart := total - window
+	thumbTop := 0
+	if maxStart > 0 {
+		thumbTop = (start * (window - thumbH)) / maxStart
+	}
+	if row >= thumbTop && row < thumbTop+thumbH {
+		return featureAccent("┃")
+	}
+	return style.StatusMuted("│")
+}
+
+// overlayCenterCard places card centered over bg, keeping left/right backdrop peek.
+func overlayCenterCard(bg, card string, width, height int) string {
+	bgLines := strings.Split(strings.TrimRight(bg, "\n"), "\n")
+	for len(bgLines) < height {
+		bgLines = append(bgLines, "")
+	}
+	if len(bgLines) > height {
+		bgLines = bgLines[:height]
+	}
+	for i := range bgLines {
+		bgLines[i] = textwidth.PadRight(textwidth.Truncate(bgLines[i], width), width)
+	}
+	cardLines := strings.Split(strings.TrimRight(card, "\n"), "\n")
+	cardH := len(cardLines)
+	cardW := 0
+	for _, l := range cardLines {
+		if w := textwidth.Width(l); w > cardW {
+			cardW = w
+		}
+	}
+	top := max(0, (height-cardH)/2)
+	left := max(0, (width-cardW)/2)
+	for i, cl := range cardLines {
+		y := top + i
+		if y >= height {
+			break
+		}
+		cw := textwidth.Width(cl)
+		leftPart := textwidth.PadRight(ansi.Cut(bgLines[y], 0, left), left)
+		rightStart := left + cw
+		rightPart := ""
+		if rightStart < width {
+			rightPart = textwidth.PadRight(ansi.Cut(bgLines[y], rightStart, width), width-rightStart)
+		}
+		bgLines[y] = textwidth.PadRight(textwidth.Truncate(leftPart+cl+rightPart, width), width)
+	}
+	return strings.Join(bgLines, "\n")
 }
 
 func (m Model) compareView() string {

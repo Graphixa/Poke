@@ -29,7 +29,10 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 	content := views.Browse(m.browseData())
-	if m.showFilters || m.showCompare || m.featureError != "" {
+	switch {
+	case m.showFilters:
+		content = m.filterView(content)
+	case m.showCompare || m.featureError != "":
 		content = m.featureView()
 	}
 	v := tea.NewView(content)
