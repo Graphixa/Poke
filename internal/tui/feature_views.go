@@ -310,15 +310,17 @@ func (m Model) compareLayoutGeom(footerH int) compareLayoutGeom {
 	if g.innerW < 20 {
 		g.innerW = 20
 	}
-	// Split so colWA + rule + colWB == innerW. When both sides have stats, bias a few
-	// columns to B for the Δ column (sep + Δ + padR) instead of a hard 56/44 split.
+	// Equal split: colWA + rule + colWB == innerW (even innerW: B gets the spare column).
 	g.colWA = (g.innerW - 1) / 2
 	g.colWB = g.innerW - 1 - g.colWA
+	colMin := g.colWA
+	if g.colWB < colMin {
+		colMin = g.colWB
+	}
 	const (
 		headerRows = 4 // blank + name + type + blank
 		statsRows  = 8 // 6 stats + divider + total
 		minCoreW   = 18
-		deltaBias  = 6 // sep(2) + Δ(~3–4) + padR(1)
 	)
 	showArt := !m.layoutTh.DisableSprite && m.width >= 72 && m.height >= 16
 	bucket := views.GlanceBucket
@@ -332,20 +334,6 @@ func (m Model) compareLayoutGeom(footerH int) compareLayoutGeom {
 		g.blockH = statsRows
 	}
 	needW := g.padL + g.artOW + g.gap + minCoreW
-	if m.compareA.HasStats && m.compareB.HasStats {
-		keep := needW
-		if !showArt {
-			keep = 12
-		}
-		if g.colWA-deltaBias >= keep {
-			g.colWA -= deltaBias
-			g.colWB += deltaBias
-		}
-	}
-	colMin := g.colWA
-	if g.colWB < colMin {
-		colMin = g.colWB
-	}
 	g.drawArt = showArt && needW <= colMin && headerRows+g.blockH <= g.innerH
 	if g.drawArt {
 		g.coreW = colMin - g.padL - g.artOW - g.gap
@@ -402,8 +390,8 @@ func compareSideHeader(e compareEntry, genus string) string {
 	return head
 }
 
-// compareStatLines packs label | flex | value [| sep | Δ] [| padR].
-// Rule before Total: ─×label + gap + ─×value + break + ─×Δ (when Δ present).
+// compareStatLines packs label | gap≤2 | value [| sep | Δ] [| padR].
+// Spare width trails after the cluster (compareFit) — never inflates the middle gap.
 func compareStatLines(labels []string, vals []int, has bool, deltas []string, budget int) []string {
 	if budget < 1 {
 		budget = 1
@@ -433,24 +421,31 @@ func compareStatLines(labels []string, vals []int, has bool, deltas []string, bu
 			}
 		}
 	}
-	sep := 0
+	const maxGap = 2
+	sep, padR := 0, 0
 	if deltaW > 0 {
-		sep = 2 // clear break between value and Δ
+		sep = 2
 	}
-	need := labelW + 1 + valW + sep + deltaW
-	spare := budget - need
-	padR := 0
-	if spare >= 1 {
+	gap := maxGap
+	fits := func() bool {
+		return labelW+gap+valW+sep+deltaW+padR <= budget
+	}
+	if budget >= labelW+gap+valW+sep+deltaW+1 {
 		padR = 1
-		spare--
 	}
-	gap := 1 + max(0, spare)
-	if labelW+gap+valW+sep+deltaW+padR > budget {
+	if !fits() {
+		padR = 0
+	}
+	if !fits() && sep == 2 {
+		sep = 1
+	}
+	if !fits() {
 		gap = 1
+	}
+	if !fits() {
 		room := budget - labelW - gap - sep - padR
 		if deltaW > 0 {
 			if room < valW+deltaW {
-				// Shrink Δ first, then values.
 				if room > valW+1 {
 					deltaW = room - valW
 				} else {

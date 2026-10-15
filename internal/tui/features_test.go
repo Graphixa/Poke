@@ -479,19 +479,28 @@ func TestFormatCompareDelta(t *testing.T) {
 
 func TestCompareStatLinesContentSized(t *testing.T) {
 	labels := []string{"HP", "Attack", "Total"}
-	lines := compareStatLines(labels, []int{39, 52, 309}, true, nil, 22)
+	lines := compareStatLines(labels, []int{39, 52, 309}, true, nil, 40)
 	if len(lines) != 4 { // 3 stats + divider before Total
 		t.Fatalf("want 4 lines, got %d %#v", len(lines), lines)
 	}
 	plain := make([]string, len(lines))
 	for i, l := range lines {
 		plain[i] = ansi.Strip(l)
-		if textwidth.Width(l) != 22 {
-			t.Fatalf("line %d width %d want 22: %q", i, textwidth.Width(l), plain[i])
+		if textwidth.Width(l) != 40 {
+			t.Fatalf("line %d width %d want 40: %q", i, textwidth.Width(l), plain[i])
 		}
 	}
-	if !strings.HasPrefix(plain[0], "HP") || !strings.Contains(plain[0], "39") {
-		t.Fatalf("HP row: %q", plain[0])
+	hp := plain[0]
+	if !strings.HasPrefix(hp, "HP") || !strings.Contains(hp, "39") {
+		t.Fatalf("HP row: %q", hp)
+	}
+	// Roomy budget: content hugs left (gap≤2); spare trails — not a budget-wide middle gap.
+	trimmed := strings.TrimRight(hp, " ")
+	if textwidth.Width(trimmed) > 6+2+3 { // Attack + maxGap + "309"
+		t.Fatalf("label↔value gap inflated: trimmed width %d in %q", textwidth.Width(trimmed), hp)
+	}
+	if trimmed == hp {
+		t.Fatalf("spare should trail after value cluster: %q", hp)
 	}
 	div := plain[2]
 	if !strings.Contains(div, "─") || strings.ContainsAny(div, "0123456789") {
@@ -501,7 +510,7 @@ func TestCompareStatLinesContentSized(t *testing.T) {
 		t.Fatalf("divider should underline labels: %q", div)
 	}
 
-	withΔ := compareStatLines(labels, []int{58, 64, 405}, true, []string{"+19", "+12", "+96"}, 28)
+	withΔ := compareStatLines(labels, []int{58, 64, 405}, true, []string{"+19", "+12", "+96"}, 40)
 	got := ansi.Strip(withΔ[0])
 	if !strings.Contains(got, "58") || !strings.Contains(got, "+19") || strings.Contains(got, "…") {
 		t.Fatalf("Δ column without truncating: %q", got)
@@ -519,7 +528,7 @@ func TestCompareStatLinesContentSized(t *testing.T) {
 		t.Fatalf("want ≥2 spaces between value and Δ: %q", got)
 	}
 	if strings.TrimRight(got, " ") == got {
-		t.Fatalf("roomy budget should keep padR after Δ: %q", got)
+		t.Fatalf("roomy budget should keep trailing pad after Δ: %q", got)
 	}
 	dDiv := ansi.Strip(withΔ[2])
 	trim := strings.TrimSpace(dDiv)
@@ -622,14 +631,8 @@ func TestCompareColumnSplitFillsInnerWidth(t *testing.T) {
 	m.showCompare = true
 	m.width, m.height = 120, 40
 	g := m.compareLayoutGeom(m.compareFooterH())
-	if !m.compareA.HasStats || !m.compareB.HasStats {
-		t.Fatal("fixture should have stats for Δ bias")
-	}
-	if g.colWB < g.colWA+6 {
-		t.Fatalf("with Δs, B should gain bias columns: A=%d B=%d", g.colWA, g.colWB)
-	}
-	if g.colWA+1+g.colWB != g.innerW {
-		t.Fatalf("biased split must still fill innerW: %d+%d+1=%d want %d", g.colWA, g.colWB, g.colWA+1+g.colWB, g.innerW)
+	if g.colWB > g.colWA+1 {
+		t.Fatalf("50/50 split: B should be A or A+1, got A=%d B=%d", g.colWA, g.colWB)
 	}
 
 	// Body rows must fill innerW exactly — spare/missing columns show up as uneven halves.
