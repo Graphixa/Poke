@@ -71,8 +71,6 @@ const (
 type Cache struct {
 	AutoRefresh    bool     `yaml:"auto_refresh"`
 	IndexTTL       Duration `yaml:"index_ttl"`
-	DetailTTL      Duration `yaml:"detail_ttl"`
-	MoveTTL        Duration `yaml:"move_ttl"`
 	DossierPrewarm string   `yaml:"dossier_prewarm"` // all | window | off
 }
 
@@ -113,8 +111,6 @@ func Default() Config {
 		Cache: Cache{
 			AutoRefresh:    true,
 			IndexTTL:       Duration{24 * time.Hour},
-			DetailTTL:      Duration{7 * 24 * time.Hour},
-			MoveTTL:        Duration{30 * 24 * time.Hour},
 			DossierPrewarm: "window",
 		},
 		Render: Render{
@@ -151,8 +147,6 @@ func (c Config) Validate() error {
 		}
 	}
 	positiveDuration("cache.index_ttl", c.Cache.IndexTTL.Duration)
-	positiveDuration("cache.detail_ttl", c.Cache.DetailTTL.Duration)
-	positiveDuration("cache.move_ttl", c.Cache.MoveTTL.Duration)
 	positiveDuration("network.timeout", c.Network.Timeout.Duration)
 	switch c.Render.SpriteMode {
 	case "", "auto", "off", "image", "text", "chafa", "halfblock":

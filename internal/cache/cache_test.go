@@ -140,7 +140,6 @@ func testConfig() config.Config {
 	cfg := config.Default()
 	cfg.Network.MaxConcurrency = 2
 	cfg.Cache.IndexTTL = config.Duration{Duration: time.Hour}
-	cfg.Cache.DetailTTL = config.Duration{Duration: time.Hour}
 	return cfg
 }
 

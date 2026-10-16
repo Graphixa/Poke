@@ -145,7 +145,6 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	var useProgress bool
 
 	img := spriteimage.New()
-	_, _ = spritechafa.Detect()
 	caps := sprite.DetectCapabilities(img.Available())
 	if caps.NativeImage {
 		// Measure real cell pixels before the engine/warmers exist so every

@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Diagnostic: encode a tiny sixel image and print it.
 //
 // Run this inside Windows Terminal (not Cursor/VS Code integrated terminal):
