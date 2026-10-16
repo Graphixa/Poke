@@ -22,7 +22,7 @@ func init() {
 		Combine: func(title string, leftW, rightW, height int, left, right, topRight string) string {
 			return RenderCombinedFrame(title, leftW, rightW, height, left, right, topRight)
 		},
-		Fill:    FillTerminalArea,
+		Fill: FillTerminalArea,
 	}
 }
 
@@ -318,4 +318,3 @@ func (m Model) showsWarmHintInView() bool {
 	}
 	return !m.nativeSpriteActive()
 }
-

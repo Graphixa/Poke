@@ -27,19 +27,19 @@ func NewBuilder() *Builder {
 
 // DatasetPokemon is the compact persisted Pokémon record (moves live in learnsets.json).
 type DatasetPokemon struct {
-	ID              int              `json:"id"`
-	Slug            string           `json:"slug"`
-	DisplayName     string           `json:"display_name"`
-	SpeciesID       int              `json:"species_id"`
-	HeightDecimeter int              `json:"height_decimeter"`
-	WeightHectogram int              `json:"weight_hectogram"`
-	BaseExperience  int              `json:"base_experience"`
-	Types           []string              `json:"types"`
-	Abilities       []domain.AbilitySlot  `json:"abilities"`
-	Stats           domain.Stats          `json:"stats"`
-	OfficialArtwork string           `json:"official_artwork,omitempty"`
-	PixelSprite     string           `json:"pixel_sprite,omitempty"`
-	HomeSprite      string           `json:"home_sprite,omitempty"`
+	ID              int                  `json:"id"`
+	Slug            string               `json:"slug"`
+	DisplayName     string               `json:"display_name"`
+	SpeciesID       int                  `json:"species_id"`
+	HeightDecimeter int                  `json:"height_decimeter"`
+	WeightHectogram int                  `json:"weight_hectogram"`
+	BaseExperience  int                  `json:"base_experience"`
+	Types           []string             `json:"types"`
+	Abilities       []domain.AbilitySlot `json:"abilities"`
+	Stats           domain.Stats         `json:"stats"`
+	OfficialArtwork string               `json:"official_artwork,omitempty"`
+	PixelSprite     string               `json:"pixel_sprite,omitempty"`
+	HomeSprite      string               `json:"home_sprite,omitempty"`
 }
 
 // DatasetSpecies is the compact persisted species record (English-only flavour text).
