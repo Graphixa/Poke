@@ -1,5 +1,4 @@
-// Package sixel encodes images as DECSIXEL DCS sequences (≤256 colours).
-package sixel
+package image
 
 import (
 	"bytes"
@@ -7,14 +6,14 @@ import (
 	stdimage "image"
 	"strings"
 
-	"github.com/mattn/go-sixel"
+	gosixel "github.com/mattn/go-sixel"
 
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-// MaxColors is the sixel palette cap (DECSIXEL ≤256).
+// MaxColors is the sixel palette cap (DECSIXEL â‰¤256).
 const MaxColors = 256
 
 // Encode converts a prepared image to a single valid DECSIXEL DCS using the
@@ -23,20 +22,20 @@ func Encode(src stdimage.Image) (string, error) {
 	return EncodeWithColors(src, config.DefaultSixelColors)
 }
 
-// EncodeWithColors encodes src with a configurable palette limit (1–256).
+// EncodeWithColors encodes src with a configurable palette limit (1â€“256).
 func EncodeWithColors(src stdimage.Image, colors int) (string, error) {
 	if src == nil {
 		return "", fmt.Errorf("sixel: nil source")
 	}
 	if colors < 1 || colors > MaxColors {
-		return "", fmt.Errorf("sixel: invalid color count %d (want 1–256)", colors)
+		return "", fmt.Errorf("sixel: invalid color count %d (want 1â€“256)", colors)
 	}
 	prepared := cropHeightToSixelBands(src)
 	sprite.NoteSixelEncode()
 	end := debuglog.Trace(debuglog.Render, "sixel.encode")
 	defer end()
 	var buf bytes.Buffer
-	enc := sixel.NewEncoder(&buf)
+	enc := gosixel.NewEncoder(&buf)
 	enc.Colors = colors
 	if err := enc.Encode(prepared); err != nil {
 		return "", fmt.Errorf("sixel: encode: %w", err)
@@ -46,7 +45,7 @@ func EncodeWithColors(src stdimage.Image, colors int) (string, error) {
 		return "", fmt.Errorf("sixel: empty render")
 	}
 	// go-sixel hardcodes P1=0 (device default aspect). On Windows Terminal that
-	// is often 2:1, so the bitmap paints ~2× tall and spills / gets cell-punched.
+	// is often 2:1, so the bitmap paints ~2Ã— tall and spills / gets cell-punched.
 	// P1=7 forces 1:1 pixel aspect to match our PixelSize cell geometry.
 	out = strings.Replace(out, "\x1bP0;0;8q", "\x1bP7;0;8q", 1)
 	if countESCPrefix(out, 'P') != 1 {
@@ -76,7 +75,7 @@ func EncodeFromCells(src stdimage.Image, cellsW, cellsH int, opts sprite.RenderO
 		source = sprite.SourceArtwork
 	}
 	// Crop pad 0: browse art cards are tight (1 cell inset only). Extra pixel
-	// margin left the subject small inside the 24×12 reservation.
+	// margin left the subject small inside the 24Ã—12 reservation.
 	prepared := sprite.PrepareEncodeSrc(src, pxW, pxH, source, bg, threshold, 0)
 	return EncodeWithColors(prepared, colors)
 }

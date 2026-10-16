@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+// ponytail: two on-disk key formats (CacheKey for ANSI, NativeCacheKey for
+// native frames) remain because internal/cache parses both and changing either
+// orphans existing disk artefacts; upgrade path = one format + schema bump that
+// wipes the artefact dirs.
+
 // BackgroundHash returns a short hex identity for the theme background RGB.
 func BackgroundHash(bg color.RGBA) string {
 	if bg.A == 0 {

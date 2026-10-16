@@ -1,4 +1,4 @@
-package sixel_test
+package image_test
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spritesixel "github.com/Graphixa/Pokedex/internal/render/sprite/sixel"
+	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 )
 
 func TestEncodeFromCellsSnapsHeightToSixelBands(t *testing.T) {
@@ -25,7 +25,7 @@ func TestEncodeFromCellsSnapsHeightToSixelBands(t *testing.T) {
 			src.Set(x, y, color.RGBA{R: 0x80, G: 0x40, B: 0x20, A: 255})
 		}
 	}
-	out, err := spritesixel.EncodeFromCells(src, cellsW, cellsH, sprite.RenderOptions{
+	out, err := spriteimage.EncodeFromCells(src, cellsW, cellsH, sprite.RenderOptions{
 		BackgroundColor: sprite.DefaultBackground,
 	})
 	if err != nil {
@@ -54,7 +54,7 @@ func TestEncodeCropsHeightToSixelBands(t *testing.T) {
 			src.Set(x, y, color.RGBA{R: 0x10, G: 0x20, B: 0x30, A: 255})
 		}
 	}
-	out, err := spritesixel.Encode(src)
+	out, err := spriteimage.Encode(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestEncodeWithColors(t *testing.T) {
 		}
 	}
 	for _, n := range []int{64, 128, 256} {
-		out, err := spritesixel.EncodeWithColors(src, n)
+		out, err := spriteimage.EncodeWithColors(src, n)
 		if err != nil {
 			t.Fatalf("colors=%d: %v", n, err)
 		}
@@ -89,7 +89,7 @@ func TestEncodeWithColors(t *testing.T) {
 }
 
 func TestMaxColorsIs256(t *testing.T) {
-	if spritesixel.MaxColors != 256 {
-		t.Fatalf("MaxColors=%d want 256", spritesixel.MaxColors)
+	if spriteimage.MaxColors != 256 {
+		t.Fatalf("MaxColors=%d want 256", spriteimage.MaxColors)
 	}
 }

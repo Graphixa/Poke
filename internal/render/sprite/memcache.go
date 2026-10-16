@@ -5,17 +5,13 @@ import (
 	"sync"
 )
 
-// defaultMemCacheBytes is the process-local rendered-frame budget (6 MiB).
+// defaultMemCacheBytes is the process-local rendered-frame budget (6 MiB),
+// shared by ANSI and native frames (their key formats never collide).
 // Disk artefact cache remains the durable store for older frames.
 const defaultMemCacheBytes = 6 << 20
 
-// defaultNativeMemCacheBytes holds decompressed sixel/native frames (4 MiB).
-const defaultNativeMemCacheBytes = 4 << 20
-
-// defaultAnsiMemCacheBytes holds chafa/halfblock ANSI frames (2 MiB).
-const defaultAnsiMemCacheBytes = 2 << 20
-
 // frameMemCache is a process-local byte-budgeted LRU for rendered frame text.
+// ponytail: order is a slice, so touch is O(n); fine for ~hundreds of frames in 6 MiB, swap to container/list if the budget grows.
 type frameMemCache struct {
 	mu       sync.Mutex
 	order    []string
@@ -34,6 +30,17 @@ func newFrameMemCacheBytes(maxBytes int) *frameMemCache {
 	}
 }
 
+// touchLocked moves key to the most-recent end of order (appending if absent).
+func (c *frameMemCache) touchLocked(key string) {
+	for i, k := range c.order {
+		if k == key {
+			c.order = append(c.order[:i], c.order[i+1:]...)
+			break
+		}
+	}
+	c.order = append(c.order, key)
+}
+
 func (c *frameMemCache) Get(key string) (string, bool) {
 	if c == nil || key == "" {
 		return "", false
@@ -44,13 +51,7 @@ func (c *frameMemCache) Get(key string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	for i, k := range c.order {
-		if k == key {
-			c.order = append(c.order[:i], c.order[i+1:]...)
-			break
-		}
-	}
-	c.order = append(c.order, key)
+	c.touchLocked(key)
 	return v, true
 }
 
@@ -58,26 +59,11 @@ func (c *frameMemCache) Put(key, ansi string) {
 	if c == nil || key == "" || ansi == "" {
 		return
 	}
-	n := len(ansi)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if old, ok := c.items[key]; ok {
-		c.bytes -= len(old)
-		c.items[key] = ansi
-		c.bytes += n
-		for i, k := range c.order {
-			if k == key {
-				c.order = append(c.order[:i], c.order[i+1:]...)
-				break
-			}
-		}
-		c.order = append(c.order, key)
-		c.evictLocked()
-		return
-	}
+	c.bytes += len(ansi) - len(c.items[key])
 	c.items[key] = ansi
-	c.bytes += n
-	c.order = append(c.order, key)
+	c.touchLocked(key)
 	c.evictLocked()
 }
 

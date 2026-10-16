@@ -37,7 +37,7 @@ type Engine struct {
 	SourceKind SpriteSource
 	Background color.RGBA
 	// HDOff forces pixel-tier assets (tests / explicit pixel SourceKind).
-	// Product browse leaves this false — consent gates bulk warm only.
+	// Product browse leaves this false â€” consent gates bulk warm only.
 	HDOff bool
 	// Quality defaults to interactive; warm service sets QualityPrewarm.
 	Quality QualityProfile
@@ -53,34 +53,23 @@ type Engine struct {
 	// OnNativeFail is called when native image rendering fails (session fallback).
 	OnNativeFail func()
 
-	memOnce       sync.Once
-	nativeMemOnce sync.Once
-	ansiMem       *frameMemCache
-	nativeMem     *frameMemCache
+	memOnce sync.Once
+	mem     *frameMemCache
 
 	persistMu     sync.Mutex
 	persistQ      *persistQueue
 	persistClosed bool
 }
 
-func (e *Engine) ansiMemory() *frameMemCache {
+// memory is the single process-local frame LRU (ANSI + native keys).
+func (e *Engine) memory() *frameMemCache {
 	if e == nil {
 		return nil
 	}
 	e.memOnce.Do(func() {
-		e.ansiMem = newFrameMemCacheBytes(defaultAnsiMemCacheBytes)
+		e.mem = newFrameMemCacheBytes(defaultMemCacheBytes)
 	})
-	return e.ansiMem
-}
-
-func (e *Engine) nativeMemory() *frameMemCache {
-	if e == nil {
-		return nil
-	}
-	e.nativeMemOnce.Do(func() {
-		e.nativeMem = newFrameMemCacheBytes(defaultNativeMemCacheBytes)
-	})
-	return e.nativeMem
+	return e.mem
 }
 
 // RenderResult is either ANSI cell-art or a placeholder request.
@@ -126,8 +115,7 @@ func (e *Engine) InvalidateSpecies(speciesID int) {
 		return
 	}
 	// NamedAssetKey format: named-{id}-{slug}-{kind}; match on named-{id}-
-	e.ansiMemory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
-	e.nativeMemory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
+	e.memory().InvalidatePrefix(fmt.Sprintf("named-%d-", speciesID))
 }
 
 // InvalidateSpeciesNative drops mem + disk native frames for a species.
@@ -139,8 +127,7 @@ func (e *Engine) InvalidateSpeciesNative(ctx context.Context, speciesID int) {
 	if nativeStore, ok := e.Artefacts.(NativeSpeciesStore); ok {
 		if hashes, ok := nativeStore.(NativeSpeciesHashes); ok {
 			for h := range hashes.SpeciesAssetHashes(speciesID) {
-				e.ansiMemory().InvalidatePrefix(h)
-				e.nativeMemory().InvalidatePrefix(h)
+				e.memory().InvalidatePrefix(h)
 			}
 		}
 		_ = nativeStore.InvalidateNativeSpecies(speciesID)
@@ -158,7 +145,7 @@ type NativeSpeciesStore interface {
 }
 
 // Render converts a sprite into a frame. cells is the square edge requested by
-// the TUI (bucketed); when ≤0 the engine's configured/default frame size is used.
+// the TUI (bucketed); when â‰¤0 the engine's configured/default frame size is used.
 // Warm frames are served from LookupCached; misses fall through to RenderCold.
 func (e *Engine) Render(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
 	if res, hit := e.LookupCached(ctx, pokemon, cells); hit {
@@ -271,37 +258,13 @@ func (e *Engine) PersistNativeFrame(ctx context.Context, cacheKey, frame string)
 	return e.PersistFrameWait(ctx, cacheKey, frame)
 }
 
-// HasNativeCache reports whether a native frame exists on disk for species at cells.
-func (e *Engine) HasNativeCache(ctx context.Context, pokemon domain.Pokemon, cells int) bool {
-	if e == nil || e.Artefacts == nil || e.Source == nil || pokemon.ID == 0 {
-		return false
-	}
-	ref := e.resolveNativeAssetRef(ctx, pokemon)
-	if !ref.Ready {
-		return false
-	}
-	fw, fh := e.frameSize()
-	if cells >= SmallestFrameBucket() {
-		fw, fh = FrameSizeFor(cells)
-	}
-	bg := e.Background
-	if bg.A == 0 {
-		bg = DefaultBackground
-	}
-	canonical := ref.Hash
-	if !IsHexSHA256(canonical) {
-		canonical = ""
-	}
-	return e.hasNativeFrame(ctx, canonical, fw, fh, bg, e.SixelColors)
-}
-
 // HasNativeFile reports whether a persisted native frame file exists (stat only).
 func (e *Engine) HasNativeFile(ctx context.Context, pokemon domain.Pokemon, cells int) bool {
 	if e == nil || e.Artefacts == nil || e.Source == nil || pokemon.ID == 0 {
 		return false
 	}
 	ref := e.resolveNativeAssetRef(ctx, pokemon)
-	if !ref.Ready {
+	if !ref.Ready || !IsHexSHA256(ref.Hash) {
 		return false
 	}
 	fw, fh := e.frameSize()
@@ -312,11 +275,7 @@ func (e *Engine) HasNativeFile(ctx context.Context, pokemon domain.Pokemon, cell
 	if bg.A == 0 {
 		bg = DefaultBackground
 	}
-	canonical := ref.Hash
-	if !IsHexSHA256(canonical) {
-		canonical = ""
-	}
-	return e.hasNativeFile(canonical, fw, fh, bg, e.SixelColors)
+	return e.hasNativeFile(NativeCacheKey(ref.Hash, e.protocolName(), fw, fh, bg, e.SixelColors))
 }
 
 func (e *Engine) protocolName() string {
@@ -534,7 +493,7 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 			return RenderResult{UsePlaceholder: true}
 		}
 		if key != "" {
-			e.nativeMemory().Put(key, frame.Text)
+			e.memory().Put(key, frame.Text)
 			if e.Artefacts != nil && !frame.Native {
 				if err := e.Artefacts.StoreArtefact(ctx, key, frame.Text); err != nil {
 					debuglog.Renderf("render.store.artefact err=%v key=%s", err, key)
@@ -562,7 +521,7 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 	}
 	color := effectiveColor(opts.ColorMode, e.Caps)
 	key := CacheKey(hash, opts.Source, rend.Name(), opts.Width, opts.Height, color, opts.BackgroundColor)
-	if cached, ok := e.ansiMemory().Get(key); ok {
+	if cached, ok := e.memory().Get(key); ok {
 		noteMemHit()
 		debuglog.Renderf("render.cache.hit backend=%s store=mem key=%s", rend.Name(), key)
 		return true, RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}
@@ -570,7 +529,7 @@ func (e *Engine) lookupDerived(ctx context.Context, rend Renderer, opts RenderOp
 	if e.Artefacts != nil {
 		if cached, err := e.Artefacts.Artefact(ctx, key); err == nil && cached != "" {
 			noteDiskHit()
-			e.ansiMemory().Put(key, cached)
+			e.memory().Put(key, cached)
 			debuglog.Renderf("render.cache.hit backend=%s store=disk key=%s", rend.Name(), key)
 			return true, RenderResult{ANSI: cached, CacheKey: key, Backend: rend.Name(), AssetKind: assetKind}
 		}

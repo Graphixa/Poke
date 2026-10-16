@@ -12,6 +12,9 @@ import (
 // pending foreground cold render may finish while another persists.
 const nativePersistQueueCap = 2
 
+// ponytail: persist queue stays native-only (gzip writes) while ANSI artefacts
+// are stored inline in renderChain; unify by routing StoreArtefact through the
+// queue once ANSI writes show up in profiles.
 type persistJob struct {
 	key   string
 	frame string

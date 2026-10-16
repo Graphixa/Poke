@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 
-	spritesixel "github.com/Graphixa/Pokedex/internal/render/sprite/sixel"
 	termimg "github.com/blacktop/go-termimg"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
@@ -235,7 +234,7 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 		threshold = 16
 	}
 	if r.proto == protocolSixel {
-		out, err := spritesixel.EncodeFromCells(src, w, h, opts)
+		out, err := EncodeFromCells(src, w, h, opts)
 		if err != nil {
 			return sprite.Frame{}, err
 		}
@@ -325,5 +324,5 @@ func clearSixelRegion(cellsW, cellsH int, bg color.RGBA) (string, error) {
 			img.Set(x, y, bg)
 		}
 	}
-	return spritesixel.EncodeFromCells(img, cellsW, cellsH, sprite.RenderOptions{BackgroundColor: bg})
+	return EncodeFromCells(img, cellsW, cellsH, sprite.RenderOptions{BackgroundColor: bg})
 }

@@ -2,8 +2,6 @@ package sprite
 
 import (
 	"context"
-	"fmt"
-	"image/color"
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -35,7 +33,7 @@ func (e *Engine) lookupNativeFrame(ctx context.Context, rend Renderer, opts Rend
 	}
 	colors := EffectiveSixelColors(opts.SixelColors)
 	key := nativeCacheKey(canonicalHash, rend, opts.Width, opts.Height, opts.BackgroundColor, colors)
-	if cached, ok := e.nativeMemory().Get(key); ok {
+	if cached, ok := e.memory().Get(key); ok {
 		noteMemHit()
 		debuglog.Renderf("render.cache.hit backend=%s store=mem key=%s", rend.Name(), key)
 		return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
@@ -43,7 +41,7 @@ func (e *Engine) lookupNativeFrame(ctx context.Context, rend Renderer, opts Rend
 	if e.Artefacts != nil {
 		if cached, err := e.Artefacts.Native(ctx, key); err == nil && cached != "" {
 			noteDiskHit()
-			e.nativeMemory().Put(key, cached)
+			e.memory().Put(key, cached)
 			debuglog.Renderf("render.cache.hit backend=%s store=disk key=%s", rend.Name(), key)
 			return true, RenderResult{ANSI: cached, CacheKey: key, Backend: "image", Native: true, AssetKind: assetKind}
 		}
@@ -56,41 +54,12 @@ type nativeFileStore interface {
 	HasNativeFile(key string) bool
 }
 
-func (e *Engine) hasNativeFrame(ctx context.Context, canonicalHash string, fw, fh int, bg color.RGBA, sixelColors int) bool {
-	if e == nil || !IsHexSHA256(canonicalHash) {
-		return false
-	}
-	proto := e.protocolName()
-	key := NativeCacheKey(canonicalHash, proto, fw, fh, bg, sixelColors)
-	if _, ok := e.nativeMemory().Get(key); ok {
-		return true
-	}
-	if e.Artefacts == nil {
-		return false
-	}
-	frame, err := e.Artefacts.Native(ctx, key)
-	return err == nil && frame != ""
-}
-
-func (e *Engine) hasNativeFile(canonicalHash string, fw, fh int, bg color.RGBA, sixelColors int) bool {
-	if e == nil || !IsHexSHA256(canonicalHash) {
-		return false
-	}
-	if e.Artefacts == nil {
+func (e *Engine) hasNativeFile(key string) bool {
+	if e == nil || e.Artefacts == nil {
 		return false
 	}
 	checker, ok := e.Artefacts.(nativeFileStore)
-	if !ok {
-		return false
-	}
-	proto := e.protocolName()
-	key := NativeCacheKey(canonicalHash, proto, fw, fh, bg, sixelColors)
-	return checker.HasNativeFile(key)
-}
-
-// NativeCacheSpecKey identifies the active native render specification for progress.
-func NativeCacheSpecKey(cells int) string {
-	return fmt.Sprintf("native:%d", cells)
+	return ok && checker.HasNativeFile(key)
 }
 
 func (e *Engine) ensureCanonicalHash(ctx context.Context, pokemon domain.Pokemon, ref AssetRef, png []byte) string {

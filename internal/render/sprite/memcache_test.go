@@ -61,25 +61,6 @@ func TestMemCacheInvalidatePrefixDropsBytes(t *testing.T) {
 	}
 }
 
-func TestDefaultMemCacheBudget(t *testing.T) {
-	if defaultNativeMemCacheBytes+defaultAnsiMemCacheBytes != defaultMemCacheBytes {
-		t.Fatalf("native+ansi=%d want total %d", defaultNativeMemCacheBytes+defaultAnsiMemCacheBytes, defaultMemCacheBytes)
-	}
-}
-
-func TestNativeAndAnsiMemCachesAreIndependent(t *testing.T) {
-	native := newFrameMemCacheBytes(100)
-	ansi := newFrameMemCacheBytes(100)
-	native.Put("native-key", "NATIVE")
-	ansi.Put("ansi-key", "ANSI")
-	if _, ok := ansi.Get("native-key"); ok {
-		t.Fatal("ansi cache must not see native entries")
-	}
-	if _, ok := native.Get("ansi-key"); ok {
-		t.Fatal("native cache must not see ansi entries")
-	}
-}
-
 func TestActivityGateThrottle(t *testing.T) {
 	var g ActivityGate
 	if g.ThrottleBackground() {
