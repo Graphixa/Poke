@@ -884,6 +884,47 @@ func TestViewCycleWipesNativeBeforeRelayout(t *testing.T) {
 	}
 }
 
+func TestViewCycleWipeIncludesDECERA(t *testing.T) {
+	const dcs = "\x1bP0;0;8q#1~~~\x1b\\"
+	var buf bytes.Buffer
+	m := tui.NewModel(tui.Options{
+		Index:   fixtureIndex(),
+		Details: &fakeDetails{},
+		Sprites: &fakeSprites{ansi: "ART"},
+	})
+	m.AttachCompositorForTest(&buf)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	id, _ := m.SelectedID()
+	cells := m.CurrentSpriteCells()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, cells, dcs, false,
+	)))
+	m = updated.(tui.Model)
+	buf.Reset()
+
+	// Glance → Art → Glance: Art→Glance wipe must DECERA the hero box so WT
+	// drops ImageSlices (theme spaces alone no-op on blank reservations;
+	// opaque ClearNativeRegion left residue over Stats).
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updated.(tui.Model)
+	buf.Reset()
+	updated, _ = m.Update(tui.SpriteMsgNativeForTest(tui.SpriteMsgForTest(
+		m.SpriteReqID(), m.SelectionGen(), id, m.CurrentSpriteCells(), dcs, false,
+	)))
+	m = updated.(tui.Model)
+	buf.Reset()
+	updated, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = updated.(tui.Model)
+	if m.ActiveBrowseView() != tui.BrowseGlance {
+		t.Fatalf("tab back → Glance, got %v", m.ActiveBrowseView())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "$z") {
+		t.Fatalf("Art→Glance wipe must DECERA ($z), got %q", out)
+	}
+}
+
 func assertNativeOverlayPayload(t *testing.T, seq, dcs string) {
 	t.Helper()
 	if seq == "" {

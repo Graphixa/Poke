@@ -118,7 +118,7 @@ func (m Model) emitNativeClear() (Model, tea.Cmd) {
 		return m, nil
 	}
 	debuglog.Renderf("native overlay clear row=%d col=%d %dx%d", row, col, artW, artH)
-	seq := nativeOverlayClearSeq(row, col, artW, artH)
+	seq := m.nativeOverlayClearSeq(row, col, artW, artH)
 	if m.composite && m.compositor != nil {
 		// Clear before a covering screen is drawn, otherwise the old art
 		// rectangle erases the new screen's text. Quit also has no next frame.
@@ -161,7 +161,7 @@ func (m *Model) wipeNativeGraphics() tea.Cmd {
 		}
 		return nil
 	}
-	seq := nativeOverlayClearSeq(row, col, artW, artH)
+	seq := m.nativeOverlayClearSeq(row, col, artW, artH)
 	if m.compositor != nil {
 		m.compositor.WriteDirect(seq)
 		return nil
@@ -340,7 +340,7 @@ func (m Model) emitNativeOverlay() (Model, tea.Cmd) {
 	// fits the art box because cell pixels are measured at startup, so no spill
 	// accumulates. After an explicit wipe (cells==0) the rect is already empty.
 	clearFirst := m.nativePaintCells > 0 && m.nativePaintCells != m.imageCells
-	seq := nativeOverlayPaintSeq(row, col, artW, artH, m.imageANSI, clearFirst)
+	seq := m.nativeOverlayPaintSeq(row, col, artW, artH, m.imageANSI, clearFirst)
 	debuglog.Renderf("native overlay emit row=%d col=%d %dx%d bytes=%d clear=%v",
 		row, col, artW, artH, len(m.imageANSI), clearFirst)
 	m.nativePaintSpecies = sel.ID
@@ -365,16 +365,19 @@ func (m Model) emitNativeOverlay() (Model, tea.Cmd) {
 }
 
 // nativeOverlayPaintSeq paints DCS between DECSC/DECRC. clearFirst theme-spaces
-// the art box (plus slack) before CUP+DCS. Same-geometry paints overwrite in place.
+// the art box (plus slack) and DECERA-erases ImageSlices before CUP+DCS.
+// Same-geometry paints overwrite in place.
 //
 // No DECSET 8452: on some Windows Terminal builds it interacted badly with
 // multi-row clears and left gaps through the sprite. Plain CUP+DCS is enough.
-func nativeOverlayPaintSeq(row, col, artW, artH int, ansi string, clearFirst bool) string {
+func (m Model) nativeOverlayPaintSeq(row, col, artW, artH int, ansi string, clearFirst bool) string {
 	artW, artH = clampArtCells(artW, artH)
+	clearH := artH + sixelClearSlackRows
 	var b strings.Builder
 	b.WriteString(decSaveCursor)
 	if clearFirst {
-		b.WriteString(clearCellRect(row, col, artW, artH+sixelClearSlackRows))
+		b.WriteString(clearCellRect(row, col, artW, clearH))
+		b.WriteString(eraseNativeRect(row, col, artW, clearH))
 	}
 	if ansi != "" && row >= 1 && col >= 1 {
 		fmt.Fprintf(&b, "\x1b[%d;%dH%s", row, col, ansi)
@@ -396,13 +399,28 @@ func (m *Model) invalidateNativePaintGeometry() {
 	}
 }
 
-func nativeOverlayClearSeq(row, col, artW, artH int) string {
+// nativeOverlayClearSeq erases an art box: theme spaces (cell attrs) plus DECERA
+// (WT ImageSlice drop). Spaces alone often no-op when the reservation is already
+// blank; opaque ClearNativeRegion overwrites pixels but leaves ImageSlices that
+// then sit on top of Stats / empty rows after Art→Glance.
+func (m Model) nativeOverlayClearSeq(row, col, artW, artH int) string {
 	artW, artH = clampArtCells(artW, artH)
+	clearH := artH + sixelClearSlackRows
 	var b strings.Builder
 	b.WriteString(decSaveCursor)
-	b.WriteString(clearCellRect(row, col, artW, artH+sixelClearSlackRows))
+	b.WriteString(clearCellRect(row, col, artW, clearH))
+	b.WriteString(eraseNativeRect(row, col, artW, clearH))
 	b.WriteString(decRestoreCursor)
 	return b.String()
+}
+
+// eraseNativeRect emits DECERA (CSI Pt;Pl;Pb;Pr $z). On Windows Terminal that
+// path FillRect → ImageSlice::EraseCells, which is what actually drops Sixel.
+func eraseNativeRect(row, col, w, h int) string {
+	if row < 1 || col < 1 || w < 1 || h < 1 {
+		return ""
+	}
+	return fmt.Sprintf("\x1b[%d;%d;%d;%d$z", row, col, row+h-1, col+w-1)
 }
 
 func clampArtCells(artW, artH int) (int, int) {

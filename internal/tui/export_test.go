@@ -194,15 +194,15 @@ func ClearCellRectForTest(row, col, w, h int) string {
 func (m Model) BrowseDataForTest() views.BrowseData { return m.browseData() }
 
 // NativeOverlayPaintSeqForTest is the Raw payload used to paint a native sprite
-// with a leading space-clear (geometry change).
+// with a leading space-clear + DECERA (geometry change).
 func NativeOverlayPaintSeqForTest(row, col, artW, artH int, ansi string) string {
-	return nativeOverlayPaintSeq(row, col, artW, artH, ansi, true)
+	return (Model{}).nativeOverlayPaintSeq(row, col, artW, artH, ansi, true)
 }
 
 // NativeOverlayPaintOnlySeqForTest paints DCS without a leading space-clear
 // (same-geometry overwrite path).
 func NativeOverlayPaintOnlySeqForTest(row, col, artW, artH int, ansi string) string {
-	return nativeOverlayPaintSeq(row, col, artW, artH, ansi, false)
+	return (Model{}).nativeOverlayPaintSeq(row, col, artW, artH, ansi, false)
 }
 
 // BrowseWarmHintForTest returns the warm status shown in the browse footer (right segment).
