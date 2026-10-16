@@ -182,21 +182,6 @@ func TestFilterOverlayKeepsBackdropPeek(t *testing.T) {
 	}
 }
 
-func TestFitListBorderTitle(t *testing.T) {
-	if got := fitListBorderTitle("Pokedex", 12, 1025, 40); got != "Pokedex [ 12/1025 ]" {
-		t.Fatalf("wide = %q", got)
-	}
-	if got := fitListBorderTitle("Pokedex", 12, 1025, 22); got != "Pokedex [12/1025]" && got != "[12/1025]" {
-		// 22-4=18; "Pokedex [12/1025]" is 16 runes — prefer tight-with-base
-		if textwidth.Width(got) > 18 {
-			t.Fatalf("narrow too wide: %q", got)
-		}
-	}
-	if got := fitListBorderTitle("Pokedex", 6, 6, 10); got != "[6/6]" {
-		t.Fatalf("count-only = %q", got)
-	}
-}
-
 func TestFavouriteQuickLinkKeepsDexSelection(t *testing.T) {
 	m := featureModel()
 	m.selectSpeciesID(25)
@@ -222,9 +207,23 @@ func TestFavouriteQuickLinkKeepsDexSelection(t *testing.T) {
 	if !rows[0].Favourite || rows[0].SectionLabel == "" || !rows[1].DividerBefore {
 		t.Fatal("missing favourites label/divider")
 	}
+	if rows[1].SectionLabel != "All Pokémon · 4" {
+		t.Fatalf("dex section label = %q", rows[1].SectionLabel)
+	}
+	if m.browseData().BrowseTitle != "Pokedex" {
+		t.Fatalf("title = %q want Pokedex", m.browseData().BrowseTitle)
+	}
 	if !rows[0].Favourite || !rows[m.cursor].Favourite {
 		t.Fatal("★ must show on quick-link and dex row")
 	}
+	m.viewOptions.Type = 2 // fire
+	m.refilter()
+	rows = m.browseData().Rows
+	if want := fmt.Sprintf("Fire · %d", m.matchedCount()); rows[m.favPinCount].SectionLabel != want {
+		t.Fatalf("type filter section = %q want %q", rows[m.favPinCount].SectionLabel, want)
+	}
+	m.viewOptions.Type = 0
+	m.refilter()
 	m.search.SetValue("char")
 	m.refilter()
 	if !reflect.DeepEqual(featureIDs(m), []int{4, 6}) || m.hasFavouriteDivider() {
@@ -368,6 +367,9 @@ func TestFavouriteDividerDoesNotHideSelectionWhenScrolling(t *testing.T) {
 			extra++
 		}
 		if m.hasFavouriteDivider() {
+			extra++
+		}
+		if m.mainListSectionLabel() != "" {
 			extra++
 		}
 		list := components.List(d.Rows[d.ListOff:], 28, m.listVisibleRows()+extra, 0)

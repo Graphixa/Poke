@@ -50,6 +50,7 @@ func (m Model) browseData() views.BrowseData {
 	if m.hasFavouriteLabel() {
 		favLabel = fmt.Sprintf("Favourites · %d", m.pinnedFavouriteCount())
 	}
+	mainLabel := m.mainListSectionLabel()
 	for i, s := range m.filtered {
 		row := components.ListRow{
 			Summary:       s,
@@ -60,6 +61,9 @@ func (m Model) browseData() views.BrowseData {
 		}
 		if i == 0 && favLabel != "" {
 			row.SectionLabel = favLabel
+		}
+		if mainLabel != "" && i == m.favPinCount {
+			row.SectionLabel = mainLabel
 		}
 		rows[i] = row
 	}
@@ -91,7 +95,7 @@ func (m Model) browseData() views.BrowseData {
 		OnePane:       lay.OnePane,
 		TooSmall:      lay.TooSmall,
 		ShowListPane:  query != "" || m.viewOptions != (viewOptions{}) || len(m.favourites) > 0 || m.comparePin != nil,
-		BrowseTitle:   m.listBorderTitle(lay.leftWidth()),
+		BrowseTitle:   "Pokedex",
 		ListHint:      m.listHint(),
 		BrowseView:    int(m.browseView),
 		ViewLabels:    AllBrowseViewLabels(),

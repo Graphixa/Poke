@@ -98,15 +98,15 @@ func List(rows []ListRow, width, height int, nameCol int) string {
 			continue
 		}
 		row := rows[i]
-		if row.SectionLabel != "" {
-			lines = append(lines, style.StatusMuted(textwidth.PadRight(textwidth.Truncate(row.SectionLabel, width), width)))
+		if row.DividerBefore && i > 0 {
+			// Match list chrome / panel borders (not StatusMuted).
+			lines = append(lines, lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", width)))
 			if len(lines) == height {
 				break
 			}
 		}
-		if row.DividerBefore && i > 0 {
-			// Match list chrome / panel borders (not StatusMuted).
-			lines = append(lines, lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", width)))
+		if row.SectionLabel != "" {
+			lines = append(lines, style.StatusMuted(textwidth.PadRight(textwidth.Truncate(row.SectionLabel, width), width)))
 			if len(lines) == height {
 				break
 			}

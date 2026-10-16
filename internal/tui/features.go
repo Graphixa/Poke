@@ -10,8 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/output"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/textwidth"
 	"github.com/Graphixa/Pokedex/internal/tui/views"
 )
 
@@ -123,6 +123,20 @@ func (m Model) matchedCount() int {
 	return n
 }
 
+// mainListSectionLabel is the muted chrome above the dex list (after favourites
+// pins when present). Type filter replaces "All Pokémon"; empty when neither
+// pins nor a type filter are active.
+func (m Model) mainListSectionLabel() string {
+	n := m.matchedCount()
+	if m.viewOptions.Type > 0 && m.viewOptions.Type < len(filterTypes) {
+		return fmt.Sprintf("%s · %d", output.TitleFromSlug(filterTypes[m.viewOptions.Type]), n)
+	}
+	if m.hasFavouriteDivider() {
+		return fmt.Sprintf("All Pokémon · %d", n)
+	}
+	return ""
+}
+
 // indexOfSpecies finds id in the pin block (preferPin) or the main list after pins.
 func (m Model) indexOfSpecies(id int, preferPin bool) int {
 	if preferPin {
@@ -155,31 +169,11 @@ func (m Model) collectionSize() int {
 	return len(m.filtered)
 }
 
-// listBorderTitle is the left-pane top-edge title: base + [ matched/total ], narrowed as needed.
-func (m Model) listBorderTitle(leftW int) string {
-	return fitListBorderTitle("Pokedex", m.matchedCount(), m.collectionSize(), leftW)
-}
-
-func fitListBorderTitle(base string, matched, total, leftW int) string {
-	maxW := leftW - 4 // ╭─␠title␠… inside left segment
-	if maxW < 3 {
-		maxW = 3
-	}
-	spaced := fmt.Sprintf("[ %d/%d ]", matched, total)
-	tight := fmt.Sprintf("[%d/%d]", matched, total)
-	for _, c := range []string{base + " " + spaced, base + " " + tight, tight} {
-		if textwidth.Width(c) <= maxW {
-			return c
-		}
-	}
-	return textwidth.Truncate(tight, maxW)
-}
-
 func (m Model) listHint() string {
 	if m.featureNotice != "" {
 		return m.featureNotice
 	}
-	// Two-pane: match count lives in the border title. One-pane has no title edge.
+	// Two-pane: match count lives in list section labels (Favourites / All Pokémon).
 	if !m.layout().OnePane {
 		return ""
 	}

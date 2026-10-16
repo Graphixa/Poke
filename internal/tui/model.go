@@ -453,11 +453,14 @@ func (m *Model) listVisibleRows() int {
 	if lay.OnePane {
 		rows = h - 5
 	}
-	// Reserve chrome rows for favourites label/divider. Offsets remain species indices.
+	// Reserve chrome for Favourites label, divider, and main-list section label.
 	if m.hasFavouriteLabel() {
 		rows--
 	}
 	if m.hasFavouriteDivider() {
+		rows--
+	}
+	if m.mainListSectionLabel() != "" {
 		rows--
 	}
 	if rows < 3 {
