@@ -11,7 +11,6 @@ const (
 	ModeChafa       RenderMode = "chafa"
 	ModeOff         RenderMode = "off"
 	ModePlaceholder RenderMode = "placeholder"
-	ModeHalfblock   RenderMode = "halfblock"
 )
 
 // ColorMode selects colour encoding for text-based renderers.

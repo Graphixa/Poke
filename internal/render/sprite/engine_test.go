@@ -16,7 +16,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 )
 
@@ -213,7 +212,6 @@ func TestModeResolverFullChain(t *testing.T) {
 	modes := sprite.NewModeResolver(
 		native,
 		spritechafa.Renderer{},
-		halfblock.Renderer{},
 		placeholder.Renderer{},
 	)
 	r := modes.Resolve(sprite.Capabilities{NativeImage: true, TrueColor: true}, sprite.ModeAuto)

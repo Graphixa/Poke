@@ -8,7 +8,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
 )
 
@@ -92,43 +91,6 @@ func BenchmarkNativeWarmRender(b *testing.B) {
 	for b.Loop() {
 		res := engine.Render(context.Background(), poke, 24)
 		if !res.Native {
-			b.Fatal(res)
-		}
-	}
-}
-
-func BenchmarkHalfblockColdRender(b *testing.B) {
-	png := mustPNG(b, color.RGBA{255, 0, 0, 255})
-	poke := domain.Pokemon{ID: 1, Slug: "bulbasaur", DisplayName: "Bulbasaur"}
-	for b.Loop() {
-		b.StopTimer()
-		store := newNamedMemStore()
-		if err := store.StoreNamedSprite(context.Background(), 1, "bulbasaur", "pixel", "", png); err != nil {
-			b.Fatal(err)
-		}
-		engine := benchEngine(store, sprite.ModeHalfblock, halfblock.Renderer{})
-		b.StartTimer()
-		res := engine.Render(context.Background(), poke, 24)
-		if res.UsePlaceholder {
-			b.Fatal(res)
-		}
-	}
-}
-
-func BenchmarkHalfblockWarmRender(b *testing.B) {
-	store := newNamedMemStore()
-	png := mustPNG(b, color.RGBA{255, 0, 0, 255})
-	if err := store.StoreNamedSprite(context.Background(), 1, "bulbasaur", "pixel", "", png); err != nil {
-		b.Fatal(err)
-	}
-	engine := benchEngine(store, sprite.ModeHalfblock, halfblock.Renderer{})
-	poke := domain.Pokemon{ID: 1, Slug: "bulbasaur", DisplayName: "Bulbasaur"}
-	if res := engine.Render(context.Background(), poke, 24); res.UsePlaceholder {
-		b.Fatal(res)
-	}
-	for b.Loop() {
-		res := engine.Render(context.Background(), poke, 24)
-		if res.UsePlaceholder {
 			b.Fatal(res)
 		}
 	}

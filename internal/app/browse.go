@@ -14,7 +14,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/halfblock"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
@@ -173,7 +172,6 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		Modes: sprite.NewModeResolver(
 			img,
 			spritechafa.Renderer{},
-			halfblock.Renderer{},
 			placeholder.Renderer{},
 		),
 		Artefacts:   svc.Cache,

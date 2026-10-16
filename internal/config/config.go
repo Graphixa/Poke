@@ -75,7 +75,7 @@ type Cache struct {
 }
 
 type Render struct {
-	// SpriteMode selects sprite output: auto | image | text | chafa | halfblock | off.
+	// SpriteMode selects sprite output: auto | image | text | chafa | off.
 	SpriteMode string `yaml:"sprite_mode"`
 	// SpriteSource selects pixel (nearest) or artwork (filtered) resize/assets.
 	// Product default is artwork; pixel remains for tests and fallbacks.
@@ -149,10 +149,10 @@ func (c Config) Validate() error {
 	positiveDuration("cache.index_ttl", c.Cache.IndexTTL.Duration)
 	positiveDuration("network.timeout", c.Network.Timeout.Duration)
 	switch c.Render.SpriteMode {
-	case "", "auto", "off", "image", "text", "chafa", "halfblock":
+	case "", "auto", "off", "image", "text", "chafa":
 		// Allowed.
 	default:
-		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "text", "chafa", "halfblock", "off"`)
+		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "text", "chafa", "off"`)
 	}
 	switch c.Render.SpriteSource {
 	case "", "pixel", "artwork":
@@ -204,7 +204,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// EffectiveSpriteMode returns auto, image, chafa, halfblock, or off.
+// EffectiveSpriteMode returns auto, image, chafa, or off.
 func (c Config) EffectiveSpriteMode() string {
 	switch c.Render.SpriteMode {
 	case "off":
@@ -213,8 +213,6 @@ func (c Config) EffectiveSpriteMode() string {
 		return "image"
 	case "text", "chafa":
 		return "chafa"
-	case "halfblock":
-		return "halfblock"
 	default:
 		return "auto"
 	}
