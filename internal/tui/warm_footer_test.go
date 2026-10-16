@@ -13,7 +13,7 @@ import (
 
 func TestFooterSplitFixedWidthRight(t *testing.T) {
 	left := components.FooterSplit(true, 80, "", "")
-	if !strings.Contains(left, "enter details") {
+	if !strings.Contains(left, "enter") || !strings.Contains(left, "details") {
 		t.Fatalf("empty status must give help the full width: %q", left)
 	}
 	if w := lipgloss.Width(left); w != 80 {
@@ -23,7 +23,7 @@ func TestFooterSplitFixedWidthRight(t *testing.T) {
 	if withBar == left {
 		t.Fatal("expected different footer with cache progress")
 	}
-	if strings.Contains(withBar, "enter details") && !strings.Contains(withBar, "Image Cache") {
+	if strings.Contains(withBar, "enter") && !strings.Contains(withBar, "Image Cache") {
 		t.Fatalf("with status, right segment should appear: %q", withBar)
 	}
 	if w := lipgloss.Width(withBar); w != 80 {

@@ -14,7 +14,6 @@ import (
 // Exported accessors for model/layout tests.
 
 func (m Model) Query() string                      { return m.queryValue() }
-func (m Model) HelpVisible() bool                  { return m.showHelp }
 func (m Model) DialogVisible() bool                { return m.showDialog }
 func (m Model) Quitting() bool                     { return m.quitting }
 func (m Model) ActiveBrowseView() BrowseView       { return m.browseView }

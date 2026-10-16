@@ -232,7 +232,7 @@ func TestGlanceHoldKeepsPreviousUntilReady(t *testing.T) {
 	}
 }
 
-func TestGlanceHoldClearsOnHelp(t *testing.T) {
+func TestGlanceHoldClearsOnDialog(t *testing.T) {
 	block := make(chan struct{})
 	sprites := &fakeSprites{ansi: "COLD", native: true, block: block}
 	m := tui.NewModel(tui.Options{
@@ -255,13 +255,13 @@ func TestGlanceHoldClearsOnHelp(t *testing.T) {
 		go func() { _ = c() }()
 	}
 	if m.GlanceHoldIDForTest() == 0 {
-		t.Fatal("expected glance hold before help")
+		t.Fatal("expected glance hold before dialog")
 	}
-	updated, _ = m.Update(key("?"))
+	updated, _ = m.Update(key("enter"))
 	m = updated.(tui.Model)
 	close(block)
 	if m.GlanceHoldIDForTest() != 0 {
-		t.Fatal("help should clear glance hold")
+		t.Fatal("dialog should clear glance hold")
 	}
 }
 

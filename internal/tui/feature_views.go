@@ -34,14 +34,12 @@ func (m Model) featureView() string {
 	return m.compareView()
 }
 
-// Shared full-screen chrome matches browse and dossier, including Bubbles help.
+// Shared full-screen chrome matches browse and dossier (FontGet-style key chips).
 // Reserve footer rows before sizing the card so narrow terminals keep all keys.
 func (m Model) featureFrame(title string, lines []string, bindings [][]key.Binding) string {
-	h := m.help
-	h.SetWidth(m.width)
 	var footer []string
 	for _, row := range bindings {
-		footer = append(footer, h.ShortHelpView(row))
+		footer = append(footer, style.RenderCommandHelp(row, m.width))
 	}
 	for i := range lines {
 		lines[i] = " " + textwidth.Truncate(lines[i], m.width-4)
@@ -63,15 +61,13 @@ func (m Model) filterView(browse string) string {
 		return lipgloss.Place(max(1, w), max(1, h), lipgloss.Center, lipgloss.Center,
 			textwidth.Truncate("Resize to 40 × 18", max(1, w))+"\n"+textwidth.Truncate("Esc closes this view", max(1, w)))
 	}
-	helpM := m.help
-	helpM.SetWidth(w)
-	// Compact ShortHelp so 40-col keeps esc; ←/⌫ still work unbound in the footer.
-	footer := helpM.ShortHelpView([]key.Binding{
+	// Compact help so 40-col keeps esc; ←/⌫ still work unbound in the footer.
+	footer := style.RenderCommandHelp([]key.Binding{
 		featureBinding("esc", "esc", "cancel"),
 		featureBinding("up", "↑/↓", "choose"),
 		featureBinding("enter", "enter", "next"),
 		featureBinding(" ", "space", "apply"),
-	})
+	}, w)
 	bodyH := h - 1
 	if bodyH < 8 {
 		bodyH = h
@@ -310,9 +306,7 @@ func (m Model) compareView() string {
 		featureBinding(" ", "space", "swap"),
 		featureBinding("esc", "esc", "back"),
 	}
-	helpM := m.help
-	helpM.SetWidth(m.width)
-	footer := []string{helpM.ShortHelpView(bindings)}
+	footer := []string{style.RenderCommandHelp(bindings, m.width)}
 
 	g := m.compareLayoutGeom(len(footer))
 	rule := lipgloss.NewStyle().Foreground(style.BorderColor()).Render("│")

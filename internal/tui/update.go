@@ -61,7 +61,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prevSide := m.currentSpriteSide()
 		m.width = msg.Width
 		m.height = msg.Height
-		m.help.SetWidth(msg.Width)
 		m.ensureListVisible()
 		if m.showDialog {
 			m.syncDialogViewport()
@@ -254,16 +253,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleFeatureKey(msg)
 	}
 
-	if m.showHelp {
-		if key.Matches(msg, m.keys.Help, m.keys.Clear) {
-			m.showHelp = false
-			// Help View wiped sixel; force space-clear on restore paint.
-			m.invalidateNativePaintGeometry()
-			m.markNativeOverlayDirty()
-		}
-		return m, nil
-	}
-
 	if m.showDialog {
 		return m.handleDialogKey(msg)
 	}
@@ -280,13 +269,6 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, m.keys.Favourite) {
 		return m.toggleFavourite()
-	}
-
-	if key.Matches(msg, m.keys.Help) {
-		m.showHelp = true
-		m.glanceHoldID = 0
-		covered, wipe := m.coverNativeOverlay()
-		return covered, wipe
 	}
 
 	if key.Matches(msg, m.keys.Enter) {

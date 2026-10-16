@@ -97,8 +97,6 @@ func (m Model) browseData() views.BrowseData {
 		LeftWidth:     lay.leftWidth(),
 		RightWidth:    lay.rightWidth(),
 		ViewLines:     m.browseViewLines(),
-		ShowHelp:      m.showHelp,
-		HelpBody:      m.help.FullHelpView(m.keys.FullHelp()),
 		ShowDialog:    m.showDialog,
 		DialogSection: int(m.dialogSection),
 		DialogLabels:  AllDialogSectionLabels(),
@@ -110,9 +108,7 @@ func (m Model) browseData() views.BrowseData {
 		if hintW < 10 {
 			hintW = m.width
 		}
-		h := m.help
-		h.SetWidth(max(1, hintW-1))
-		data.FooterHint = h.ShortHelpView(m.keys.DialogShortHelp(m.dialogStacked()))
+		data.FooterHint = style.RenderCommandHelp(m.keys.DialogShortHelp(m.dialogStacked()), max(1, hintW-1))
 	}
 
 	rightID, _ := m.glanceDisplayID()
@@ -160,9 +156,7 @@ func (m Model) browseData() views.BrowseData {
 		if hintW < 10 {
 			hintW = m.width
 		}
-		h := m.help
-		h.SetWidth(max(1, hintW-1))
-		data.FooterHint = h.ShortHelpView(m.keys.ShortHelp())
+		data.FooterHint = style.RenderCommandHelp(m.keys.ShortHelp(), max(1, hintW-1))
 	}
 	data.ImageState = int(m.imageState)
 	return data

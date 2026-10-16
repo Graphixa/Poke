@@ -299,22 +299,14 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 		t.Fatalf("esc must preserve selection: got %d ok=%v want %d", id, ok, selectedBefore)
 	}
 
+	// ? is not a help overlay; it types into the list filter like other letters.
 	m = apply(t, m, key("?"))
-	if !m.HelpVisible() {
-		t.Fatal("help not shown")
-	}
-	view := m.View().Content
-	if !strings.Contains(view, "Browse help") {
-		t.Fatalf("help view missing: %q", view)
-	}
-	prevQuery := m.Query()
-	m = apply(t, m, key("c")) // ignored while help open
-	if m.Query() != prevQuery {
-		t.Fatal("help should not mutate search")
+	if m.Query() != "?" {
+		t.Fatalf("? should type into search, got %q", m.Query())
 	}
 	m = apply(t, m, key("esc"))
-	if m.HelpVisible() {
-		t.Fatal("esc should close help")
+	if m.Query() != "" {
+		t.Fatalf("esc should clear search, got %q", m.Query())
 	}
 }
 

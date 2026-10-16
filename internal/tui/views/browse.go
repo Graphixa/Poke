@@ -101,9 +101,6 @@ type BrowseData struct {
 	HasCore        bool // bottom Abilities card has data (browse.json or dossier)
 	Abilities      []domain.AbilitySlot
 
-	ShowHelp bool
-	HelpBody string
-
 	ShowDialog    bool
 	DialogSection int
 	DialogLabels  []string
@@ -133,9 +130,6 @@ func Browse(d BrowseData) string {
 		fr = *d.Frame
 	}
 
-	if d.ShowHelp {
-		return components.HelpOverlay(d.HelpBody, d.Width, d.Height)
-	}
 	if d.TooSmall {
 		return components.TooSmall(d.Width, d.Height)
 	}
@@ -560,7 +554,7 @@ func spriteArtRegion(d BrowseData, requireNative bool) (row, col, artW, artH int
 	if requireNative && !d.SpriteNative {
 		return 0, 0, 0, 0, false
 	}
-	if d.TooSmall || d.OnePane || d.ShowHelp || d.ShowDialog {
+	if d.TooSmall || d.OnePane || d.ShowDialog {
 		return 0, 0, 0, 0, false
 	}
 	if d.Width < 1 || d.Height < 1 {

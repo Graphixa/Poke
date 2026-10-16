@@ -19,7 +19,6 @@ type keyMap struct {
 	Home      key.Binding
 	End       key.Binding
 	Clear     key.Binding
-	Help      key.Binding
 	Enter     key.Binding
 	ViewCycle key.Binding
 	ForceQuit key.Binding
@@ -74,10 +73,6 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("esc"),
 			key.WithHelp("esc", "clear / quit"),
 		),
-		Help: key.NewBinding(
-			key.WithKeys("?"),
-			key.WithHelp("?", "help"),
-		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "details"),
@@ -111,7 +106,7 @@ func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {
 	}
 }
 
-// ShortHelp implements help.KeyMap for the footer strip.
+// ShortHelp is the browse footer binding list (FontGet-style chips).
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Enter,
@@ -120,28 +115,5 @@ func (k keyMap) ShortHelp() []key.Binding {
 		k.Compare,
 		k.Favourite,
 		k.Clear,
-	}
-}
-
-// FullHelp implements help.KeyMap for the ? overlay.
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.Filters, k.Compare, k.Favourite},
-		{
-			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("backspace", "delete from search")),
-			k.Clear,
-			k.Up,
-			k.Down,
-		},
-		{
-			k.ViewCycle,
-			k.Enter,
-			k.PageUp,
-			k.PageDown,
-		},
-		{
-			k.ForceQuit,
-			k.Help,
-		},
 	}
 }

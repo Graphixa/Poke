@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -265,40 +266,26 @@ func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	var leftText string
 	if hint != "" {
 		leftText = " " + hint
-	} else if verbose {
-		leftText = " ↑/↓ move • enter details • 1 glance • 2 art • esc clear/quit"
 	} else {
-		leftText = " ↑/↓ • enter • 1 • 2 • esc"
+		// Fallback when callers omit FooterHint (warm-footer tests / Footer()).
+		fallback := []key.Binding{
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "details")),
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "view")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear/quit")),
+		}
+		if verbose {
+			fallback = append([]key.Binding{
+				key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "move")),
+			}, fallback...)
+		}
+		leftText = " " + style.RenderCommandHelp(fallback, max(1, leftW-1))
 	}
 	left := textwidth.PadRight(textwidth.Truncate(leftText, leftW), leftW)
-	return footerSty().Render(left + right)
+	return left + footerSty().Render(right)
 }
 
 func footerSty() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(style.SecondaryColor())
-}
-
-// HelpOverlay renders the keybinding help card.
-// body is typically bubbles/help FullHelpView output; a built-in fallback is used when empty.
-func HelpOverlay(body string, width, height int) string {
-	if strings.TrimSpace(body) == "" {
-		body = strings.Join([]string{
-			"Browse help",
-			"",
-			"↑/↓ move • 1 glance • 2 art",
-			"enter details • esc clear/quit",
-			"",
-			"Press esc or ? to close",
-		}, "\n")
-	} else {
-		body = "Browse help\n\n" + body + "\n\nPress esc or ? to close"
-	}
-	styleCard := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		Padding(1, 2).
-		Width(min(width-4, 64))
-	card := styleCard.Render(body)
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, card)
 }
 
 // TooSmall renders the terminal-too-small full-screen cue.
@@ -319,11 +306,4 @@ func TooSmall(width, height int) string {
 	}
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 		style.StatusWarn(msg))
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

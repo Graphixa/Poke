@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -142,7 +141,6 @@ type Model struct {
 	height int
 
 	keys   keyMap
-	help   help.Model
 	search textinput.Model
 
 	filtered    []domain.SpeciesSummary
@@ -214,7 +212,6 @@ type Model struct {
 
 	pokemonSrc PokemonSource
 
-	showHelp   bool
 	showDialog bool
 
 	quitting bool
@@ -240,7 +237,6 @@ func NewModel(opts Options) Model {
 		browseView:    BrowseGlance,
 		dialogSection: DialogOverview,
 		keys:          defaultKeyMap(),
-		help:          newHelpModel(),
 		search:        newSearchInput(),
 		dialogVP:      newContentViewport(),
 		warmer:        opts.Warmer,
@@ -300,25 +296,6 @@ func newSearchInput() textinput.Model {
 	ti.KeyMap.LineStart.SetEnabled(false)
 	ti.KeyMap.LineEnd.SetEnabled(false)
 	return ti
-}
-
-func newHelpModel() help.Model {
-	h := help.New()
-	h.ShortSeparator = " • "
-	h.Styles = help.DefaultDarkStyles()
-	p := style.CurrentPalette()
-	// FontGet-style: keys stand out (bold primary), descriptions stay readable.
-	keySty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Primary)).Bold(true)
-	descSty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Components))
-	sepSty := lipgloss.NewStyle().Foreground(lipgloss.Color(p.Placeholders))
-	h.Styles.ShortKey = keySty
-	h.Styles.ShortDesc = descSty
-	h.Styles.ShortSeparator = sepSty
-	h.Styles.FullKey = keySty
-	h.Styles.FullDesc = descSty
-	h.Styles.FullSeparator = sepSty
-	h.Styles.Ellipsis = sepSty
-	return h
 }
 
 func newContentViewport() viewport.Model {
