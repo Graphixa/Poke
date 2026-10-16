@@ -136,8 +136,9 @@ func TestNativeHintsThenScanFromAnchor(t *testing.T) {
 	waitFor(t, "5 persists", func() bool { return rend.persisted() >= 5 })
 
 	got := rend.rendered()
-	if got[0] != 4 || got[1] != 2 {
-		t.Fatalf("order=%v want neighbour hints 4,2 first", got)
+	// Neighbour hints (cursor±1 → ids 4 and 2) must lead; order between them races.
+	if len(got) < 2 || !((got[0] == 4 && got[1] == 2) || (got[0] == 2 && got[1] == 4)) {
+		t.Fatalf("order=%v want neighbour hints {4,2} first", got)
 	}
 	slices.Sort(got)
 	if !slices.Equal(got, []int{1, 2, 3, 4, 5}) {
