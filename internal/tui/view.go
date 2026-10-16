@@ -19,7 +19,9 @@ func init() {
 			lay := CalculatePanelLayout(termW, termH, headerH, footerH, margin, sep)
 			return lay.LeftWidth, lay.RightWidth, lay.PanelHeight
 		},
-		Combine: RenderCombinedFrame,
+		Combine: func(title string, leftW, rightW, height int, left, right, topRight string) string {
+			return RenderCombinedFrame(title, leftW, rightW, height, left, right, topRight)
+		},
 		Fill:    FillTerminalArea,
 	}
 }
@@ -156,7 +158,8 @@ func (m Model) browseData() views.BrowseData {
 		if hintW < 10 {
 			hintW = m.width
 		}
-		data.FooterHint = style.RenderCommandHelp(m.keys.ShortHelp(), max(1, hintW-1))
+		data.FooterHint = style.RenderCommandHelp(m.browseFooterHelp(), max(1, hintW-1))
+		data.FrameTopRight = style.RenderKeyWithDescription("F4", "favourite")
 	}
 	data.ImageState = int(m.imageState)
 	return data

@@ -61,12 +61,13 @@ func CalculatePanelLayout(termW, termH, headerH, footerH, margin, sep int) Panel
 
 // RenderCombinedFrame draws a shared outer border with title in the top edge:
 //
-//	╭─ Title ────────┬────────────────╮
-//	│ left           │ right          │
-//	╰────────────────┴────────────────╯
+//	╭─ Title ────────┬────────── topRight ─╮
+//	│ left           │ right               │
+//	╰────────────────┴─────────────────────╯
 //
-// Matches FontGet's theme/browse chrome and tui-example.md.
-func RenderCombinedFrame(title string, leftW, rightW, height int, leftContent, rightContent string) string {
+// topRight is optional (e.g. FontGet-style "F4 favourite" chip), right-aligned
+// in the right pane's top border. Matches FontGet browse chrome.
+func RenderCombinedFrame(title string, leftW, rightW, height int, leftContent, rightContent, topRight string) string {
 	if leftW < 4 {
 		leftW = 4
 	}
@@ -125,18 +126,16 @@ func RenderCombinedFrame(title string, leftW, rightW, height int, leftContent, r
 			remainLeft = 0
 		}
 	}
-	top := prefix + strings.Repeat(horiz, remainLeft) + topTee + strings.Repeat(horiz, rightW-1) + topR
+	rightTop := frameRightTop(horiz, topR, rightW, topRight)
+	top := prefix + strings.Repeat(horiz, remainLeft) + topTee + rightTop
 	// Fix total if right side drifted.
 	want := leftW + 1 + rightW
 	if lipgloss.Width(top) != want {
-		adj := want - lipgloss.Width(prefix+topTee) - 1 // minus topR
-		if adj < 0 {
-			adj = 0
+		leftFill := leftW - prefixW
+		if leftFill < 0 {
+			leftFill = 0
 		}
-		top = prefix + strings.Repeat(horiz, leftW-prefixW) + topTee + strings.Repeat(horiz, adj) + topR
-		if leftW-prefixW < 0 {
-			top = prefix + topTee + strings.Repeat(horiz, rightW-1) + topR
-		}
+		top = prefix + strings.Repeat(horiz, leftFill) + topTee + frameRightTop(horiz, topR, rightW, topRight)
 	}
 
 	bottom := botL + strings.Repeat(horiz, leftW-1) + botTee + strings.Repeat(horiz, rightW-1) + botR
@@ -160,6 +159,27 @@ func RenderCombinedFrame(title string, leftW, rightW, height int, leftContent, r
 	b.WriteByte('\n')
 	b.WriteString(bottom)
 	return b.String()
+}
+
+// frameRightTop is the right pane's top border (width rightW), ending in topR.
+// When label is set, it is right-aligned before the corner.
+func frameRightTop(horiz, topR string, rightW int, label string) string {
+	inner := rightW - 1 // minus topR
+	if inner < 0 {
+		inner = 0
+	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return strings.Repeat(horiz, inner) + topR
+	}
+	// Symmetric spaces around the chip, then one ─ before ╮:
+	// ──  F4  favourite  ─╮
+	suffix := " " + label + "  "
+	sw := lipgloss.Width(suffix) + 1 // +1 for the trailing horiz
+	if sw >= inner {
+		return lipgloss.NewStyle().MaxWidth(inner).Render(suffix) + topR
+	}
+	return strings.Repeat(horiz, inner-sw) + suffix + horiz + topR
 }
 
 func padLines(content string, width, height int) []string {

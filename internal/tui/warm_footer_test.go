@@ -13,7 +13,7 @@ import (
 
 func TestFooterSplitFixedWidthRight(t *testing.T) {
 	left := components.FooterSplit(true, 80, "", "")
-	if !strings.Contains(left, "enter") || !strings.Contains(left, "details") {
+	if !strings.Contains(left, "enter") || !strings.Contains(left, "info") {
 		t.Fatalf("empty status must give help the full width: %q", left)
 	}
 	if w := lipgloss.Width(left); w != 80 {

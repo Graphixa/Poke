@@ -539,8 +539,24 @@ func TestBrowseHelpOrder(t *testing.T) {
 	for _, b := range defaultKeyMap().ShortHelp() {
 		labels = append(labels, b.Help().Key)
 	}
-	if !reflect.DeepEqual(labels, []string{"enter", "tab", "F2", "F3", "F4", "esc"}) {
+	if !reflect.DeepEqual(labels, []string{"↑/↓", "enter", "tab", "F2", "F3", "esc"}) {
 		t.Fatal(labels)
+	}
+}
+
+func TestEscHelpDescClearVsExit(t *testing.T) {
+	m := featureModel()
+	if m.escHelpDesc() != "quit" {
+		t.Fatalf("empty browse: %q", m.escHelpDesc())
+	}
+	m.search.SetValue("char")
+	if m.escHelpDesc() != "clear" {
+		t.Fatalf("with query: %q", m.escHelpDesc())
+	}
+	m.search.SetValue("")
+	m.viewOptions.Type = 1
+	if m.escHelpDesc() != "clear" {
+		t.Fatalf("with filters: %q", m.escHelpDesc())
 	}
 }
 

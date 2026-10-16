@@ -156,7 +156,7 @@ func (m ThemePicker) View() tea.View {
 	lay := CalculatePanelLayout(m.width, m.height, 0, 1, 2, 1)
 	left := m.renderList(lay.LeftWidth-1, lay.PanelHeight-2)
 	right := m.renderPreview(lay.RightWidth-1, lay.PanelHeight-2)
-	frame := RenderCombinedFrame("Theme Selection", lay.LeftWidth, lay.RightWidth, lay.PanelHeight, left, right)
+	frame := RenderCombinedFrame("Theme Selection", lay.LeftWidth, lay.RightWidth, lay.PanelHeight, left, right, "")
 
 	help := " ↑/↓ Navigate  Enter Select  Esc Cancel"
 	cur := "Current: " + m.current

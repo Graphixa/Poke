@@ -269,9 +269,9 @@ func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	} else {
 		// Fallback when callers omit FooterHint (warm-footer tests / Footer()).
 		fallback := []key.Binding{
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "details")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "info")),
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "view")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear/quit")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "quit")),
 		}
 		if verbose {
 			fallback = append([]key.Binding{

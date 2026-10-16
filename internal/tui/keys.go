@@ -71,11 +71,11 @@ func defaultKeyMap() keyMap {
 		),
 		Clear: key.NewBinding(
 			key.WithKeys("esc"),
-			key.WithHelp("esc", "clear / quit"),
+			key.WithHelp("esc", "quit"),
 		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("enter", "details"),
+			key.WithHelp("enter", "info"),
 		),
 		ViewCycle: key.NewBinding(
 			key.WithKeys("tab"),
@@ -107,13 +107,30 @@ func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {
 }
 
 // ShortHelp is the browse footer binding list (FontGet-style chips).
+// F4/favourite lives in the frame top-right; esc help is overridden per-frame
+// when search/filters are active (see Model.browseFooterHelp).
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
+		k.Up,
 		k.Enter,
 		k.ViewCycle,
 		k.Filters,
 		k.Compare,
-		k.Favourite,
 		k.Clear,
 	}
+}
+
+// escHelpDesc is "clear" when esc will wipe search/filters, else "quit".
+func (m Model) escHelpDesc() string {
+	if m.queryValue() != "" || m.viewOptions != (viewOptions{}) {
+		return "clear"
+	}
+	return "quit"
+}
+
+// browseFooterHelp is ShortHelp with a live esc label.
+func (m Model) browseFooterHelp() []key.Binding {
+	k := m.keys
+	esc := key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", m.escHelpDesc()))
+	return []key.Binding{k.Up, k.Enter, k.ViewCycle, k.Filters, k.Compare, esc}
 }

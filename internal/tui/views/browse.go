@@ -17,7 +17,7 @@ import (
 // FrameRenderer is injected to avoid an import cycle with package tui.
 type FrameRenderer struct {
 	Calculate func(termW, termH, headerH, footerH, margin, sep int) (leftW, rightW, panelH int)
-	Combine   func(title string, leftW, rightW, height int, left, right string) string
+	Combine   func(title string, leftW, rightW, height int, left, right, topRight string) string
 	Fill      func(view string, width, height int) string
 }
 
@@ -113,6 +113,8 @@ type BrowseData struct {
 
 	WarmHint   string
 	FooterHint string
+	// FrameTopRight is optional chrome in the right pane's top border (e.g. F4 chip).
+	FrameTopRight string
 
 	Frame *FrameRenderer
 }
@@ -202,7 +204,7 @@ func renderBrowseBase(d BrowseData, fr FrameRenderer) string {
 
 	left := renderLeft(d, leftContentW, innerH)
 	right := renderRight(d, rightContentW, innerH)
-	frame := fr.Combine(title, leftW, rightW, panelH, left, right)
+	frame := fr.Combine(title, leftW, rightW, panelH, left, right, d.FrameTopRight)
 	out := frame + "\n" + footer
 	if fr.Fill != nil {
 		return fr.Fill(out, d.Width, d.Height)
@@ -621,7 +623,7 @@ func max(a, b int) int {
 	return b
 }
 
-func fallbackCombine(title string, leftW, rightW, height int, leftContent, rightContent string) string {
+func fallbackCombine(title string, leftW, rightW, height int, leftContent, rightContent, topRight string) string {
 	if leftW < 4 {
 		leftW = 4
 	}
@@ -639,7 +641,18 @@ func fallbackCombine(title string, leftW, rightW, height int, leftContent, right
 	if remain < 0 {
 		remain = 0
 	}
-	top := "╭" + topTitle + strings.Repeat("─", remain) + "┬" + strings.Repeat("─", rightW-1) + "╮"
+	rightInnerTop := rightW - 1
+	rightTop := strings.Repeat("─", rightInnerTop)
+	if tr := strings.TrimSpace(topRight); tr != "" {
+		suf := " " + tr + "  " // match leading space; then ─ before ╮
+		need := lipgloss.Width(suf) + 1
+		if need < rightInnerTop {
+			rightTop = strings.Repeat("─", rightInnerTop-need) + suf + "─"
+		} else {
+			rightTop = lipgloss.NewStyle().MaxWidth(rightInnerTop).Render(suf)
+		}
+	}
+	top := "╭" + topTitle + strings.Repeat("─", remain) + "┬" + rightTop + "╮"
 	bottom := "╰" + strings.Repeat("─", leftW-1) + "┴" + strings.Repeat("─", rightW-1) + "╯"
 	leftLines := strings.Split(strings.TrimRight(leftContent, "\n"), "\n")
 	rightLines := strings.Split(strings.TrimRight(rightContent, "\n"), "\n")
