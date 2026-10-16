@@ -469,6 +469,9 @@ func (m *Model) listVisibleRows() int {
 	return rows
 }
 
+// listPageJump is how many rows PgUp/PgDn move in the browse list.
+const listPageJump = 10
+
 func (m *Model) moveCursor(delta int) {
 	if len(m.filtered) == 0 {
 		return

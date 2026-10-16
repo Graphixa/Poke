@@ -303,6 +303,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.moveCursor(1)
 		return m, m.syncSelectionLoads()
 	}
+	if key.Matches(msg, m.keys.PageUp) {
+		m.moveCursor(-listPageJump)
+		return m, m.syncSelectionLoads()
+	}
+	if key.Matches(msg, m.keys.PageDown) {
+		m.moveCursor(listPageJump)
+		return m, m.syncSelectionLoads()
+	}
 	if key.Matches(msg, m.keys.Home) {
 		m.jumpCursor(0)
 		return m, m.syncSelectionLoads()

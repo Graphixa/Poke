@@ -402,6 +402,25 @@ func TestHomeEndJumpList(t *testing.T) {
 	}
 }
 
+func TestPageUpDownJumpList(t *testing.T) {
+	var all []domain.SpeciesSummary
+	for i := 1; i <= 40; i++ {
+		all = append(all, domain.SpeciesSummary{ID: i, DisplayName: "S", Slug: "s"})
+	}
+	m := tui.NewModel(tui.Options{Index: search.Build(all), Details: &fakeDetails{}})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = apply(t, m, key("pgdown"))
+	id, _ := m.SelectedID()
+	if id != 11 {
+		t.Fatalf("PgDn → id %d want 11", id)
+	}
+	m = apply(t, m, key("pgup"))
+	id, _ = m.SelectedID()
+	if id != 1 {
+		t.Fatalf("PgUp → id %d want 1", id)
+	}
+}
+
 func TestEscClearsThenQuits(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details, Prefill: "char"})
