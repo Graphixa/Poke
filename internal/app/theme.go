@@ -6,7 +6,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/theme"
-	"github.com/Graphixa/Pokedex/internal/themeui"
+	"github.com/Graphixa/Pokedex/internal/tui"
 )
 
 // Theme launches the interactive theme selector (FontGet-style).
@@ -22,7 +22,7 @@ func (h *Handler) Theme(ctx context.Context) error {
 	if current == "" {
 		current = "catppuccin"
 	}
-	return themeui.Run(themeui.Options{
+	return tui.RunThemePicker(tui.ThemePickerOptions{
 		Current:   current,
 		ThemesDir: themesDir,
 		Save: func(name string) error {

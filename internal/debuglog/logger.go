@@ -3,8 +3,10 @@
 package debuglog
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,15 +25,21 @@ const (
 
 // Logger writes structured one-line diagnostics to a file (or discards).
 type Logger struct {
-	mu   sync.Mutex
-	out  io.Writer
-	file *os.File
+	mu      sync.Mutex
+	out     io.Writer
+	file    *os.File
+	enabled bool
+	log     *slog.Logger
 }
 
 var (
 	globalMu sync.RWMutex
-	global   = &Logger{out: io.Discard}
+	global   = newDiscardLogger()
 )
+
+func newDiscardLogger() *Logger {
+	return &Logger{out: io.Discard, log: slog.New(discardHandler{})}
+}
 
 // Global returns the process-wide logger (discard until Enable).
 func Global() *Logger {
@@ -55,7 +63,13 @@ func Enable(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open debug log: %w", err)
 	}
-	l := &Logger{out: f, file: f}
+	h := &fileHandler{w: f}
+	l := &Logger{
+		out:     f,
+		file:    f,
+		enabled: true,
+		log:     slog.New(h),
+	}
 	globalMu.Lock()
 	prev := global
 	global = l
@@ -80,6 +94,8 @@ func (l *Logger) Close() error {
 	err := l.file.Close()
 	l.file = nil
 	l.out = io.Discard
+	l.enabled = false
+	l.log = slog.New(discardHandler{})
 	return err
 }
 
@@ -90,7 +106,7 @@ func (l *Logger) Enabled() bool {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.out != nil && l.out != io.Discard
+	return l.enabled
 }
 
 // Log writes a single sanitized diagnostic line.
@@ -98,15 +114,15 @@ func (l *Logger) Log(cat Category, format string, args ...any) {
 	if l == nil {
 		return
 	}
-	msg := fmt.Sprintf(format, args...)
-	msg = sanitize(msg)
-	line := fmt.Sprintf("%s [%s] %s\n", time.Now().UTC().Format(time.RFC3339Nano), cat, msg)
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.out == nil {
+	log := l.log
+	enabled := l.enabled
+	l.mu.Unlock()
+	if !enabled || log == nil {
 		return
 	}
-	_, _ = io.WriteString(l.out, line)
+	msg := sanitize(fmt.Sprintf(format, args...))
+	log.LogAttrs(context.Background(), slog.LevelInfo, msg, slog.String("category", string(cat)))
 }
 
 // Requestf logs an HTTP/API diagnostic.
@@ -118,9 +134,41 @@ func Cachef(format string, args ...any) { Global().Log(Cache, format, args...) }
 // Renderf logs a sprite/render diagnostic.
 func Renderf(format string, args ...any) { Global().Log(Render, format, args...) }
 
+type fileHandler struct {
+	w io.Writer
+}
+
+func (h *fileHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *fileHandler) Handle(_ context.Context, r slog.Record) error {
+	cat := ""
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "category" {
+			cat = a.Value.String()
+			return false
+		}
+		return true
+	})
+	line := fmt.Sprintf("%s [%s] %s\n", r.Time.UTC().Format(time.RFC3339Nano), cat, r.Message)
+	_, err := io.WriteString(h.w, line)
+	return err
+}
+
+func (h *fileHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *fileHandler) WithGroup(string) slog.Handler { return h }
+
+type discardHandler struct{}
+
+func (discardHandler) Enabled(context.Context, slog.Level) bool { return false }
+
+func (discardHandler) Handle(context.Context, slog.Record) error { return nil }
+
+func (discardHandler) WithAttrs([]slog.Attr) slog.Handler { return discardHandler{} }
+
+func (discardHandler) WithGroup(string) slog.Handler { return discardHandler{} }
+
 func sanitize(msg string) string {
-	// Strip control characters that could corrupt a terminal if the log is
-	// accidentally printed; never log Authorization-like headers.
 	msg = strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\t' {
 			return -1

@@ -1,4 +1,4 @@
-package themeui
+package tui
 
 import (
 	"fmt"
@@ -8,12 +8,11 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/Graphixa/Pokedex/internal/theme"
-	"github.com/Graphixa/Pokedex/internal/tui"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-// Model is a FontGet-inspired interactive theme selector with live preview.
-type Model struct {
+// ThemePicker is a FontGet-inspired interactive theme selector with live preview.
+type ThemePicker struct {
 	options   []theme.Option
 	index     int
 	scroll    int
@@ -27,15 +26,15 @@ type Model struct {
 	applied   bool
 }
 
-// Options configures the theme selector.
-type Options struct {
+// ThemePickerOptions configures the theme selector.
+type ThemePickerOptions struct {
 	Current   string
 	ThemesDir string
 	Save      func(name string) error
 }
 
-// New builds the selection model.
-func New(opts Options) (*Model, error) {
+// NewThemePicker builds the selection model.
+func NewThemePicker(opts ThemePickerOptions) (*ThemePicker, error) {
 	list, err := theme.ListOptions(opts.ThemesDir, opts.Current)
 	if err != nil {
 		return nil, err
@@ -54,11 +53,10 @@ func New(opts Options) (*Model, error) {
 			break
 		}
 	}
-	// Preview the current selection immediately.
 	if f, _, err := theme.Resolve(opts.ThemesDir, list[idx].Name); err == nil {
 		theme.Apply(f)
 	}
-	return &Model{
+	return &ThemePicker{
 		options:   list,
 		index:     idx,
 		current:   cur,
@@ -67,9 +65,9 @@ func New(opts Options) (*Model, error) {
 	}, nil
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m ThemePicker) Init() tea.Cmd { return nil }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m ThemePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -113,7 +111,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) preview() {
+func (m *ThemePicker) preview() {
 	m.err = ""
 	if f, _, err := theme.Resolve(m.themesDir, m.options[m.index].Name); err == nil {
 		theme.Apply(f)
@@ -122,7 +120,7 @@ func (m *Model) preview() {
 	}
 }
 
-func (m *Model) ensureVisible() {
+func (m *ThemePicker) ensureVisible() {
 	visible := m.listVisible()
 	if m.index < m.scroll {
 		m.scroll = m.index
@@ -135,8 +133,8 @@ func (m *Model) ensureVisible() {
 	}
 }
 
-func (m Model) listVisible() int {
-	lay := tui.CalculatePanelLayout(m.width, m.height, 0, 1, 2, 1)
+func (m ThemePicker) listVisible() int {
+	lay := CalculatePanelLayout(m.width, m.height, 0, 1, 2, 1)
 	h := lay.PanelHeight - 4
 	if h < 3 {
 		h = 3
@@ -144,7 +142,7 @@ func (m Model) listVisible() int {
 	return h
 }
 
-func (m Model) View() tea.View {
+func (m ThemePicker) View() tea.View {
 	if m.quitting {
 		return tea.NewView("")
 	}
@@ -155,10 +153,10 @@ func (m Model) View() tea.View {
 		m.height = 30
 	}
 
-	lay := tui.CalculatePanelLayout(m.width, m.height, 0, 1, 2, 1)
+	lay := CalculatePanelLayout(m.width, m.height, 0, 1, 2, 1)
 	left := m.renderList(lay.LeftWidth-1, lay.PanelHeight-2)
 	right := m.renderPreview(lay.RightWidth-1, lay.PanelHeight-2)
-	frame := tui.RenderCombinedFrame("Theme Selection", lay.LeftWidth, lay.RightWidth, lay.PanelHeight, left, right)
+	frame := RenderCombinedFrame("Theme Selection", lay.LeftWidth, lay.RightWidth, lay.PanelHeight, left, right)
 
 	help := " ↑/↓ Navigate  Enter Select  Esc Cancel"
 	cur := "Current: " + m.current
@@ -168,12 +166,12 @@ func (m Model) View() tea.View {
 	}
 	footer := help + strings.Repeat(" ", gap) + lipgloss.NewStyle().Foreground(style.PrimaryColor()).Render(cur)
 	out := " " + strings.ReplaceAll(frame, "\n", "\n ") + "\n" + footer
-	v := tea.NewView(tui.FillTerminalArea(out, m.width, m.height))
+	v := tea.NewView(FillTerminalArea(out, m.width, m.height))
 	v.AltScreen = true
 	return v
 }
 
-func (m Model) renderList(width, height int) string {
+func (m ThemePicker) renderList(width, height int) string {
 	if width < 12 {
 		width = 12
 	}
@@ -214,7 +212,7 @@ func (m Model) renderList(width, height int) string {
 	return lipgloss.NewStyle().Padding(1, 1).Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) renderPreview(width, height int) string {
+func (m ThemePicker) renderPreview(width, height int) string {
 	p := style.CurrentPalette()
 	swatch := func(name, hex string) string {
 		if hex == "" {
@@ -237,7 +235,7 @@ func (m Model) renderPreview(width, height int) string {
 		swatch("error", p.Error),
 		swatch("success", p.Success),
 		"",
-		lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", max(8, width-4))),
+		lipgloss.NewStyle().Foreground(style.BorderColor()).Render(strings.Repeat("─", themePickerMax(8, width-4))),
 		"",
 		"Sample chrome:",
 		lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true).Render("Pokedex — Browse Mode"),
@@ -249,16 +247,16 @@ func (m Model) renderPreview(width, height int) string {
 	return lipgloss.NewStyle().Padding(1, 1).Width(width).Height(height).Render(strings.Join(body, "\n"))
 }
 
-func max(a, b int) int {
+func themePickerMax(a, b int) int {
 	if a > b {
 		return a
 	}
 	return b
 }
 
-// Run launches the theme selector program.
-func Run(opts Options) error {
-	m, err := New(opts)
+// RunThemePicker launches the theme selector program.
+func RunThemePicker(opts ThemePickerOptions) error {
+	m, err := NewThemePicker(opts)
 	if err != nil {
 		return err
 	}
