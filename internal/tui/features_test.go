@@ -567,6 +567,32 @@ func TestCompareNavigationSkipsPinAndPreservesSearch(t *testing.T) {
 	}
 }
 
+func TestCompareNavigationPastFavouritedSpecies(t *testing.T) {
+	// List with pin: [25, 4, 6, 25, 133]. Scrolling B past dex #25 must reach #133,
+	// not oscillate back to #6 because start resolved to the pin copy of #25.
+	m := featureModel()
+	m.favourites[25] = true
+	m.refilter()
+	if !reflect.DeepEqual(featureIDs(m), []int{25, 4, 6, 25, 133}) {
+		t.Fatalf("fixture pins: %v", featureIDs(m))
+	}
+	m.cursor = 1 // dex Charmander
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyDown) // Charizard
+	m = featureKey(m, tea.KeyF3)
+	if m.compareA.Summary.ID != 4 || m.compareB.Summary.ID != 6 {
+		t.Fatalf("open A=%d B=%d", m.compareA.Summary.ID, m.compareB.Summary.ID)
+	}
+	m = featureKey(m, tea.KeyDown) // → Pikachu (dex)
+	if m.compareB.Summary.ID != 25 {
+		t.Fatalf("want B=25, got %d", m.compareB.Summary.ID)
+	}
+	m = featureKey(m, tea.KeyDown) // must continue to Eevee, not rewind to Charizard
+	if m.compareB.Summary.ID != 133 {
+		t.Fatalf("stuck on favourited dupe: B=%d want 133", m.compareB.Summary.ID)
+	}
+}
+
 func TestFormatCompareDelta(t *testing.T) {
 	if got := ansi.Strip(formatCompareDelta(0)); got != "0" {
 		t.Fatalf("tie = %q", got)

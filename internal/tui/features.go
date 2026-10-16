@@ -356,12 +356,15 @@ func (m *Model) syncCompareCursorToFocus() {
 	if id < 1 {
 		return
 	}
-	for i, s := range m.filtered {
-		if s.ID == id {
-			m.cursor = i
-			m.ensureListVisible()
-			return
-		}
+	// Prefer dex row so favourited pin dupes do not yank the cursor to the pin block.
+	if idx := m.indexOfSpecies(id, false); idx >= 0 {
+		m.cursor = idx
+		m.ensureListVisible()
+		return
+	}
+	if idx := m.indexOfSpecies(id, true); idx >= 0 {
+		m.cursor = idx
+		m.ensureListVisible()
 	}
 }
 
@@ -372,17 +375,18 @@ func (m *Model) moveCompareFocused(delta int) bool {
 		otherID = m.compareB.Summary.ID
 	}
 	start := -1
-	for i, s := range m.filtered {
-		if s.ID == cur.Summary.ID {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
+	if m.cursor >= 0 && m.cursor < len(m.filtered) && m.filtered[m.cursor].ID == cur.Summary.ID {
+		start = m.cursor
+	} else if idx := m.indexOfSpecies(cur.Summary.ID, false); idx >= 0 {
+		start = idx
+	} else if idx := m.indexOfSpecies(cur.Summary.ID, true); idx >= 0 {
+		start = idx
+	} else {
 		start = m.cursor
 	}
 	for i := start + delta; i >= 0 && i < len(m.filtered); i += delta {
-		if m.filtered[i].ID == otherID {
+		id := m.filtered[i].ID
+		if id == otherID || id == cur.Summary.ID {
 			continue
 		}
 		e := m.comparisonEntry(m.filtered[i])
