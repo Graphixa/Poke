@@ -46,8 +46,8 @@ func TestGlanceTallDoesNotGrowCards(t *testing.T) {
 	if short.AboutH != tall.AboutH {
 		t.Fatalf("About must hug content, not grow: short=%d tall=%d", short.AboutH, tall.AboutH)
 	}
-	if tall.AboutH > 6 {
-		t.Fatalf("AboutH=%d looks stretched (want hug ~5)", tall.AboutH)
+	if tall.AboutH > 4 {
+		t.Fatalf("AboutH=%d looks stretched (want hug ~4)", tall.AboutH)
 	}
 	if _, statsH := views.StatsCardOuter(); tall.StatsH != statsH {
 		t.Fatalf("StatsH=%d want %d", tall.StatsH, statsH)
@@ -69,7 +69,8 @@ func TestPreferredBucket16OrZero(t *testing.T) {
 	if b := views.PreferredBucket(80, 50); b != 16 {
 		t.Fatalf("PreferredBucket=%d want 16", b)
 	}
-	if b := views.PreferredBucket(80, 2+10); b != 0 {
+	_, artH := views.ArtCardOuter(views.GlanceBucket)
+	if b := views.PreferredBucket(80, 2+(artH-1)); b != 0 {
 		t.Fatalf("too short PreferredBucket=%d want 0", b)
 	}
 }
@@ -136,8 +137,8 @@ func TestBrowseGlanceCardsHugOnTallTerminal(t *testing.T) {
 	if g.StatsH != wantStatsH {
 		t.Fatalf("StatsH=%d want hug %d", g.StatsH, wantStatsH)
 	}
-	if g.AboutH < 3 || g.AboutH > 6 {
-		t.Fatalf("AboutH=%d want hug 3..6", g.AboutH)
+	if g.AboutH < 3 || g.AboutH > 4 {
+		t.Fatalf("AboutH=%d want hug 3..4", g.AboutH)
 	}
 	_, wantArtH := views.ArtCardOuter(views.GlanceBucket)
 	if g.ArtCardH != wantArtH {
@@ -256,14 +257,15 @@ func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
 
 func TestGlanceAboutRequiresFullHug(t *testing.T) {
 	_, artH := views.ArtCardOuter(views.GlanceBucket)
+	const hug = 4 // glanceAboutContentH(2) + borders, pad=0
 	// rightInnerH = header + art + (hug-1) → remain too small for full About hug.
-	tooTight := views.ComputeGlance(80, 2+artH+5, true)
+	tooTight := views.ComputeGlance(80, 2+artH+(hug-1), true)
 	if tooTight.ShowAbout {
 		t.Fatalf("About must not show when remain < hug (got AboutH=%d)", tooTight.AboutH)
 	}
-	fits := views.ComputeGlance(80, 2+artH+6, true)
-	if !fits.ShowAbout || fits.AboutH != 6 {
-		t.Fatalf("Abilities should hug at 6 when it fits: show=%v h=%d", fits.ShowAbout, fits.AboutH)
+	fits := views.ComputeGlance(80, 2+artH+hug, true)
+	if !fits.ShowAbout || fits.AboutH != hug {
+		t.Fatalf("Abilities should hug at %d when it fits: show=%v h=%d", hug, fits.ShowAbout, fits.AboutH)
 	}
 }
 
@@ -358,8 +360,8 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 		t.Fatalf("art card height=%d want pinned %d (outer %dx%d)", gotH, ch, cw, ch)
 	}
 	g := views.ComputeGlance(rw-1, 50-1-2, true)
-	if g.ArtW != 16 || g.ArtH != 8 || g.ArtPadX != 1 || g.ArtPadY != 1 {
-		t.Fatalf("art inner %dx%d pad %d,%d want 16x8 pad 1", g.ArtW, g.ArtH, g.ArtPadX, g.ArtPadY)
+	if g.ArtW != 16 || g.ArtH != 8 || g.ArtPadX != 0 || g.ArtPadY != 0 {
+		t.Fatalf("art inner %dx%d pad %d,%d want 16x8 pad 0", g.ArtW, g.ArtH, g.ArtPadX, g.ArtPadY)
 	}
 	if g.ArtCardH != ch || g.StatsH != g.ArtCardH {
 		t.Fatalf("ArtCardH=%d StatsH=%d want equal outer heights", g.ArtCardH, g.StatsH)

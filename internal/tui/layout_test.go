@@ -135,9 +135,9 @@ func TestBrowseSpritePadAndOrigin(t *testing.T) {
 	if artW != 16 || artH != 8 {
 		t.Fatalf("art %dx%d want 16x8", artW, artH)
 	}
-	// Pinned art card: frame top + header + card top border + inner pad.
-	wantRow := 2 + 2 + 1 + 1 // 6
-	wantCol := d.LeftWidth + 2 + 1 + 1
+	// Pinned art card: frame top + header + card top border (pad=0).
+	wantRow := 2 + 2 + 1 // 5
+	wantCol := d.LeftWidth + 2 + 1
 	if row != wantRow {
 		t.Fatalf("art row=%d want %d (pinned under header)", row, wantRow)
 	}

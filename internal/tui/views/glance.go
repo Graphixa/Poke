@@ -10,7 +10,7 @@ const (
 
 	glanceHeaderRows = 2
 	glanceCardBorder = 2
-	glanceContentPad = 1 // row/col of space inside art and stats cards
+	glanceContentPad = 0 // flush content to card borders (WT default height)
 	glanceCardGap    = 1
 	glanceMinAboutH  = 3 // 1 content row + borders
 
@@ -258,8 +258,11 @@ func PreferredHeroBucket(rightInnerW, rightInnerH int) int {
 	return 0
 }
 
-// GlanceStatsBody pads stats lines with one blank row/col inside the card.
+// GlanceStatsBody returns body lines for stats/abilities cards (optional edge pad).
 func GlanceStatsBody(lines []string) []string {
+	if glanceContentPad <= 0 {
+		return lines
+	}
 	pad := stringsRepeatSpaces(glanceContentPad)
 	out := make([]string, 0, len(lines)+2*glanceContentPad)
 	for i := 0; i < glanceContentPad; i++ {
