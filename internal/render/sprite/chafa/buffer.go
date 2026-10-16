@@ -1,5 +1,4 @@
-// Package uiimage loads PNG pixel buffers and converts them with Chafa.
-package uiimage
+package chafa
 
 import (
 	"bytes"
@@ -35,11 +34,11 @@ func LoadPNGAndExtractBuffer(filePath string) (*ImageData, error) {
 // FromPNG decodes PNG bytes into an RGBA pixel buffer.
 func FromPNG(png []byte) (*ImageData, error) {
 	if len(png) == 0 {
-		return nil, fmt.Errorf("uiimage: empty png")
+		return nil, fmt.Errorf("chafa: empty png")
 	}
 	img, _, err := image.Decode(bytes.NewReader(png))
 	if err != nil {
-		return nil, fmt.Errorf("uiimage: decode: %w", err)
+		return nil, fmt.Errorf("chafa: decode: %w", err)
 	}
 	return FromImage(img)
 }
@@ -47,12 +46,12 @@ func FromPNG(png []byte) (*ImageData, error) {
 // FromImage flattens any image.Image to tightly packed unassociated RGBA8.
 func FromImage(img image.Image) (*ImageData, error) {
 	if img == nil {
-		return nil, fmt.Errorf("uiimage: nil image")
+		return nil, fmt.Errorf("chafa: nil image")
 	}
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 	if width <= 0 || height <= 0 {
-		return nil, fmt.Errorf("uiimage: empty bounds")
+		return nil, fmt.Errorf("chafa: empty bounds")
 	}
 
 	// Always origin at (0,0) so Pix is a contiguous WxH RGBA buffer.

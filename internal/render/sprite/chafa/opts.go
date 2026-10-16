@@ -1,12 +1,12 @@
-package uiimage
+package chafa
 
 import (
 	"image/color"
 
-	"github.com/ploMP4/chafa-go"
+	chafago "github.com/ploMP4/chafa-go"
 )
 
-const ChannelsRGBA = 4
+const channelsRGBA = 4
 
 // default cell pixel size used for aspect-aware geometry (common monospace).
 const (
@@ -28,15 +28,15 @@ const (
 type RenderOpts struct {
 	Width   int
 	Height  int
-	Mode    chafa.CanvasMode
+	Mode    chafago.CanvasMode
 	Stretch bool // if true, fill the full cell box (may distort)
 
 	Quality QualityPreset
 
 	workFactor      float32
-	colorSpace      chafa.ColorSpace
-	colorExtractor  chafa.ColorExtractor
-	dither          chafa.DitherMode
+	colorSpace      chafago.ColorSpace
+	colorExtractor  chafago.ColorExtractor
+	dither          chafago.DitherMode
 	CellWidthPx     int32
 	CellHeightPx    int32
 	Background      color.RGBA // if A>0, composite transparent pixels first
@@ -51,8 +51,8 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 	if opts.Width <= 0 || opts.Height <= 0 {
 		return ""
 	}
-	if opts.Mode < 0 || opts.Mode >= chafa.CHAFA_CANVAS_MODE_MAX {
-		opts.Mode = chafa.CHAFA_CANVAS_MODE_TRUECOLOR
+	if opts.Mode < 0 || opts.Mode >= chafago.CHAFA_CANVAS_MODE_MAX {
+		opts.Mode = chafago.CHAFA_CANVAS_MODE_TRUECOLOR
 	}
 
 	opts = applyQualityPreset(opts)
@@ -63,12 +63,12 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 		pixels = compositeOntoBackground(data, opts.Background)
 	}
 
-	symbolMap := chafa.SymbolMapNew()
-	defer chafa.SymbolMapUnref(symbolMap)
-	chafa.SymbolMapApplySelectors(symbolMap, "block+half+quad+sextant+octant+border+space-wide-inverted")
+	symbolMap := chafago.SymbolMapNew()
+	defer chafago.SymbolMapUnref(symbolMap)
+	chafago.SymbolMapApplySelectors(symbolMap, "block+half+quad+sextant+octant+border+space-wide-inverted")
 
-	config := chafa.CanvasConfigNew()
-	defer chafa.CanvasConfigUnref(config)
+	config := chafago.CanvasConfigNew()
+	defer chafago.CanvasConfigUnref(config)
 
 	cellW, cellH := opts.CellWidthPx, opts.CellHeightPx
 	if cellW <= 0 {
@@ -77,49 +77,49 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 	if cellH <= 0 {
 		cellH = defaultCellHeightPx
 	}
-	chafa.CanvasConfigSetCellGeometry(config, cellW, cellH)
+	chafago.CanvasConfigSetCellGeometry(config, cellW, cellH)
 
 	w := int32(opts.Width)
 	h := int32(opts.Height)
 	if !opts.Stretch {
 		fontRatio := float32(cellW) / float32(cellH)
-		chafa.CalcCanvasGeometry(
+		chafago.CalcCanvasGeometry(
 			int32(width), int32(height),
 			&w, &h,
 			fontRatio,
 			false, false,
 		)
 	}
-	chafa.CanvasConfigSetGeometry(config, w, h)
-	chafa.CanvasConfigSetSymbolMap(config, symbolMap)
-	chafa.CanvasConfigSetCanvasMode(config, opts.Mode)
-	chafa.CanvasConfigSetWorkFactor(config, opts.workFactor)
-	chafa.CanvasConfigSetColorSpace(config, opts.colorSpace)
-	chafa.CanvasConfigSetColorExtractor(config, opts.colorExtractor)
-	chafa.CanvasConfigSetDitherMode(config, opts.dither)
+	chafago.CanvasConfigSetGeometry(config, w, h)
+	chafago.CanvasConfigSetSymbolMap(config, symbolMap)
+	chafago.CanvasConfigSetCanvasMode(config, opts.Mode)
+	chafago.CanvasConfigSetWorkFactor(config, opts.workFactor)
+	chafago.CanvasConfigSetColorSpace(config, opts.colorSpace)
+	chafago.CanvasConfigSetColorExtractor(config, opts.colorExtractor)
+	chafago.CanvasConfigSetDitherMode(config, opts.dither)
 	// Preprocessing contrast boost is costly; leave it off for interactive browse.
-	chafa.CanvasConfigSetPreprocessingEnabled(config, false)
+	chafago.CanvasConfigSetPreprocessingEnabled(config, false)
 
 	if opts.Background.A > 0 {
-		chafa.CanvasConfigSetBgColor(config, packRGB(opts.Background))
+		chafago.CanvasConfigSetBgColor(config, packRGB(opts.Background))
 	}
 	if opts.TransparencyThr > 0 {
-		chafa.CanvasConfigSetTransparencyThreshold(config, opts.TransparencyThr)
+		chafago.CanvasConfigSetTransparencyThreshold(config, opts.TransparencyThr)
 	}
 
-	canvas := chafa.CanvasNew(config)
-	defer chafa.CanvasUnRef(canvas)
+	canvas := chafago.CanvasNew(config)
+	defer chafago.CanvasUnRef(canvas)
 
-	chafa.CanvasDrawAllPixels(
+	chafago.CanvasDrawAllPixels(
 		canvas,
-		chafa.CHAFA_PIXEL_RGBA8_UNASSOCIATED,
+		chafago.CHAFA_PIXEL_RGBA8_UNASSOCIATED,
 		pixels,
 		int32(width),
 		int32(height),
-		int32(width*ChannelsRGBA),
+		int32(width*channelsRGBA),
 	)
 
-	gs := chafa.CanvasPrint(canvas, nil)
+	gs := chafago.CanvasPrint(canvas, nil)
 	if gs == nil {
 		return ""
 	}
@@ -130,14 +130,14 @@ func applyQualityPreset(opts RenderOpts) RenderOpts {
 	switch opts.Quality {
 	case QualityMosaic:
 		opts.workFactor = 1.0
-		opts.colorSpace = chafa.CHAFA_COLOR_SPACE_DIN99D
-		opts.colorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_MEDIAN
-		opts.dither = chafa.CHAFA_DITHER_MODE_NONE
+		opts.colorSpace = chafago.CHAFA_COLOR_SPACE_DIN99D
+		opts.colorExtractor = chafago.CHAFA_COLOR_EXTRACTOR_MEDIAN
+		opts.dither = chafago.CHAFA_DITHER_MODE_NONE
 	default: // QualityMosaicFast
 		opts.workFactor = 0.5
-		opts.colorSpace = chafa.CHAFA_COLOR_SPACE_RGB
-		opts.colorExtractor = chafa.CHAFA_COLOR_EXTRACTOR_AVERAGE
-		opts.dither = chafa.CHAFA_DITHER_MODE_NONE
+		opts.colorSpace = chafago.CHAFA_COLOR_SPACE_RGB
+		opts.colorExtractor = chafago.CHAFA_COLOR_EXTRACTOR_AVERAGE
+		opts.dither = chafago.CHAFA_DITHER_MODE_NONE
 	}
 	if opts.CellWidthPx == 0 {
 		opts.CellWidthPx = defaultCellWidthPx

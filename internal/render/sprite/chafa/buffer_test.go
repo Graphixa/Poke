@@ -1,4 +1,4 @@
-package uiimage_test
+package chafa_test
 
 import (
 	"image"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/uiimage"
+	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 )
 
 func TestFromImageAndGenerateANSIBlockOpts(t *testing.T) {
@@ -19,7 +19,7 @@ func TestFromImageAndGenerateANSIBlockOpts(t *testing.T) {
 			img.Set(x, y, color.RGBA{R: 255, G: 0, B: 0, A: 255})
 		}
 	}
-	data, err := uiimage.FromImage(img)
+	data, err := spritechafa.FromImage(img)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,11 +27,11 @@ func TestFromImageAndGenerateANSIBlockOpts(t *testing.T) {
 		t.Fatalf("unexpected image data: %+v len=%d", data, len(data.Pixels))
 	}
 
-	for _, q := range []uiimage.QualityPreset{
-		uiimage.QualityMosaic,
-		uiimage.QualityMosaicFast,
+	for _, q := range []spritechafa.QualityPreset{
+		spritechafa.QualityMosaic,
+		spritechafa.QualityMosaicFast,
 	} {
-		got := uiimage.GenerateANSIBlockOpts(data, uiimage.RenderOpts{
+		got := spritechafa.GenerateANSIBlockOpts(data, spritechafa.RenderOpts{
 			Width: 16, Height: 16, Quality: q,
 			Background: color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255},
 		})
@@ -57,7 +57,7 @@ func TestLoadPNGAndExtractBuffer(t *testing.T) {
 	}
 	f.Close()
 
-	data, err := uiimage.LoadPNGAndExtractBuffer(path)
+	data, err := spritechafa.LoadPNGAndExtractBuffer(path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/uiimage"
 	chafago "github.com/ploMP4/chafa-go"
 )
 
@@ -63,9 +62,9 @@ func (r Renderer) renderLib(ctx context.Context, src image.Image, opts sprite.Re
 	// Sample isotropically. opts.Width×Height should already be cell-aspect
 	// corrected (e.g. 32×16) so Stretch into that grid is visually square.
 	sampleSide := max(w, h) * samplesPerCell
-	quality := uiimage.QualityMosaicFast
+	quality := QualityMosaicFast
 	if opts.Quality == sprite.QualityPrewarm {
-		quality = uiimage.QualityMosaic
+		quality = QualityMosaic
 		// Mild integer upscale before mosaic conversion for prewarm fidelity.
 		if opts.Source == sprite.SourcePixel && sampleSide < 256 {
 			sampleSide *= 2
@@ -78,14 +77,14 @@ func (r Renderer) renderLib(ctx context.Context, src image.Image, opts sprite.Re
 		return sprite.Frame{}, err
 	}
 
-	data, err := uiimage.FromImage(scaled)
+	data, err := FromImage(scaled)
 	if err != nil {
 		return sprite.Frame{}, fmt.Errorf("chafa: %w", err)
 	}
 
 	// Stretch fills the cell grid. With Height = Width/CellAspectY and ~1:2
 	// cell pixels, the canvas pixel box is square — no vertical stretch.
-	ansi := uiimage.GenerateANSIBlockOpts(data, uiimage.RenderOpts{
+	ansi := GenerateANSIBlockOpts(data, RenderOpts{
 		Width:      w,
 		Height:     h,
 		Mode:       canvasMode(opts.ColorMode),
