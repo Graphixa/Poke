@@ -404,7 +404,9 @@ func (m Model) compareView() string {
 		if textwidth.Width(cell) < g.innerW {
 			cell = textwidth.PadRight(cell, g.innerW)
 		}
-		frame.WriteString(vert + cell + vert)
+		frame.WriteString(vert)
+		frame.WriteString(cell)
+		frame.WriteString(vert)
 		if i < len(body)-1 {
 			frame.WriteByte('\n')
 		}
