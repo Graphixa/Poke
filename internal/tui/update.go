@@ -636,9 +636,8 @@ func (m *Model) handleSpriteLayoutChange(prevShow bool, prevSide int) tea.Cmd {
 func (m *Model) resetSpriteLayoutState() {
 	m.selectionGen++
 	m.cancelSprite()
-	m.initColdScheduler()
-	if m.coldSched != nil {
-		m.coldSched.AbortForeground()
+	if m.cold != nil {
+		m.cold.AbortForeground()
 	}
 	m.clearImagePane()
 	m.clearNativeDisplay()

@@ -693,6 +693,26 @@ func TestWarmSelectionBypassesUnrelatedColdRender(t *testing.T) {
 	close(block)
 }
 
+// A failed cold render must end the spinner (placeholder), not hang it.
+func TestColdRenderFailureEndsLoading(t *testing.T) {
+	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}, Sprites: &fakeSprites{fail: true}})
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 52})
+	m = updated.(tui.Model)
+	cmd := m.EnsureSelectionLoadsForTest() // listener for the load WindowSize started
+	done := make(chan tea.Msg, 1)
+	go func() { done <- cmd() }()
+	select {
+	case msg := <-done:
+		updated, _ = m.Update(msg)
+		m = updated.(tui.Model)
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed render never delivered a frame")
+	}
+	if m.ImageStateForTest() != int(tui.ImageUnavailable) {
+		t.Fatalf("state=%d want unavailable", m.ImageStateForTest())
+	}
+}
+
 func TestImageUnavailableClearsPreviousArt(t *testing.T) {
 	details := &fakeDetails{}
 	sprites := &fakeSprites{cached: "ART"}

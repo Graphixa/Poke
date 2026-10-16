@@ -281,17 +281,17 @@ func (m *Model) ForceSpriteLoadForTest() tea.Cmd {
 }
 
 func (m Model) FgActiveSpeciesForTest() int {
-	if m.coldSched == nil {
+	if m.cold == nil {
 		return 0
 	}
-	return m.coldSched.ActiveSpecies()
+	return m.cold.ActiveSpecies()
 }
 
 func (m Model) FgPendingSpeciesForTest() int {
-	if m.coldSched == nil {
+	if m.cold == nil {
 		return 0
 	}
-	return m.coldSched.PendingSpecies()
+	return m.cold.PendingSpecies()
 }
 
 // ColdFrameMsgForTest builds a cold-scheduler frame message for spinner tests.

@@ -8,8 +8,8 @@ import (
 )
 
 func (m *Model) foregroundColdBusy() bool {
-	if m.coldSched != nil {
-		return m.coldSched.ForegroundBusy()
+	if m.cold != nil {
+		return m.cold.ForegroundBusy()
 	}
 	return m.imageState == ImageLoading
 }
@@ -25,8 +25,8 @@ func (m *Model) syncWarmerBusy() {
 }
 
 func (m *Model) runColdSelection(pokemon domain.Pokemon, cells int, force bool) tea.Cmd {
-	m.initColdScheduler()
-	if m.coldSched == nil || cells < 1 {
+	m.initColdRunner()
+	if m.cold == nil || cells < 1 {
 		return nil
 	}
 	// Do not ClearNative here — that flashes Kitty and is unnecessary for
@@ -40,18 +40,28 @@ func (m *Model) runColdSelection(pokemon domain.Pokemon, cells int, force bool) 
 	}
 
 	m.setImageLoading()
-	m.coldSched.Select(m.ctx, m.selectionGen, pokemon, cells, force, true)
+	m.cold.Select(m.selectionGen, pokemon, cells, force)
 	m.syncWarmerBusy()
 	return m.coldListenCmd()
 }
 
 func (m *Model) coldListenCmd() tea.Cmd {
-	return listenColdFrame(m.coldFrameCh)
+	if m.cold == nil {
+		return nil
+	}
+	return listenColdFrame(m.cold.ch)
+}
+
+// coldListenIfBusy re-arms the frame listener while foreground work remains.
+func (m *Model) coldListenIfBusy() tea.Cmd {
+	if m.cold != nil && m.cold.ForegroundBusy() {
+		return m.coldListenCmd()
+	}
+	return nil
 }
 
 func (m *Model) finishColdSelection(msg coldFrameMsg) tea.Cmd {
-	follow := m.applyColdFrame(msg)
-	if follow != nil {
+	if follow := m.applyColdFrame(msg); follow != nil {
 		return follow
 	}
 	if m.imageState == ImageLoading {
@@ -67,10 +77,7 @@ func (m *Model) applyColdFrame(msg coldFrameMsg) tea.Cmd {
 	if !current {
 		sprite.NoteStale()
 		m.syncWarmerBusy()
-		if m.coldSched != nil && m.coldSched.ForegroundBusy() {
-			return listenColdFrame(m.coldFrameCh)
-		}
-		return nil
+		return m.coldListenIfBusy()
 	}
 	m.imageLoading = false
 	m.applySpriteFrame(msg.speciesID, msg.cells, sprite.RenderResult{
@@ -80,10 +87,7 @@ func (m *Model) applyColdFrame(msg coldFrameMsg) tea.Cmd {
 		AssetKind:      msg.assetKind,
 	})
 	m.syncWarmerBusy()
-	if m.coldSched != nil && m.coldSched.ForegroundBusy() {
-		return listenColdFrame(m.coldFrameCh)
-	}
-	return nil
+	return m.coldListenIfBusy()
 }
 
 func (m *Model) handleColdFrame(msg coldFrameMsg) tea.Cmd {

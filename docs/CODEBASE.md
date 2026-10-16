@@ -120,7 +120,7 @@ Read path for a paint: mem LRU → gunzip disk → cold encode.
    - **Browse dossier-core arrival** repaints the overlay **once, in place** via `markNativeOverlayDirty` (no `FollowUp`) and only while a native sprite is active. Core adds genus/About cells outside the art box; the Sixel payload is unchanged, so it must not arm a second, delayed ~60ms redraw (that late re-paint per newly-browsed species read as "much slower"). `origin/main` did not repaint on core at all; this is the minimal safe version.
 3. Stable-frame gate (`nativeOverlayReady`): native image ready for the selected species and sprite shown. Text hold does **not** block Raw — sixel may paint while held About remains; text commits when sprite+About are ready together.
 4. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` at `currentSpriteCells()` (Glance `16` or Art `40`). Hit applies immediately; cell art appears in View on apply; native marks FollowUp for immediate Raw + insurance.
-5. Miss → `coldsched.Scheduler` latest-selection-wins. Right-pane text may stay on the held species until sprite **and** About commit policy allow (no spinner).
+5. Miss → `tui.coldRunner` latest-selection-wins. Right-pane text may stay on the held species until sprite **and** About commit policy allow (no spinner).
 6. Fallback chain: Kitty/iTerm/Sixel (`image`) → chafa → halfblock → placeholder. Cell art in View is buffer-safe; native frames use reservation + Raw.
 7. Native paint seq: DECSC → (optional theme space-clear + slack) → CUP + `?8452h` + DCS + `?8452l` → DECRC. Space-clear only on geometry/identity wipe; same-geometry paints overwrite. Help/dialog dismiss invalidates geometry so restore clears. Footer progress uses `tea.Raw` (`footer_raw.go`) while native graphics are on screen for the selection.
 
@@ -140,7 +140,7 @@ Keys: typing filters; `v` cycles Glance/Art browse views; `q` quits only when se
 ### 7. Shutdown
 
 1. Quit key → `m.quitting` + `tea.Quit`.
-2. `tui.Run` after `p.Run()` calls `Model.shutdown()` → `coldsched.Stop`.
+2. `tui.Run` after `p.Run()` calls `Model.shutdown()` → `coldRunner.Stop`.
 3. `openBrowse` defers: `engine.ClosePersist()`, `nativeWarmer.Stop()`, `artworkWarmer.Stop()`, `spriteWarmer.Stop()`, `dossierWarmer.Stop()`, `cancel()` on `runCtx`.
 4. Warmers cancel worker ctx and `WaitGroup.Wait`. Persist queue drains/closes.
 5. Dataset bootstrap / setup cancel via their own context + `Ctrl+C`.
@@ -440,9 +440,9 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ### `internal/render/sprite` — encode + artefact cache
 
-**Subpackages:** `sixel`, `image`, `chafa`, `halfblock`, `placeholder`, `nativewarm`, `assetwarm`, `warm`, `coldsched`. Sibling: `internal/render/termimg`.
+**Subpackages:** `sixel`, `image`, `chafa`, `halfblock`, `placeholder`, `nativewarm`, `assetwarm`, `warm`. Sibling: `internal/render/termimg`.
 
-**Callers:** `app/browse`, `app/setup`, TUI (via `SpriteRenderer` + coldsched), cache (CDN helpers, keys).
+**Callers:** `app/browse`, `app/setup`, TUI (via `SpriteRenderer` + `coldRunner`), cache (CDN helpers, keys).
 
 #### `engine.go`
 
@@ -502,16 +502,11 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 - Chafa artefact prewarm. Same queue shape. Emits `warm.Progress`. App classifies to `tui.WarmStageSpritesRender`.
 - **Tests:** `warm_test.go`.
 
-#### `coldsched/scheduler.go`
-
-- Latest-selection-wins foreground cold jobs. Mutex, worker goroutine, callback into TUI channel.
-- **Tests:** `scheduler_test.go`, `scheduler_hardening_test.go`, `selection_test.go`.
-
 ---
 
 ### `internal/tui` — browse presentation
 
-**Deps:** bubbles/bubbletea/lipgloss, `domain`, `search`, `debuglog`, `render/sprite`, `coldsched`, `tui/style`, `tui/components`, `tui/views`. **Does not import** `cache` (browse, bootstrap, or setup). Contract: TUI presentation has no metadata-cache dependency.
+**Deps:** bubbles/bubbletea/lipgloss, `domain`, `search`, `debuglog`, `render/sprite`, `tui/style`, `tui/components`, `tui/views`. **Does not import** `cache` (browse, bootstrap, or setup). Contract: TUI presentation has no metadata-cache dependency.
 
 **Concurrency:** tea commands (goroutines); `coldFrameCh`; `warmEvents` channel; overlay follow-up timer; no mutex on `Model` (single-threaded tea loop). Warmers run off-loop.
 
@@ -651,7 +646,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 | `dataset` | `map_test.go`, `learnset_test.go`, `validate_test.go` |
 | `pokeapi` | `client_test.go` |
 | `search` | `search_test.go` |
-| `sprite` + subs | engine/mem/persist/frame/source/imageprep/resize/capabilities; sixel; image; chafa; halfblock; nativewarm; assetwarm; warm; coldsched |
+| `sprite` + subs | engine/mem/persist/frame/source/imageprep/resize/capabilities; sixel; image; chafa; halfblock; nativewarm; assetwarm; warm |
 | `tui` + subs | model/layout/sprite/prefetch/artwork/ui_ready/spinner/overlay/footer/e2e/export; bootstrap; setup; style |
 | `output` | `golden_test.go` |
 | `debuglog` | `logger_test.go`, `startup_test.go` |
