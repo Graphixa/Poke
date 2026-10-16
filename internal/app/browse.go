@@ -24,10 +24,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-type tuiDetails struct {
-	*DetailService
-}
-
 type tuiSprites struct {
 	*sprite.Engine
 }
@@ -206,8 +202,8 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	workers := svc.Cache.MaxConcurrency()
 	opts := tui.Options{
 		Index:         search.Build(index),
-		Details:       tuiDetails{details},
-		Pokemon:       tuiDetails{details},
+		Details:       details,
+		Pokemon:       details,
 		Sprites:       tuiSprites{engine},
 		Selected:      req.Selected,
 		Prefill:       req.Prefill,
@@ -315,12 +311,12 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		dwCfg := dossierwarm.Config{
 			Mode:     dossierMode,
 			Workers:  2,
-			Loader:   tuiDetails{details},
+			Loader:   details,
 			Index:    index,
 			Progress: forwardDossier,
 		}
 		if dossierMode == dossierwarm.ModeWindow {
-			dwCfg.CoreLoader = tuiDetails{details}
+			dwCfg.CoreLoader = details
 		}
 		dossierWarmer = dossierwarm.New(dwCfg)
 		queueUIReady(func() { dossierWarmer.Start(runCtx) })

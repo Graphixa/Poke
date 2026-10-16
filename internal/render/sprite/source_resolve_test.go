@@ -55,6 +55,18 @@ func (m *memNamedStore) StoreSpriteByURL(_ context.Context, url, hash string, da
 	return nil
 }
 
+func (m *memNamedStore) StoreNamedSpriteWithURL(_ context.Context, id int, slug, kind, _, sha256 string, data []byte) error {
+	return m.StoreNamedSprite(context.Background(), id, slug, kind, sha256, data)
+}
+
+func (m *memNamedStore) NamedAssetMeta(context.Context, int, string, string) (string, string, bool, error) {
+	return "", "", false, nil
+}
+
+func (m *memNamedStore) ReadAssetBytes(context.Context, string) ([]byte, error) {
+	return nil, io.EOF
+}
+
 type stubAPI struct {
 	byURL map[string][]byte
 }

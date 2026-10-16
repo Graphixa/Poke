@@ -20,7 +20,7 @@ type resourceCache struct {
 	HasEncounters bool
 	EncountersErr error
 
-	Moves    []LevelUpMove
+	Moves    []domain.LevelUpMove
 	HasMoves bool
 	MovesErr error
 
@@ -64,10 +64,7 @@ func (r *resourceCache) applyExtrasFields(d domain.Dossier) {
 		r.EncountersErr = nil
 	}
 	if len(d.LevelUpMoves) > 0 || !pokemonHasLevelUpMoves(d.Pokemon) {
-		r.Moves = make([]LevelUpMove, len(d.LevelUpMoves))
-		for i, row := range d.LevelUpMoves {
-			r.Moves[i] = LevelUpMove{Level: row.Level, Move: row.Move}
-		}
+		r.Moves = append([]domain.LevelUpMove(nil), d.LevelUpMoves...)
 		r.HasMoves = true
 		r.MovesErr = nil
 	}

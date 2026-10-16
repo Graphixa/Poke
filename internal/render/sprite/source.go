@@ -24,21 +24,15 @@ const (
 	AssetTierHD
 )
 
-// PNGStore persists sprite PNG bytes by content hash and URL mapping.
-type PNGStore interface {
+// AssetStore persists sprite PNGs (hash, named layout, metadata, and path reads).
+type AssetStore interface {
 	SpriteByURL(ctx context.Context, url string) (contentHash string, data []byte, err error)
 	StoreSpriteByURL(ctx context.Context, url, contentHash string, data []byte) error
-}
-
-// NamedPNGStore is the preferred on-disk layout: sprites/<id-slug>/ and official-artwork/.
-type NamedPNGStore interface {
 	NamedSprite(ctx context.Context, id int, slug, kind string) ([]byte, error)
 	StoreNamedSprite(ctx context.Context, id int, slug, kind, contentHash string, data []byte) error
-}
-
-// NamedPNGStoreWithURL persists url+sha256 sidecar metadata alongside named PNGs.
-type NamedPNGStoreWithURL interface {
 	StoreNamedSpriteWithURL(ctx context.Context, id int, slug, kind, url, sha256 string, data []byte) error
+	NamedAssetMeta(ctx context.Context, id int, slug, kind string) (hash, path string, ready bool, err error)
+	ReadAssetBytes(ctx context.Context, path string) ([]byte, error)
 }
 
 // Downloader fetches raw sprite bytes from a URL.
@@ -48,7 +42,7 @@ type Downloader interface {
 
 // SourceResolver selects a sprite URL by tier, downloads through the cache, and validates PNG.
 type SourceResolver struct {
-	Store PNGStore
+	Store AssetStore
 	API   Downloader
 }
 
@@ -70,14 +64,12 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 	}
 	kind := namedKindForTier(t)
 
-	if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
-		if data, err := named.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind); err == nil && len(data) > 0 {
+	if r.Store != nil && pokemon.ID != 0 {
+		if data, err := r.Store.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind); err == nil && len(data) > 0 {
 			notePNGRead()
 			hash := ContentHash(data)
-			if meta, ok := r.Store.(NamedAssetMetaStore); ok {
-				if h, _, ready, _ := meta.NamedAssetMeta(ctx, pokemon.ID, pokemon.Slug, kind); ready && IsHexSHA256(h) {
-					hash = h
-				}
+			if h, _, ready, _ := r.Store.NamedAssetMeta(ctx, pokemon.ID, pokemon.Slug, kind); ready && IsHexSHA256(h) {
+				hash = h
 			}
 			url := URLForTier(pokemon, t)
 			if url == "" {
@@ -97,11 +89,9 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 			hash, data, err := r.Store.SpriteByURL(ctx, tryURL)
 			if err == nil && len(data) > 0 && ValidatePNG(data) == nil {
 				notePNGRead()
-				if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
-					_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
-					if urlStore, ok := r.Store.(NamedPNGStoreWithURL); ok {
-						_ = urlStore.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, storeKind, tryURL, hash, data)
-					}
+				if pokemon.ID != 0 {
+					_ = r.Store.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
+					_ = r.Store.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, storeKind, tryURL, hash, data)
 				}
 				return SourceResult{ContentHash: hash, PNG: data, URL: tryURL, AssetKind: storeKind}
 			}
@@ -115,11 +105,9 @@ func (r *SourceResolver) Resolve(ctx context.Context, pokemon domain.Pokemon, ti
 		}
 		hash := ContentHash(data)
 		if r.Store != nil {
-			if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
-				_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
-				if urlStore, ok := r.Store.(NamedPNGStoreWithURL); ok {
-					_ = urlStore.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, storeKind, tryURL, hash, data)
-				}
+			if pokemon.ID != 0 {
+				_ = r.Store.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, storeKind, hash, data)
+				_ = r.Store.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, storeKind, tryURL, hash, data)
 			} else {
 				_ = r.Store.StoreSpriteByURL(ctx, tryURL, hash, data)
 			}

@@ -100,6 +100,26 @@ func (m *memStore) HasNativeFile(key string) bool {
 	return ok
 }
 
+func (m *memStore) NamedSprite(context.Context, int, string, string) ([]byte, error) {
+	return nil, errors.New("not found")
+}
+
+func (m *memStore) StoreNamedSprite(context.Context, int, string, string, string, []byte) error {
+	return nil
+}
+
+func (m *memStore) StoreNamedSpriteWithURL(context.Context, int, string, string, string, string, []byte) error {
+	return nil
+}
+
+func (m *memStore) NamedAssetMeta(context.Context, int, string, string) (string, string, bool, error) {
+	return "", "", false, nil
+}
+
+func (m *memStore) ReadAssetBytes(context.Context, string) ([]byte, error) {
+	return nil, errors.New("not found")
+}
+
 func flushNativePersist(t *testing.T, e *sprite.Engine, res sprite.RenderResult) {
 	t.Helper()
 	if e == nil || res.CacheKey == "" || res.ANSI == "" {
@@ -460,6 +480,10 @@ func (m *namedMemStore) StoreNamedSprite(_ context.Context, id int, slug, kind, 
 
 func (m *namedMemStore) StoreNamedSpriteWithURL(_ context.Context, id int, slug, kind, _, sha256 string, data []byte) error {
 	return m.StoreNamedSprite(context.Background(), id, slug, kind, sha256, data)
+}
+
+func (m *namedMemStore) ReadAssetBytes(context.Context, string) ([]byte, error) {
+	return nil, errors.New("not found")
 }
 
 type stubNativeRenderer struct {

@@ -346,7 +346,7 @@ func formatEncounterLines(rows []domain.Encounter) []string {
 	return lines
 }
 
-func formatMoveLines(rows []LevelUpMove, bodyW int) []string {
+func formatMoveLines(rows []domain.LevelUpMove, bodyW int) []string {
 	if len(rows) == 0 {
 		return []string{"No level-up moves available."}
 	}

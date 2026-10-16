@@ -115,11 +115,7 @@ func (e *Engine) ensureCanonicalHash(ctx context.Context, pokemon domain.Pokemon
 		}
 	}
 	if e.Source != nil && e.Source.Store != nil && pokemon.ID != 0 {
-		if urlStore, ok := e.Source.Store.(NamedPNGStoreWithURL); ok {
-			_ = urlStore.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, kind, ref.URL, hash, png)
-		} else if named, ok := e.Source.Store.(NamedPNGStore); ok {
-			_ = named.StoreNamedSprite(ctx, pokemon.ID, pokemon.Slug, kind, hash, png)
-		}
+		_ = e.Source.Store.StoreNamedSpriteWithURL(ctx, pokemon.ID, pokemon.Slug, kind, ref.URL, hash, png)
 	}
 	return hash
 }

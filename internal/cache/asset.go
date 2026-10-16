@@ -125,7 +125,7 @@ func (s *Store) StoreContentAsset(pokemonID int, source, url, hash string, data 
 	return nil
 }
 
-// Service.NamedAssetMeta implements sprite.NamedAssetMetaStore.
+// Service.NamedAssetMeta implements sprite.AssetStore.
 func (s *Service) NamedAssetMeta(ctx context.Context, id int, slug, kind string) (string, string, bool, error) {
 	return s.store.NamedAssetMeta(ctx, id, slug, kind)
 }

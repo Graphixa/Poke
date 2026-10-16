@@ -16,6 +16,28 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
+type stubCacheCommands struct {
+	refresh func(context.Context) error
+	clear   func() error
+}
+
+func (s stubCacheCommands) Refresh(ctx context.Context) error {
+	if s.refresh != nil {
+		return s.refresh(ctx)
+	}
+	return nil
+}
+
+func (s stubCacheCommands) Clear() error {
+	if s.clear != nil {
+		return s.clear()
+	}
+	return nil
+}
+
+func (s stubCacheCommands) WarmSprites(context.Context) error { return nil }
+func (s stubCacheCommands) Update(context.Context) error      { return nil }
+
 type stubAPI struct {
 	list      []domain.SpeciesSummary
 	pokemon   map[int]domain.Pokemon
@@ -250,9 +272,9 @@ func TestMainInlineNotFoundWritesStderr(t *testing.T) {
 			UserCacheDir:  func() (string, error) { return filepath.Join(t.TempDir(), "cache"), nil },
 		},
 		App: handler,
-		Cache: cli.CacheCommandsFuncs{
-			RefreshFunc: func(context.Context) error { return nil },
-			ClearFunc:   func() error { return nil },
+		Cache: stubCacheCommands{
+			refresh: func(context.Context) error { return nil },
+			clear:   func() error { return nil },
 		},
 		Stdout: stdout,
 		Stderr: stderr,

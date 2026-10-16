@@ -11,140 +11,58 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-// detailCache is the subset of cache.Service used for inline detail aggregation.
-type detailCache interface {
-	Pokemon(context.Context, int) (domain.Pokemon, error)
-	Species(context.Context, int) (domain.Species, error)
-	EvolutionChain(context.Context, int) (domain.EvolutionTree, error)
-	Encounters(context.Context, int) ([]domain.Encounter, error)
-	Move(context.Context, int) (domain.Move, error)
-}
-
-type dossierCache interface {
-	Dossier(context.Context, int) (domain.Dossier, error)
-	DossierWithSlug(context.Context, int, string) (domain.Dossier, error)
-}
-
-type dossierLoader interface {
-	DossierCore(context.Context, int, string) (cache.DossierCoreResult, error)
-	DossierExtras(context.Context, int, string, domain.Dossier) (domain.Dossier, error)
-}
-
-type coreWarmer interface {
-	WarmCore(context.Context, int) error
-}
-
 // PokemonDetail is the aggregated pokemon + species pair for info/stats.
 type PokemonDetail struct {
 	Pokemon domain.Pokemon
 	Species domain.Species
 }
 
-// LevelUpMove is a level-up learnset row for the Moves tab.
-type LevelUpMove struct {
-	Level int
-	Move  domain.Move
-}
-
 // DetailService loads cache-backed Pokémon details without exposing API DTOs.
 type DetailService struct {
-	cache   detailCache
-	dossier dossierCache
-	core    coreWarmer
-	split   dossierLoader
+	cache *cache.Service
 }
 
-func NewDetailService(cache detailCache) *DetailService {
-	d := &DetailService{cache: cache}
-	if dc, ok := cache.(dossierCache); ok {
-		d.dossier = dc
-	}
-	if cw, ok := cache.(coreWarmer); ok {
-		d.core = cw
-	}
-	if dl, ok := cache.(dossierLoader); ok {
-		d.split = dl
-	}
-	return d
+func NewDetailService(cache *cache.Service) *DetailService {
+	return &DetailService{cache: cache}
 }
 
 // LoadDossierCore returns species+pokemon for fast dialog paint.
 func (d *DetailService) LoadDossierCore(ctx context.Context, speciesID int, slug string) (domain.Dossier, bool, error) {
 	ctx = cache.WithInteractivePriority(ctx)
-	if d.split != nil {
-		res, err := d.split.DossierCore(ctx, speciesID, slug)
-		if err != nil {
-			return domain.Dossier{}, false, err
-		}
-		return res.Dossier, res.Complete, nil
+	res, err := d.cache.DossierCore(ctx, speciesID, slug)
+	if err != nil {
+		return domain.Dossier{}, false, err
 	}
-	full, err := d.LoadDossierWithSlug(ctx, speciesID, slug)
-	return full, true, err
+	return res.Dossier, res.Complete, nil
 }
 
 // LoadDossierExtras fills evolution, encounters, and moves after core.
 func (d *DetailService) LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error) {
 	ctx = cache.WithInteractivePriority(ctx)
-	if d.split != nil {
-		return d.split.DossierExtras(ctx, speciesID, slug, core)
-	}
-	return core, nil
+	return d.cache.DossierExtras(ctx, speciesID, slug, core)
 }
 
 // LoadDossier returns the full per-species dossier (Enter/detail path).
 func (d *DetailService) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
-	if d.dossier != nil {
-		return d.dossier.Dossier(ctx, speciesID)
-	}
-	return d.assembleFallback(ctx, speciesID)
+	return d.cache.Dossier(ctx, speciesID)
 }
 
 // WarmCore caches pokemon+species for browse headers without full dossier assemble.
 func (d *DetailService) WarmCore(ctx context.Context, speciesID int) error {
-	if d.core != nil {
-		return d.core.WarmCore(ctx, speciesID)
-	}
-	_, err := d.Load(ctx, speciesID)
-	return err
+	return d.cache.WarmCore(ctx, speciesID)
 }
 
 // LoadDossierWithSlug prefers a known slug for the on-disk dossier path.
 func (d *DetailService) LoadDossierWithSlug(ctx context.Context, speciesID int, slug string) (domain.Dossier, error) {
-	if d.dossier != nil {
-		return d.dossier.DossierWithSlug(ctx, speciesID, slug)
-	}
-	return d.assembleFallback(ctx, speciesID)
-}
-
-func (d *DetailService) assembleFallback(ctx context.Context, speciesID int) (domain.Dossier, error) {
-	detail, err := d.Load(ctx, speciesID)
-	if err != nil {
-		return domain.Dossier{}, err
-	}
-	out := domain.Dossier{Pokemon: detail.Pokemon, Species: detail.Species}
-	if tree, evoErr := d.Evolution(ctx, detail.Species); evoErr == nil {
-		out.Evolution = &tree
-	}
-	if enc, encErr := d.Encounters(ctx, detail.Pokemon.ID); encErr == nil {
-		out.Encounters = enc
-	}
-	if moves, moveErr := d.LevelUpMoves(ctx, detail.Pokemon); moveErr == nil {
-		out.LevelUpMoves = make([]domain.LevelUpMove, len(moves))
-		for i, m := range moves {
-			out.LevelUpMoves[i] = domain.LevelUpMove{Level: m.Level, Move: m.Move}
-		}
-	}
-	return out, nil
+	return d.cache.DossierWithSlug(ctx, speciesID, slug)
 }
 
 // Load fetches species then the default Pokémon variety.
 // Preferring dossier when present keeps Enter/CLI paths coherent.
 func (d *DetailService) Load(ctx context.Context, speciesID int) (PokemonDetail, error) {
-	if d.dossier != nil {
-		dossier, err := d.dossier.Dossier(ctx, speciesID)
-		if err == nil {
-			return PokemonDetail{Pokemon: dossier.Pokemon, Species: dossier.Species}, nil
-		}
+	dossier, err := d.cache.Dossier(ctx, speciesID)
+	if err == nil {
+		return PokemonDetail{Pokemon: dossier.Pokemon, Species: dossier.Species}, nil
 	}
 	return d.loadSpeciesPokemon(ctx, speciesID)
 }
@@ -169,11 +87,11 @@ func (d *DetailService) PokemonForSprite(ctx context.Context, speciesID int) (do
 	return detail.Pokemon, nil
 }
 
-func stampSpeciesSlug(ctx context.Context, cache detailCache, speciesID int, p *domain.Pokemon) {
+func stampSpeciesSlug(ctx context.Context, svc *cache.Service, speciesID int, p *domain.Pokemon) {
 	if p == nil || p.Slug != "" || speciesID < 1 {
 		return
 	}
-	if sp, err := cache.Species(ctx, speciesID); err == nil && sp.Slug != "" {
+	if sp, err := svc.Species(ctx, speciesID); err == nil && sp.Slug != "" {
 		p.Slug = sp.Slug
 	}
 }
@@ -230,7 +148,7 @@ func (d *DetailService) Encounters(ctx context.Context, pokemonID int) ([]domain
 }
 
 // LevelUpMoves returns level-up moves from the latest version group with data.
-func (d *DetailService) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon) ([]LevelUpMove, error) {
+func (d *DetailService) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon) ([]domain.LevelUpMove, error) {
 	bestOrder := -1
 	bestGroup := ""
 	for _, lm := range pokemon.Moves {
@@ -276,7 +194,7 @@ func (d *DetailService) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon
 		return rows[i].slug < rows[j].slug
 	})
 
-	out := make([]LevelUpMove, 0, len(rows))
+	out := make([]domain.LevelUpMove, 0, len(rows))
 	for _, row := range rows {
 		move, err := d.cache.Move(ctx, row.moveID)
 		if err != nil {
@@ -289,7 +207,7 @@ func (d *DetailService) LevelUpMoves(ctx context.Context, pokemon domain.Pokemon
 		if move.DisplayName == "" {
 			move.DisplayName = output.TitleFromSlug(move.Slug)
 		}
-		out = append(out, LevelUpMove{Level: row.level, Move: move})
+		out = append(out, domain.LevelUpMove{Level: row.level, Move: move})
 	}
 	return out, nil
 }

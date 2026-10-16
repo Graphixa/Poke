@@ -7,12 +7,6 @@ import (
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
 
-// LevelUpMove is a Moves-tab row (level + move metadata).
-type LevelUpMove struct {
-	Level int
-	Move  domain.Move
-}
-
 // DetailSource loads dossier data for the Enter/detail overlay and browse glance About.
 // Browse highlight may call LoadDossierCore only; extras load on Enter.
 type DetailSource interface {

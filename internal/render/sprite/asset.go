@@ -23,16 +23,6 @@ type AssetRef struct {
 	Kind      string // "artwork" | "pixel"
 }
 
-// NamedAssetMetaStore answers hash/path without opening the PNG.
-type NamedAssetMetaStore interface {
-	NamedAssetMeta(ctx context.Context, id int, slug, kind string) (hash, path string, ready bool, err error)
-}
-
-// AssetByteReader reads original asset bytes by filesystem path.
-type AssetByteReader interface {
-	ReadAssetBytes(ctx context.Context, path string) ([]byte, error)
-}
-
 var inflightURLs sync.Map // url -> *flightCall
 
 // ResolveAsset returns original-asset metadata without reading PNG bytes.
@@ -46,8 +36,8 @@ func (r *SourceResolver) ResolveAsset(ctx context.Context, pokemon domain.Pokemo
 	if r == nil {
 		return ref
 	}
-	if meta, ok := r.Store.(NamedAssetMetaStore); ok && pokemon.ID != 0 {
-		hash, path, ready, err := meta.NamedAssetMeta(ctx, pokemon.ID, pokemon.Slug, kind)
+	if r.Store != nil && pokemon.ID != 0 {
+		hash, path, ready, err := r.Store.NamedAssetMeta(ctx, pokemon.ID, pokemon.Slug, kind)
 		if err == nil && ready && hash != "" {
 			debuglog.Renderf("artwork.download.hit id=%d hash=%s", pokemon.ID, hash)
 			ref.Hash = hash
@@ -67,10 +57,12 @@ func (r *SourceResolver) ReadAsset(ctx context.Context, pokemon domain.Pokemon, 
 	if r == nil || !ref.Ready {
 		return nil, errAssetMissing
 	}
-	if reader, ok := r.Store.(AssetByteReader); ok && ref.Path != "" {
-		return reader.ReadAssetBytes(ctx, ref.Path)
+	if r.Store != nil && ref.Path != "" {
+		if data, err := r.Store.ReadAssetBytes(ctx, ref.Path); err == nil && len(data) > 0 {
+			return data, nil
+		}
 	}
-	if named, ok := r.Store.(NamedPNGStore); ok && pokemon.ID != 0 {
+	if r.Store != nil && pokemon.ID != 0 {
 		kind := ref.Kind
 		if kind == "" {
 			kind = namedKindForTier(AssetTierPixel)
@@ -78,7 +70,7 @@ func (r *SourceResolver) ReadAsset(ctx context.Context, pokemon domain.Pokemon, 
 				kind = namedKindForTier(AssetTierHD)
 			}
 		}
-		return named.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind)
+		return r.Store.NamedSprite(ctx, pokemon.ID, pokemon.Slug, kind)
 	}
 	return nil, errAssetMissing
 }

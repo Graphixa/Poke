@@ -11,6 +11,41 @@ import (
 	"github.com/Graphixa/Pokedex/internal/config"
 )
 
+type stubCacheCommands struct {
+	refresh     func(context.Context) error
+	clear       func() error
+	warmSprites func(context.Context) error
+	update      func(context.Context) error
+}
+
+func (s stubCacheCommands) Refresh(ctx context.Context) error {
+	if s.refresh != nil {
+		return s.refresh(ctx)
+	}
+	return nil
+}
+
+func (s stubCacheCommands) Clear() error {
+	if s.clear != nil {
+		return s.clear()
+	}
+	return nil
+}
+
+func (s stubCacheCommands) WarmSprites(ctx context.Context) error {
+	if s.warmSprites != nil {
+		return s.warmSprites(ctx)
+	}
+	return nil
+}
+
+func (s stubCacheCommands) Update(ctx context.Context) error {
+	if s.update != nil {
+		return s.update(ctx)
+	}
+	return nil
+}
+
 func TestUpdateAndCacheCommands(t *testing.T) {
 	var refreshed, cleared int
 	stdout := &bytes.Buffer{}
@@ -23,11 +58,11 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 		},
 		Stdout: stdout,
 		Stderr: stderr,
-		Cache: cli.CacheCommandsFuncs{
-			RefreshFunc:     func(context.Context) error { refreshed++; return nil },
-			ClearFunc:       func() error { cleared++; return nil },
-			WarmSpritesFunc: func(context.Context) error { return nil },
-			UpdateFunc:      func(context.Context) error { refreshed++; return nil },
+		Cache: stubCacheCommands{
+			refresh:     func(context.Context) error { refreshed++; return nil },
+			clear:       func() error { cleared++; return nil },
+			warmSprites: func(context.Context) error { return nil },
+			update:      func(context.Context) error { refreshed++; return nil },
 		},
 	})
 

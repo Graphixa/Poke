@@ -14,7 +14,7 @@ import (
 	"sync"
 
 	spritesixel "github.com/Graphixa/Pokedex/internal/render/sprite/sixel"
-	termimg "github.com/Graphixa/Pokedex/internal/render/termimg"
+	termimg "github.com/blacktop/go-termimg"
 
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 )
@@ -36,17 +36,71 @@ type Renderer struct {
 	failed bool
 }
 
+var termimgInitOnce sync.Once
+
+func initTermimg(p protocol) {
+	termimgInitOnce.Do(func() {
+		if p == protocolNone {
+			return
+		}
+		val := "halfblocks"
+		switch p {
+		case protocolKitty:
+			val = "kitty"
+		case protocolITerm:
+			val = "iterm2"
+		case protocolSixel:
+			val = "sixel"
+		}
+		_ = os.Setenv("TERMIMG_BYPASS_DETECTION", val)
+		termimg.ClearFeatureCache()
+	})
+}
+
+func renderKitty(src stdimage.Image, cellsW, cellsH int) (string, error) {
+	return renderNative(src, cellsW, cellsH, termimg.Kitty)
+}
+
+func renderITerm(src stdimage.Image, cellsW, cellsH int) (string, error) {
+	return renderNative(src, cellsW, cellsH, termimg.ITerm2)
+}
+
+func renderNative(src stdimage.Image, cellsW, cellsH int, proto termimg.Protocol) (string, error) {
+	if src == nil {
+		return "", fmt.Errorf("termimg: nil source")
+	}
+	if cellsW < 1 {
+		cellsW = 1
+	}
+	if cellsH < 1 {
+		cellsH = 1
+	}
+	out, err := termimg.New(src).
+		Width(cellsW).
+		Height(cellsH).
+		Scale(termimg.ScaleFit).
+		Protocol(proto).
+		Render()
+	if err != nil {
+		return "", err
+	}
+	if out == "" {
+		return "", fmt.Errorf("termimg: empty native render")
+	}
+	return out, nil
+}
+
+func clearAllNative() error {
+	return termimg.ClearAll()
+}
+
 // New creates an Image renderer that auto-detects Kitty/iTerm/Sixel support from
 // the environment. There is no user-facing protocol override.
 func New() *Renderer {
 	r := &Renderer{proto: detectProtocol()}
 	switch r.proto {
-	case protocolKitty:
-		termimg.Init(termimg.ProtocolKitty)
-	case protocolITerm:
-		termimg.Init(termimg.ProtocolITerm)
-	case protocolSixel:
-		termimg.Init(termimg.ProtocolSixel)
+	case protocolKitty, protocolITerm, protocolSixel:
+		initTermimg(r.proto)
 	}
 	return r
 }
@@ -201,9 +255,9 @@ func (r *Renderer) Render(ctx context.Context, src stdimage.Image, opts sprite.R
 	)
 	switch r.proto {
 	case protocolKitty:
-		out, err = termimg.RenderKitty(src, w, h)
+		out, err = renderKitty(src, w, h)
 	case protocolITerm:
-		out, err = termimg.RenderITerm(src, w, h)
+		out, err = renderITerm(src, w, h)
 	default:
 		return sprite.Frame{}, fmt.Errorf("image: native backend unavailable")
 	}
@@ -239,7 +293,7 @@ func ClearBestEffort() {
 		return
 	}
 	defer func() { _ = recover() }()
-	_ = termimg.ClearAll()
+	_ = clearAllNative()
 }
 
 // ClearNativeRegion returns a scoped clear sequence for a WxH cell region.

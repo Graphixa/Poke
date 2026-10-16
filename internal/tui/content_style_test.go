@@ -54,7 +54,7 @@ func TestEvolutionBoldsCurrentSpecies(t *testing.T) {
 
 func TestMoveHeaderIncludesPP(t *testing.T) {
 	power, accuracy := 40, 100
-	lines := formatMoveLines([]LevelUpMove{{
+	lines := formatMoveLines([]domain.LevelUpMove{{
 		Level: 1,
 		Move: domain.Move{
 			DisplayName: "Ember",
@@ -81,7 +81,7 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 
 func TestMoveColumnsDropAccThenPPWhenNarrow(t *testing.T) {
 	power, accuracy := 40, 100
-	row := []LevelUpMove{{
+	row := []domain.LevelUpMove{{
 		Level: 1,
 		Move: domain.Move{
 			DisplayName: "Ember",

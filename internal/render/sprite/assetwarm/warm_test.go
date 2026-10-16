@@ -146,6 +146,18 @@ func (m *memNamed) SpriteByURL(context.Context, string) (string, []byte, error) 
 }
 func (m *memNamed) StoreSpriteByURL(context.Context, string, string, []byte) error { return nil }
 
+func (m *memNamed) StoreNamedSpriteWithURL(_ context.Context, id int, slug, kind, _, sha256 string, data []byte) error {
+	return m.StoreNamedSprite(context.Background(), id, slug, kind, sha256, data)
+}
+
+func (m *memNamed) NamedAssetMeta(context.Context, int, string, string) (string, string, bool, error) {
+	return "", "", false, nil
+}
+
+func (m *memNamed) ReadAssetBytes(context.Context, string) ([]byte, error) {
+	return nil, io.EOF
+}
+
 type fakeLoader struct{}
 
 func (fakeLoader) Pokemon(_ context.Context, id int) (domain.Pokemon, error) {
