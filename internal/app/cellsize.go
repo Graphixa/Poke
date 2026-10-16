@@ -115,3 +115,51 @@ func atoiBytes(b []byte) int {
 	}
 	return n
 }
+
+const stdinDrainTimeout = 30 * time.Millisecond
+
+// drainPendingStdin discards console input still sitting in the OS buffer.
+// Browse search is always focused; leftover keys from setup ([Y]/N) or the
+// cell-size probe gap otherwise type themselves into the filter on first paint.
+func drainPendingStdin() {
+	in := os.Stdin
+	if !term.IsTerminal(int(in.Fd())) {
+		return
+	}
+	oldState, err := term.MakeRaw(int(in.Fd()))
+	if err != nil {
+		return
+	}
+	defer func() { _ = term.Restore(int(in.Fd()), oldState) }()
+
+	cr, err := cancelreader.NewReader(in)
+	if err != nil {
+		return
+	}
+	defer func() { _ = cr.Close() }()
+
+	done := make(chan int, 1)
+	go func() {
+		n := 0
+		chunk := make([]byte, 64)
+		for {
+			r, err := cr.Read(chunk)
+			n += r
+			if err != nil || r == 0 {
+				break
+			}
+		}
+		done <- n
+	}()
+
+	var n int
+	select {
+	case n = <-done:
+	case <-time.After(stdinDrainTimeout):
+		cr.Cancel()
+		n = <-done
+	}
+	if n > 0 {
+		debuglog.Renderf("stdin.drain discarded=%d", n)
+	}
+}

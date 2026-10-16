@@ -473,13 +473,20 @@ func (m *Model) moveCursor(delta int) {
 	if len(m.filtered) == 0 {
 		return
 	}
-	m.cursor += delta
-	if m.cursor < 0 {
-		m.cursor = 0
+	m.jumpCursor(m.cursor + delta)
+}
+
+func (m *Model) jumpCursor(idx int) {
+	if len(m.filtered) == 0 {
+		return
 	}
-	if m.cursor >= len(m.filtered) {
-		m.cursor = len(m.filtered) - 1
+	if idx < 0 {
+		idx = 0
 	}
+	if idx >= len(m.filtered) {
+		idx = len(m.filtered) - 1
+	}
+	m.cursor = idx
 	m.dialogVP.GotoTop()
 	m.ensureListVisible()
 }

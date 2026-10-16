@@ -287,6 +287,10 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		}
 	}
 
+	// Drop keys left in the console buffer (e.g. setup [Y], or taps during the
+	// cell-size probe / warmer spin-up) so they don't type into focused search.
+	drainPendingStdin()
+
 	debuglog.StartupMark("startup.tui_enter")
 	err = tui.Run(runCtx, opts)
 	if lines := debuglog.StartupReport(); len(lines) > 0 && h.Stderr != nil {

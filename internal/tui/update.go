@@ -303,6 +303,16 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.moveCursor(1)
 		return m, m.syncSelectionLoads()
 	}
+	if key.Matches(msg, m.keys.Home) {
+		m.jumpCursor(0)
+		return m, m.syncSelectionLoads()
+	}
+	if key.Matches(msg, m.keys.End) {
+		if n := len(m.filtered); n > 0 {
+			m.jumpCursor(n - 1)
+		}
+		return m, m.syncSelectionLoads()
+	}
 
 	return m.updateSearch(msg)
 }

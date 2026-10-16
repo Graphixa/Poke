@@ -2,6 +2,11 @@ package app
 
 import "testing"
 
+func TestDrainPendingStdinNoPanic(t *testing.T) {
+	// Non-TTY / empty buffer: must be a safe no-op (CI pipes, IDE runs).
+	drainPendingStdin()
+}
+
 func TestParseCellSizeReport(t *testing.T) {
 	cases := []struct {
 		in   string

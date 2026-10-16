@@ -1,19 +1,22 @@
 package bootstrap
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
 func TestStageLabel(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"index":     "Fetching species index",
-		"enrich":    "Enriching types",
-		"records":   "Building Pokédex records",
-		"evolution": "Fetching evolution chains",
-		"moves":     "Fetching moves",
-		"dataset":   "Activating dataset",
-		"artwork":   "Downloading artwork",
+		"index":     "index",
+		"enrich":    "types",
+		"records":   "records",
+		"evolution": "evo",
+		"moves":     "moves",
+		"dataset":   "ready",
+		"artwork":   "art",
 	}
 	for stage, want := range cases {
 		if got := stageLabel(Stage(stage)); got != want {
@@ -38,7 +41,47 @@ func TestProgressMsgUpdatesPercent(t *testing.T) {
 	if model.percent != 0.5 {
 		t.Fatalf("percent=%v want 0.5", model.percent)
 	}
-	if model.stageTitle != "Building Pokédex records" {
-		t.Fatalf("stageTitle=%q", model.stageTitle)
+	if model.stage != StageRecords {
+		t.Fatalf("stage=%q want %q", model.stage, StageRecords)
+	}
+	if model.status != "Bulbasaur" {
+		t.Fatalf("status=%q", model.status)
+	}
+}
+
+func TestStageRailHighlightsCurrent(t *testing.T) {
+	t.Parallel()
+	pal := style.CurrentPalette()
+	rail := stageRail(StageRecords, pal)
+	if !strings.Contains(rail, "records") {
+		t.Fatalf("rail missing records: %q", rail)
+	}
+	if stageIndex(StageRecords) != 2 {
+		t.Fatalf("records index=%d want 2", stageIndex(StageRecords))
+	}
+	if stageIndex(StageArtwork) != len(bootstrapRail) {
+		t.Fatalf("artwork index=%d", stageIndex(StageArtwork))
+	}
+	art := stageRail(StageArtwork, pal)
+	if !strings.Contains(art, "art") {
+		t.Fatalf("artwork rail missing art: %q", art)
+	}
+}
+
+func TestViewShowsPokedexTitle(t *testing.T) {
+	m := New(Deps{})
+	m.width, m.height = 80, 24
+	m.stage = StageRecords
+	m.done, m.total = 389, 1025
+	m.status = "Chimchar"
+	got := m.View().Content
+	if !strings.Contains(got, "Pokedex") {
+		t.Fatalf("view missing Pokedex title:\n%s", got)
+	}
+	if strings.Contains(got, "Building Pokédex") {
+		t.Fatalf("old headline still present:\n%s", got)
+	}
+	if !strings.Contains(got, "Chimchar") {
+		t.Fatalf("view missing status:\n%s", got)
 	}
 }

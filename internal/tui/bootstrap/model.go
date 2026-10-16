@@ -56,12 +56,12 @@ type Model struct {
 
 	prog progress.Model
 
-	stageTitle string
-	status     string
-	errMsg     string
-	done       int
-	total      int
-	percent    float64
+	stage   Stage
+	status  string
+	errMsg  string
+	done    int
+	total   int
+	percent float64
 
 	events <-chan tea.Msg
 	cancel context.CancelFunc
@@ -90,10 +90,9 @@ func New(deps Deps) Model {
 	p.SetWidth(48)
 	p.ShowPercentage = true
 	return Model{
-		deps:       deps,
-		prog:       p,
-		stageTitle: "Preparing",
-		status:     "Starting…",
+		deps:   deps,
+		prog:   p,
+		status: "Starting…",
 	}
 }
 
@@ -131,7 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case progressMsg:
-		m.stageTitle = stageLabel(msg.stage)
+		m.stage = msg.stage
 		m.done = msg.done
 		m.total = msg.total
 		if msg.message != "" {
@@ -167,49 +166,109 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 	pal := style.CurrentPalette()
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("poke")
+	brand := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("poke")
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Components)).Render("Pokedex")
 	sub := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
 	body := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Components))
 	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n  %s  dataset\n\n", title)
-	fmt.Fprintf(&b, "  %s\n\n", body.Render("Building Pokédex dataset"))
-	fmt.Fprintf(&b, "  %s\n\n", sub.Render(m.stageTitle))
-	fmt.Fprintf(&b, "  %s\n", m.prog.View())
+	fmt.Fprintf(&b, "%s\n\n", brand)
+	fmt.Fprintf(&b, "%s\n\n", title)
+	fmt.Fprintf(&b, "%s\n\n", stageRail(m.stage, pal))
+	fmt.Fprintf(&b, "%s\n", m.prog.View())
 	if m.total > 0 {
-		fmt.Fprintf(&b, "  %s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
+		fmt.Fprintf(&b, "%s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
 	}
-	if m.status != "" && m.total > 0 {
-		fmt.Fprintf(&b, "  %s\n", body.Render(m.status))
-	} else if m.status != "" {
-		fmt.Fprintf(&b, "  %s\n", body.Render(m.status))
+	if m.status != "" {
+		fmt.Fprintf(&b, "%s\n", body.Render(m.status))
 	}
 	if m.errMsg != "" {
-		fmt.Fprintf(&b, "\n  %s\n", errSt.Render(m.errMsg))
+		fmt.Fprintf(&b, "\n%s\n", errSt.Render(m.errMsg))
 	}
-	fmt.Fprintf(&b, "\n  %s\n", sub.Render("Ctrl+C cancel"))
-	v := tea.NewView(b.String())
+	fmt.Fprintf(&b, "\n%s", sub.Render("Ctrl+C cancel"))
+
+	w, h := m.width, m.height
+	if w < 1 {
+		w = 80
+	}
+	if h < 1 {
+		h = 24
+	}
+	v := tea.NewView(lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, b.String()))
 	v.AltScreen = true
 	return v
+}
+
+// bootstrapRail is the ordered first-run progress stages (short labels).
+var bootstrapRail = []struct {
+	id    Stage
+	label string
+}{
+	{StageIndex, "index"},
+	{StageEnrich, "types"},
+	{StageRecords, "records"},
+	{StageEvolution, "evo"},
+	{StageMoves, "moves"},
+	{StageDataset, "ready"},
+}
+
+func stageRail(current Stage, pal style.Palette) string {
+	idx := stageIndex(current)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
+	done := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Secondary))
+	active := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary))
+	sep := dim.Render(" · ")
+
+	var b strings.Builder
+	for i, s := range bootstrapRail {
+		if i > 0 {
+			b.WriteString(sep)
+		}
+		switch {
+		case i < idx:
+			b.WriteString(done.Render(s.label))
+		case i == idx:
+			b.WriteString(active.Render(s.label))
+		default:
+			b.WriteString(dim.Render(s.label))
+		}
+	}
+	if current == StageArtwork {
+		b.WriteString(sep)
+		b.WriteString(active.Render("art"))
+	}
+	return b.String()
+}
+
+func stageIndex(stage Stage) int {
+	if stage == StageArtwork {
+		return len(bootstrapRail) // past ready; art appended separately
+	}
+	for i, s := range bootstrapRail {
+		if s.id == stage {
+			return i
+		}
+	}
+	return -1
 }
 
 func stageLabel(stage Stage) string {
 	switch stage {
 	case StageIndex:
-		return "Fetching species index"
+		return "index"
 	case StageEnrich:
-		return "Enriching types"
+		return "types"
 	case StageRecords:
-		return "Building Pokédex records"
+		return "records"
 	case StageEvolution:
-		return "Fetching evolution chains"
+		return "evo"
 	case StageMoves:
-		return "Fetching moves"
+		return "moves"
 	case StageDataset:
-		return "Activating dataset"
+		return "ready"
 	case StageArtwork:
-		return "Downloading artwork"
+		return "art"
 	default:
 		if stage == "" {
 			return "Working"

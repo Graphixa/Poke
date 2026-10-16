@@ -386,6 +386,22 @@ func TestSearchTypesLettersIncludingR(t *testing.T) {
 	}
 }
 
+func TestHomeEndJumpList(t *testing.T) {
+	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: &fakeDetails{}})
+	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 52})
+	first, _ := m.SelectedID()
+	m = apply(t, m, key("end"))
+	last, ok := m.SelectedID()
+	if !ok || last == first {
+		t.Fatalf("End should leave first=%d, got last=%d ok=%v", first, last, ok)
+	}
+	m = apply(t, m, key("home"))
+	id, _ := m.SelectedID()
+	if id != first {
+		t.Fatalf("Home should return to first=%d, got %d", first, id)
+	}
+}
+
 func TestEscClearsThenQuits(t *testing.T) {
 	details := &fakeDetails{}
 	m := tui.NewModel(tui.Options{Index: fixtureIndex(), Details: details, Prefill: "char"})
