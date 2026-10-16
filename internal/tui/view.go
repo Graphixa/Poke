@@ -129,7 +129,7 @@ func (m Model) browseData() views.BrowseData {
 			}
 		}
 		if r := m.resources[rightID]; r != nil && r.HasCore {
-			data.HeaderTypes = style.TypeSummary(pokemonTypeNames(r.Pokemon))
+			data.HeaderTypes = style.TypeSummary(r.Pokemon.TypeNames())
 			data.HeaderGenus = r.Species.Genus
 			data.Stats = r.Pokemon.Stats
 			data.HasBrowseStats = true
@@ -318,10 +318,3 @@ func (m Model) showsWarmHintInView() bool {
 	return !m.nativeSpriteActive()
 }
 
-func pokemonTypeNames(p domain.Pokemon) []string {
-	out := make([]string, 0, len(p.Types))
-	for _, t := range p.Types {
-		out = append(out, t.Name)
-	}
-	return out
-}

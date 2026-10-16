@@ -34,18 +34,12 @@ type DatasetPokemon struct {
 	HeightDecimeter int              `json:"height_decimeter"`
 	WeightHectogram int              `json:"weight_hectogram"`
 	BaseExperience  int              `json:"base_experience"`
-	Types           []string         `json:"types"`
-	Abilities       []DatasetAbility `json:"abilities"`
-	Stats           domain.Stats     `json:"stats"`
+	Types           []string              `json:"types"`
+	Abilities       []domain.AbilitySlot  `json:"abilities"`
+	Stats           domain.Stats          `json:"stats"`
 	OfficialArtwork string           `json:"official_artwork,omitempty"`
 	PixelSprite     string           `json:"pixel_sprite,omitempty"`
 	HomeSprite      string           `json:"home_sprite,omitempty"`
-}
-
-type DatasetAbility struct {
-	Slot     int    `json:"slot"`
-	Name     string `json:"name"`
-	IsHidden bool   `json:"is_hidden,omitempty"`
 }
 
 // DatasetSpecies is the compact persisted species record (English-only flavour text).

@@ -109,7 +109,7 @@ func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int) []string
 		lines = append(lines, "")
 	}
 
-	types := tuistyle.TypeSummary(pokemonTypeNames(p))
+	types := tuistyle.TypeSummary(p.TypeNames())
 	genus := strings.TrimSpace(s.Genus)
 	if genus == "" {
 		genus = "—"

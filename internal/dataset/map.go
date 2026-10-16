@@ -4,18 +4,6 @@ import "github.com/Graphixa/Pokedex/internal/domain"
 
 // PokemonFromDomain maps a domain Pokémon into the compact persisted form.
 func PokemonFromDomain(p domain.Pokemon) DatasetPokemon {
-	types := make([]string, 0, len(p.Types))
-	for _, t := range p.Types {
-		types = append(types, t.Name)
-	}
-	abilities := make([]DatasetAbility, 0, len(p.Abilities))
-	for _, a := range p.Abilities {
-		abilities = append(abilities, DatasetAbility{
-			Slot:     a.Slot,
-			Name:     a.Name,
-			IsHidden: a.IsHidden,
-		})
-	}
 	return DatasetPokemon{
 		ID:              p.ID,
 		Slug:            p.Slug,
@@ -24,8 +12,8 @@ func PokemonFromDomain(p domain.Pokemon) DatasetPokemon {
 		HeightDecimeter: p.HeightDecimeter,
 		WeightHectogram: p.WeightHectogram,
 		BaseExperience:  p.BaseExperience,
-		Types:           types,
-		Abilities:       abilities,
+		Types:           p.TypeNames(),
+		Abilities:       append([]domain.AbilitySlot(nil), p.Abilities...),
 		Stats:           p.Stats,
 		OfficialArtwork: p.Sprites.OfficialArtwork,
 		PixelSprite:     p.Sprites.FrontDefault,
@@ -40,14 +28,6 @@ func PokemonToDomain(p DatasetPokemon, moves []domain.LearnedMove) domain.Pokemo
 	for i, name := range p.Types {
 		types = append(types, domain.TypeSlot{Slot: i + 1, Name: name})
 	}
-	abilities := make([]domain.AbilitySlot, 0, len(p.Abilities))
-	for _, a := range p.Abilities {
-		abilities = append(abilities, domain.AbilitySlot{
-			Slot:     a.Slot,
-			Name:     a.Name,
-			IsHidden: a.IsHidden,
-		})
-	}
 	return domain.Pokemon{
 		ID:              p.ID,
 		Slug:            p.Slug,
@@ -57,7 +37,7 @@ func PokemonToDomain(p DatasetPokemon, moves []domain.LearnedMove) domain.Pokemo
 		WeightHectogram: p.WeightHectogram,
 		BaseExperience:  p.BaseExperience,
 		Types:           types,
-		Abilities:       abilities,
+		Abilities:       append([]domain.AbilitySlot(nil), p.Abilities...),
 		Stats:           p.Stats,
 		Moves:           moves,
 		Sprites: domain.Sprites{

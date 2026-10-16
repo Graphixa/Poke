@@ -21,6 +21,25 @@ func TestBrowseEntryUnmarshalsAbilities(t *testing.T) {
 	}
 }
 
+func TestBrowseEntryFromRecord(t *testing.T) {
+	sum := domain.SpeciesSummary{ID: 4, Slug: "charmander", DisplayName: "Charmander"}
+	poke := domain.Pokemon{
+		Slug: "charmander", DisplayName: "Charmander",
+		Types:           []domain.TypeSlot{{Slot: 1, Name: "fire"}},
+		Stats:           domain.Stats{HP: 39, Speed: 65},
+		HeightDecimeter: 6, BaseExperience: 62,
+		Abilities: []domain.AbilitySlot{{Slot: 1, Name: "blaze"}},
+	}
+	sp := domain.Species{Genus: "Lizard Pokémon"}
+	e := domain.BrowseEntryFromRecord(sum, poke, sp)
+	if e.HP != 39 || e.Speed != 65 || e.Genus != sp.Genus || !e.HasAbilities() {
+		t.Fatalf("entry=%+v", e)
+	}
+	if len(e.Types) != 1 || e.Types[0] != "fire" {
+		t.Fatalf("types=%v", e.Types)
+	}
+}
+
 func TestBrowseEntryWithoutAbilities(t *testing.T) {
 	const raw = `{"id":1,"slug":"bulbasaur","name":"Bulbasaur","height":7,"weight":69}`
 	var e domain.BrowseEntry

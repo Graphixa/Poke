@@ -17,6 +17,18 @@ type Pokemon struct {
 	Sprites         Sprites
 }
 
+// TypeNames returns type slugs in slot order (empty slots omitted).
+func (p Pokemon) TypeNames() []string {
+	if len(p.Types) == 0 {
+		return nil
+	}
+	out := make([]string, len(p.Types))
+	for i, t := range p.Types {
+		out[i] = t.Name
+	}
+	return out
+}
+
 type TypeSlot struct {
 	Slot int
 	Name string
@@ -52,6 +64,9 @@ type Sprites struct {
 
 // BrowseEntry is the compact, in-memory row used for list selection and glance
 // stats/About (so the right pane does not wait on dossier core).
+//
+// ponytail: flat stat ints match browse.json keys (defence/sp_*); nested domain.Stats
+// would need a migration — use BrowseEntry.Stats() / BrowseEntryFrom at boundaries.
 type BrowseEntry struct {
 	ID              int           `json:"id"`
 	Slug            string        `json:"slug"`
@@ -92,18 +107,33 @@ func (b BrowseEntry) HasAbilities() bool {
 }
 
 func BrowseEntryFrom(summary SpeciesSummary, stats Stats) BrowseEntry {
-	return BrowseEntry{
-		ID:        summary.ID,
-		Slug:      summary.Slug,
-		Name:      summary.DisplayName,
-		Types:     summary.Types,
-		HP:        stats.HP,
-		Attack:    stats.Attack,
-		Defence:   stats.Defense,
-		SpAttack:  stats.SpecialAttack,
-		SpDefence: stats.SpecialDefense,
-		Speed:     stats.Speed,
+	b := BrowseEntry{
+		ID: summary.ID, Slug: summary.Slug, Name: summary.DisplayName, Types: summary.Types,
 	}
+	applyStatsToBrowse(&b, stats)
+	return b
+}
+
+// BrowseEntryFromRecord builds a browse.json row from species index + default Pokémon + species.
+func BrowseEntryFromRecord(sum SpeciesSummary, poke Pokemon, sp Species) BrowseEntry {
+	e := BrowseEntryFrom(sum, poke.Stats)
+	if len(e.Types) == 0 {
+		e.Types = poke.TypeNames()
+	}
+	if e.Name == "" {
+		e.Name = poke.DisplayName
+	}
+	e.HeightDecimeter = poke.HeightDecimeter
+	e.WeightHectogram = poke.WeightHectogram
+	e.BaseExperience = poke.BaseExperience
+	e.Genus = sp.Genus
+	e.Abilities = poke.Abilities
+	return e
+}
+
+func applyStatsToBrowse(b *BrowseEntry, s Stats) {
+	b.HP, b.Attack, b.Defence = s.HP, s.Attack, s.Defense
+	b.SpAttack, b.SpDefence, b.Speed = s.SpecialAttack, s.SpecialDefense, s.Speed
 }
 
 type Species struct {
