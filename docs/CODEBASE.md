@@ -39,7 +39,7 @@ pkg/version       → linker-stamped version
 | Metadata snapshot + PNG + native frame files | `internal/cache` |
 | HTTP | `internal/pokeapi` |
 | Encode / mem LRU / persist queue | `internal/render/sprite` |
-| Background encode / download queues | `nativewarm`, `assetwarm`, `warm`, `dossierwarm` |
+| Background encode / download queues | `prewarm` (kinds: chafa, native, artwork, dossier) |
 | Presentation, keys, overlay, footer | `internal/tui` |
 
 **Internal-dependency contract**
@@ -49,8 +49,8 @@ Target import rules. `app` is allowed to assemble services and translate progres
 | Layer | May | Must not |
 | --- | --- | --- |
 | `internal/tui` (browse, bootstrap, setup) | presentation types (`WarmStage`, local bootstrap/setup `Progress`) | import `internal/cache` |
-| `nativewarm`, `assetwarm`, `warm` | own `Progress` types; encode/download mechanics | import `cache` |
-| `dossierwarm` | own progress semantics; cache storage when needed | import cache progress types |
+| `prewarm` | one `Progress` type (with `Kind`); encode/download mechanics via per-kind hooks | no `cache` import (hooks injected by `app`) |
+
 | `cache`, `dataset` | storage, snapshots, dataset bootstrap | import `app` or `tui` |
 | `internal/app` | construct services, map subsystem progress → TUI/CLI | dump presentation terminology into renderer packages |
 | renderer / warmer packages | mechanical progress for their work units | know TUI footer/bootstrap copy or `tui.WarmStage` |
@@ -60,10 +60,10 @@ Target import rules. `app` is allowed to assemble services and translate progres
 **Progress ownership (current)**
 
 - `cache.DatasetProgress` / `DatasetStage` — dataset bootstrap and enrich only. No native/artwork/dossier/chafa work uses this type.
-- `nativewarm.Progress`, `assetwarm.Progress`, `warm.Progress`, `dossierwarm.Progress` — owning packages. Rendering warmers do not import `cache`.
+- `prewarm.Progress` — one shared type; `app` classifies it into `tui.WarmStage*` per service. Prewarm does not import `cache`.
 - `app` maps warmer progress → `tui.WarmProgress` / `tui.WarmStage`, dataset progress → bootstrap/CLI copy, and composite update progress → bootstrap/CLI presentation.
 - `tui.WarmProgress.Stage` is `tui.WarmStage`. Browse, bootstrap, and setup do not import `cache`.
-- Three heap warmers share nearly the same priority-queue + `Prioritize` / `SetNeighborsFromList` / `Snapshot` shape. `nativewarm` is a different algorithm. Do not assume a shared scheduler.
+- All four warmers are one `prewarm.Service` (heap of P0/P1 hints, latest-first, plus an optional background scan outward from the browse anchor; phased size buckets; retry backoff). Only the per-kind `Warm` hook differs.
 
 ---
 
@@ -94,18 +94,18 @@ Target import rules. `app` is allowed to assemble services and translate progres
 Two production paths:
 
 - **CLI / update:** `Service.SyncArtwork` walks the index, compares CDN URL + SHA, downloads official-artwork PNGs, and invalidates native frames when bytes change. It emits `ArtworkSyncProgress`; app owns the composite dataset-refresh → artwork-sync presentation.
-- **Browse / setup:** `assetwarm.Service` priority queue (selected / neighbors / background). Resolves via `sprite.SourceResolver` (store then HTTP). Stage default `"artwork"`. Started on `OnUIReady` or blocking in setup wizard.
+- **Browse / setup:** `prewarm.NewArtwork` (selected / neighbors / background scan). Resolves via `sprite.SourceResolver` (store then HTTP). Stage `"artwork"`. Started on `OnUIReady` or blocking (`Wait`) in setup wizard.
 
 Consent: `config.Setup.ArtworkMode` (`off|blocking|background`) + `SpriteHD`. Browse starts the warmer only when setup asked for background or config says background + HD enabled.
 
 ### 4. Native image-cache construction
 
-1. `openBrowse` detects native image (`spriteimage` + `DetectCapabilities`). If native and sprites on, constructs `nativewarm.Service`.
+1. `openBrowse` detects native image (`spriteimage` + `DetectCapabilities`). If native and sprites on, constructs `prewarm.NewNative`.
 2. TUI `notifyWarmer` calls `SetBuckets(BrowseWarmBuckets())` then `EnsureStarted(ctx, focusCells)`. Browse warm phases are **glance then hero** (`16` then `40`). Intermediate buckets `24|32` remain valid encode sizes for stepped Art layout / dossier helpers.
 3. Single worker: disk audit (`HasNativeFile`) then opportunistic encode of the **active phase** bucket. `SetBuckets` sets phase order; `SetCells` sets **focus** (Prioritize prefers focus, then other phase sizes) without abandoning the scan phase. Old gzip files stay on disk.
 4. Encode: `Engine.NativeWarmRender` → mem LRU (decompressed) → async `persistQueue` gzip to `cache/native/<key>.sixel.gz`. Keys include pixel size from `SixelCellPxW/H` (10×20) × frame cells, so 16×8 and 40×20 are distinct artefacts.
-5. Progress: `nativewarm.Progress` (Done/Total/Cells; message `"Building image cache"`). Phase completion emits `Done>=Total` for the finished bucket before advancing (so the footer can clear or reset); the next phase does **not** emit a sticky `0/N` when that bucket is already warm. `app` maps progress to `tui.WarmStageNative`. Footer shows only native.
-6. Completeness is reconstructed from content-addressed `.sixel.gz` files (`HasNativeFile` / nativewarm disk audit). There is no aggregate image-completion coordinator or Pokémon-level completion manifest. `native/manifest.json` (`NativeManifest`) is a small version/protocol stamp used by compatibility and acceptance-audit tooling — not a Done/Total authority. `scripts/acceptance_audit.go` reads the stamp, then counts exact files on disk.
+5. Progress: `prewarm.Progress` (Done/Total/Cells; message `"Building image cache"`). Phase completion emits `Done>=Total` for the finished bucket before advancing (so the footer can clear or reset); the next phase does **not** emit a sticky `0/N` when that bucket is already warm. `app` maps progress to `tui.WarmStageNative`. Footer shows only native.
+6. Completeness is reconstructed from content-addressed `.sixel.gz` files (`HasNativeFile` / prewarm disk audit). There is no aggregate image-completion coordinator or Pokémon-level completion manifest. `native/manifest.json` (`NativeManifest`) is a small version/protocol stamp used by compatibility and acceptance-audit tooling — not a Done/Total authority. `scripts/acceptance_audit.go` reads the stamp, then counts exact files on disk.
 
 Read path for a paint: mem LRU → gunzip disk → cold encode.
 
@@ -125,7 +125,7 @@ Read path for a paint: mem LRU → gunzip disk → cold encode.
 7. Native paint seq: DECSC → (optional theme space-clear + slack) → CUP + `?8452h` + DCS + `?8452l` → DECRC. Space-clear only on geometry/identity wipe; same-geometry paints overwrite. Help/dialog dismiss invalidates geometry so restore clears. Footer progress uses `tea.Raw` (`footer_raw.go`) while native graphics are on screen for the selection.
 
 **Manual RC (Windows Terminal):** scroll a warm list — same-bucket overwrite (no pre-DCS space-clear flash); immediate Raw + ~60ms insurance. Cold neighbor: previous glance **text** held until sprite+About commit; **About** keeps last-good snapshot through cold fast scroll (10+ Downs through uncached species) until the selection gains core — must not blank after leaving the last warm mon; sixel may paint while text lags. Dossier/help dismiss still space-clears then restores art. No spinner tick churn.
-8. Chafa-only terminals may run `warm.Service` with the same `[16,40]` phase policy. Native terminals do not start chafa warm (CPU contention).
+8. Chafa-only terminals may run `prewarm.NewChafa` with the same `[16,40]` phase policy. Native terminals do not start chafa warm (CPU contention).
 
 ### 6. TUI event processing
 
@@ -198,7 +198,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ### `internal/app` — orchestration
 
-**Package deps:** `cli`, `config`, `cache`, `cache/dossierwarm`, `debuglog`, `domain`, `output`, `pokeapi`, `search`, `theme`, `themeui`, `tui`, `tui/bootstrap`, `tui/setup`, `tui/style`, `usererr`, `render/sprite` + `assetwarm`, `chafa`, `halfblock`, `image`, `nativewarm`, `placeholder`, `warm`.
+**Package deps:** `cli`, `config`, `cache`, `debuglog`, `domain`, `output`, `pokeapi`, `search`, `theme`, `themeui`, `tui`, `tui/bootstrap`, `tui/setup`, `tui/style`, `usererr`, `render/sprite` + `chafa`, `halfblock`, `image`, `placeholder`, `prewarm`.
 
 **Callers:** `cmd/poke`, tests.
 
@@ -241,7 +241,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `setup.go`
 
-- **Responsibility:** first-run wizard; blocking artwork warm via `assetwarm`; `SaveConfig`.
+- **Responsibility:** first-run wizard; blocking artwork warm via `prewarm.NewArtwork`; `SaveConfig`.
 - **Tests:** none dedicated (wizard tests in `tui/setup`).
 
 #### `details.go`
@@ -373,7 +373,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 **Callers:** `app`, `usererr`. Rendering warmers do not import `cache`. TUI browse/bootstrap/setup do **not** import `cache`.
 
-**Concurrency:** `Service.sema` HTTP slots; `singleFlight`; `inFlight` atomic; `localOnly` atomic; `Store` RWMutex (active id + snapshot); bootstrap worker pools; `BackgroundRefresh`/`BackgroundEnrich` goroutines; `dossierwarm` workers.
+**Concurrency:** `Service.sema` HTTP slots; `singleFlight`; `inFlight` atomic; `localOnly` atomic; `Store` RWMutex (active id + snapshot); bootstrap worker pools; `BackgroundRefresh`/`BackgroundEnrich` goroutines; `prewarm` workers.
 
 #### `service.go`
 
@@ -402,7 +402,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `native_frame.go` / `native_manifest.go`
 
-- `.sixel.gz` gzip, legacy `.frame` purge. `NativeManifest` (`native/manifest.json`) is a small version/protocol stamp for compatibility and acceptance-audit tooling. It is **not** a completeness/Done-Total index; `scripts/acceptance_audit.go` uses its protocol only while counting exact filesystem artefacts. Runtime hits and nativewarm progress use exact content-addressed file existence.
+- `.sixel.gz` gzip, legacy `.frame` purge. `NativeManifest` (`native/manifest.json`) is a small version/protocol stamp for compatibility and acceptance-audit tooling. It is **not** a completeness/Done-Total index; `scripts/acceptance_audit.go` uses its protocol only while counting exact filesystem artefacts. Runtime hits and prewarm native progress use exact content-addressed file existence.
 
 #### `dossier.go` / `detail.go` / `aggregate.go`
 
@@ -420,9 +420,9 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 - Embedded national-dex type hints. `Apply` fills missing types. `sync.Once` load.
 
-#### `cache/dossierwarm/warm.go`
+#### `render/sprite/prewarm`
 
-- Priority dossier prewarm. Stage `"dossier"`. Same heap pattern as `warm`/`assetwarm`.
+- See `prewarm/prewarm.go` (core) and `kinds.go` (dossier hook: stage `"dossier"`).
 
 **Tests (selected):** `cache_test.go`, `bootstrap_test.go`, `bootstrap_cancel_test.go`, `dataset_test.go`, `dataset_corruption_test.go`, `completeness_test.go`, `artwork` via `sprites_test.go` / lifecycle, `native_gzip_test.go`, `native_manifest_test.go`, `race_test.go`, `dossier_test.go`, `moves_bootstrap_test.go`, `schema_reset_test.go`, `acceptance_spec_test.go`, `refactor_fix_test.go`, `typeseed/typeseed_test.go`.
 
@@ -440,7 +440,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ### `internal/render/sprite` — encode + artefact cache
 
-**Subpackages:** `sixel`, `image`, `chafa`, `halfblock`, `placeholder`, `nativewarm`, `assetwarm`, `warm`. Sibling: `internal/render/termimg`.
+**Subpackages:** `sixel`, `image`, `chafa`, `halfblock`, `placeholder`, `prewarm`. Sibling: `internal/render/termimg`.
 
 **Callers:** `app/browse`, `app/setup`, TUI (via `SpriteRenderer` + `coldRunner`), cache (CDN helpers, keys).
 
@@ -487,19 +487,19 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 - Isolates `go-termimg` protocol detect.
 
-#### `nativewarm/warm.go`
+#### `prewarm/prewarm.go` + `kinds.go`
 
-- Single-lane opportunistic native warm. Mutex + wake chan + one worker + `ActivityGate`. Emits `nativewarm.Progress` (no cache import). App classifies to `tui.WarmStageNative`.
+- One `Service` per `Kind` (`ChafaArtefact`, `NativeFrame`, `ArtworkAsset`, `Dossier`): hint heap + workers + `ActivityGate`, phased buckets, optional disk audit (`Has`), retry backoff. Constructors `NewChafa/NewNative/NewArtwork/NewDossier` supply the `Warm` hook. App classifies progress to `tui.WarmStage*`. `FallbackBytesPerArtwork` drives setup's HD size estimate (no HEAD sampling).
 - **Tests:** `warm_test.go`, `integration_test.go`, `bench_test.go`.
 
-#### `assetwarm/warm.go` / `estimate.go`
 
-- Priority PNG download. Heap + workers + atomics. Emits `assetwarm.Progress`. App classifies to `tui.WarmStageArtwork`.
+
+
 - **Tests:** `warm_test.go`.
 
-#### `warm/warm.go`
 
-- Chafa artefact prewarm. Same queue shape. Emits `warm.Progress`. App classifies to `tui.WarmStageSpritesRender`.
+
+
 - **Tests:** `warm_test.go`.
 
 ---
@@ -629,7 +629,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 ## Known ownership concerns
 
 1. **Duplicate stage copy:** `app.formatBootstrapProgress` vs `tui/bootstrap.stageLabel` vs `Handler.ensureIndex` switch. Keep separate (CLI vs TUI); do not unify.
-2. **Three heap warmer clones:** `warm`, `assetwarm`, and `dossierwarm` have different invariants. Do not presume a shared scheduler; `nativewarm` remains a separate single-lane algorithm.
+2. **One warm service:** all kinds share `prewarm.Service`; kind differences live only in the `Warm`/`Has` hooks and config flags (`Background`, `Workers`, `ThrottleOnActivity`).
 3. **Native protocol stamp:** `NativeManifest` is retained for compatibility and acceptance-audit tooling. It is not a completeness authority and its protocol/version requires separate investigation before any change.
 4. **Test-only diagnostics:** rendering diagnostics may retain test-specific call sites; audit them separately rather than widening production ownership.
 
@@ -646,7 +646,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 | `dataset` | `map_test.go`, `learnset_test.go`, `validate_test.go` |
 | `pokeapi` | `client_test.go` |
 | `search` | `search_test.go` |
-| `sprite` + subs | engine/mem/persist/frame/source/imageprep/resize/capabilities; sixel; image; chafa; halfblock; nativewarm; assetwarm; warm |
+| `sprite` + subs | engine/mem/persist/frame/source/imageprep/resize/capabilities; sixel; image; chafa; halfblock; prewarm |
 | `tui` + subs | model/layout/sprite/prefetch/artwork/ui_ready/spinner/overlay/footer/e2e/export; bootstrap; setup; style |
 | `output` | `golden_test.go` |
 | `debuglog` | `logger_test.go`, `startup_test.go` |

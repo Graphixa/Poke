@@ -6,18 +6,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Graphixa/Pokedex/internal/cache/dossierwarm"
 	"github.com/Graphixa/Pokedex/internal/config"
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/favourites"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/nativewarm"
 	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/warm"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/prewarm"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/tui"
 	"github.com/Graphixa/Pokedex/internal/tui/style"
@@ -197,7 +194,6 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 
 	details := NewDetailService(svc.Cache)
-	workers := svc.Cache.MaxConcurrency()
 	opts := tui.Options{
 		Index:         search.Build(index),
 		Details:       details,
@@ -223,104 +219,61 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.BrowseEntries = byID
 	}
 
+	warmLoader := warmPokemonLoader{details}
+	forward := func(stage tui.WarmStage) func(prewarm.Progress) {
+		return func(p prewarm.Progress) {
+			if stage == tui.WarmStageNative {
+				// Native ticks drive the footer only; a species ID would trigger sprite reloads.
+				p.SpeciesID = 0
+			} else {
+				p.Cells = 0
+			}
+			sendWarmProgress(progressCh, tui.WarmProgress{
+				Done: p.Done, Total: p.Total, Message: p.Message,
+				SpeciesID: p.SpeciesID, Stage: stage, Cells: p.Cells,
+			})
+		}
+	}
+
 	// Chafa artefact warm only helps chafa-only terminals. Native (Sixel/Kitty/
 	// iTerm) browse uses foreground latest-selection-wins rendering plus
 	// active-bucket native warming; chafa warm would steal CPU.
-	prewarm := warm.Mode(svc.Config.EffectiveSpritePrewarm())
-	var spriteWarmer *warm.Service
-	if prewarm != warm.ModeOff && !opts.DisableSprite && !caps.NativeImage {
+	chafaMode := svc.Config.EffectiveSpritePrewarm()
+	if chafaMode != "off" && !opts.DisableSprite && !caps.NativeImage {
 		useProgress = true
-		spriteWarmer = warm.New(warm.Config{
-			Mode:     prewarm,
-			Cells:    sprite.BrowseWarmBuckets()[0],
-			Workers:  sprite.InteractiveWorkers,
-			Loader:   warmPokemonLoader{details},
-			Renderer: engine,
-			Index:    index,
-			Progress: func(p warm.Progress) {
-				sendWarmProgress(progressCh, tui.WarmProgress{
-					Done: p.Done, Total: p.Total, Message: p.Message,
-					SpeciesID: p.SpeciesID, Stage: tui.WarmStageSpritesRender,
-				})
-			},
-		})
+		spriteWarmer := prewarm.NewChafa(index, warmLoader, engine, chafaMode == "all_pixel",
+			forward(tui.WarmStageSpritesRender))
 		spriteWarmer.SetBuckets(sprite.BrowseWarmBuckets())
 		queueUIReady(func() { spriteWarmer.Start(runCtx) })
 		defer spriteWarmer.Stop()
 		opts.Warmer = spriteWarmer
 	}
 
-	wantArtworkBG := startBgArtwork ||
-		(svc.Config.EffectiveArtworkMode() == config.ArtworkModeBackground && svc.Config.SpriteHDEnabled())
-
-	var nativeWarmer *nativewarm.Service
-
-	forwardNative := func(p nativewarm.Progress) {
-		sendWarmProgress(progressCh, tui.WarmProgress{
-			Done: p.Done, Total: p.Total, Message: p.Message,
-			Stage: tui.WarmStageNative, Cells: p.Cells,
-		})
-	}
-	forwardAsset := func(p assetwarm.Progress) {
-		sendWarmProgress(progressCh, tui.WarmProgress{
-			Done: p.Done, Total: p.Total, Message: p.Message,
-			SpeciesID: p.SpeciesID, Stage: tui.WarmStageArtwork,
-		})
-	}
-	forwardDossier := func(p dossierwarm.Progress) {
-		sendWarmProgress(progressCh, tui.WarmProgress{
-			Done: p.Done, Total: p.Total, Message: p.Message,
-			SpeciesID: p.SpeciesID, Stage: tui.WarmStageDossier,
-		})
-	}
-
-	nativeImageBrowse := caps.NativeImage && !opts.DisableSprite
-	if nativeImageBrowse {
+	if caps.NativeImage && !opts.DisableSprite {
 		useProgress = true
-		nativeWarmer = nativewarm.New(nativewarm.Config{
-			Loader:   warmPokemonLoader{details},
-			Renderer: engine,
-			Index:    index,
-			Progress: forwardNative,
-		})
+		nativeWarmer := prewarm.NewNative(index, warmLoader, engine, forward(tui.WarmStageNative))
 		defer nativeWarmer.Stop()
 		opts.NativeWarmer = nativeWarmer
 	}
 
-	var artworkWarmer *assetwarm.Service
+	wantArtworkBG := startBgArtwork ||
+		(svc.Config.EffectiveArtworkMode() == config.ArtworkModeBackground && svc.Config.SpriteHDEnabled())
 	if wantArtworkBG && !opts.DisableSprite {
 		useProgress = true
-		artworkWarmer = assetwarm.New(assetwarm.Config{
-			Mode:     assetwarm.ModeArtwork,
-			Workers:  assetwarm.ArtworkWorkers(workers),
-			Loader:   warmPokemonLoader{details},
-			Resolver: &sprite.SourceResolver{Store: svc.Cache, API: svc.API},
-			Index:    index,
-			Progress: forwardAsset,
-		})
+		artworkWarmer := prewarm.NewArtwork(index, warmLoader,
+			&sprite.SourceResolver{Store: svc.Cache, API: svc.API},
+			svc.Cache.MaxConcurrency(), forward(tui.WarmStageArtwork))
 		queueUIReady(func() { artworkWarmer.Start(runCtx) })
 		defer artworkWarmer.Stop()
 		opts.ArtworkWarmer = artworkWarmer
 	}
 
-	dossierMode := dossierwarm.Mode(svc.Config.EffectiveDossierPrewarm())
-	var dossierWarmer *dossierwarm.Service
-	if dossierMode != dossierwarm.ModeOff {
-		dwCfg := dossierwarm.Config{
-			Mode:     dossierMode,
-			Workers:  2,
-			Loader:   details,
-			Index:    index,
-			Progress: forwardDossier,
-		}
-		if dossierMode == dossierwarm.ModeWindow {
-			dwCfg.CoreLoader = details
-		}
-		dossierWarmer = dossierwarm.New(dwCfg)
+	if dossierMode := svc.Config.EffectiveDossierPrewarm(); dossierMode != "off" {
+		dossierWarmer := prewarm.NewDossier(index, details, dossierMode == "all", forward(tui.WarmStageDossier))
 		queueUIReady(func() { dossierWarmer.Start(runCtx) })
 		defer dossierWarmer.Stop()
 		opts.DossierWarmer = dossierWarmer
-		if dossierMode == dossierwarm.ModeAll {
+		if dossierMode == "all" {
 			useProgress = true
 		}
 	}

@@ -9,8 +9,8 @@ import (
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/assetwarm"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	"github.com/Graphixa/Pokedex/internal/render/sprite/prewarm"
 	"github.com/Graphixa/Pokedex/internal/tui/setup"
 )
 
@@ -40,24 +40,16 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 	workers := svc.Cache.MaxConcurrency()
 
 	warmArtwork := func(ctx context.Context, index []domain.SpeciesSummary, progress setup.ProgressFunc) error {
-		w := assetwarm.New(assetwarm.Config{
-			Mode:     assetwarm.ModeArtwork,
-			Workers:  assetwarm.ArtworkWorkers(workers),
-			Loader:   loader,
-			Resolver: resolver,
-			Index:    index,
-			Progress: func(p assetwarm.Progress) {
-				if progress != nil {
-					progress(setup.Progress{Done: p.Done, Total: p.Total, Message: p.Message})
-				}
-			},
+		w := prewarm.NewArtwork(index, loader, resolver, workers, func(p prewarm.Progress) {
+			if progress != nil {
+				progress(setup.Progress{Done: p.Done, Total: p.Total, Message: p.Message})
+			}
 		})
 		w.Start(ctx)
 		err := w.Wait(ctx)
 		w.Stop()
 		return err
 	}
-
 	result, err := setup.Run(ctx, setup.Deps{
 		Config:   cfg,
 		Native:   caps.NativeImage,
@@ -73,7 +65,7 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.C
 			return index, nil
 		},
 		EstimateHD: func(ctx context.Context, index []domain.SpeciesSummary) int64 {
-			return assetwarm.EstimateArtworkBytes(ctx, index, loader, assetwarm.HTTPSizeSampler{})
+			return int64(len(index)) * prewarm.FallbackBytesPerArtwork
 		},
 		WarmArtwork: warmArtwork,
 		SaveConfig: func(c config.Config) error {

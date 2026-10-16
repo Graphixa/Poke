@@ -10,7 +10,7 @@ import (
 const InteractiveIdle = 400 * time.Millisecond
 
 // InteractiveWorkers is the chafa background encoder count during TUI browse.
-// Native sixel warming uses a single opportunistic lane (see nativewarm).
+// Native sixel warming uses a single opportunistic lane (see prewarm).
 const InteractiveWorkers = 1
 
 // ActivityGate pauses full-dex background warming during navigation.
