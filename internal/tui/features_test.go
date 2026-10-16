@@ -801,10 +801,10 @@ func TestCompareColumnSplitFillsInnerWidth(t *testing.T) {
 
 func TestCompareTabSyncsListCursor(t *testing.T) {
 	m := featureModel()
-	m = featureKey(m, tea.KeyF3)      // pin 4
-	m = featureKey(m, tea.KeyDown)    // 6
-	m = featureKey(m, tea.KeyF3)      // compare, focus B=6
-	m = featureKey(m, tea.KeyDown)    // B → 25
+	m = featureKey(m, tea.KeyF3)   // pin 4
+	m = featureKey(m, tea.KeyDown) // 6
+	m = featureKey(m, tea.KeyF3)   // compare, focus B=6
+	m = featureKey(m, tea.KeyDown) // B → 25
 	if m.compareB.Summary.ID != 25 || m.cursor != 2 {
 		t.Fatalf("B advance B=%d cursor=%d", m.compareB.Summary.ID, m.cursor)
 	}

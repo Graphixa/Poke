@@ -48,7 +48,7 @@ func PadSearchLine(line string, width int) string {
 // ListRow is one browse list entry.
 type ListRow struct {
 	Favourite     bool
-	Comparing     bool   // compare pin — name-adjacent ⇄
+	Comparing     bool // compare pin — name-adjacent ⇄
 	DividerBefore bool
 	SectionLabel  string // muted chrome row before this entry (e.g. "Favourites · 6")
 	Summary       domain.SpeciesSummary

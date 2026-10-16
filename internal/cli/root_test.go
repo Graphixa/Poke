@@ -37,8 +37,8 @@ func commandForTest(t *testing.T, invocation string, app AppHandler) (*bytes.Buf
 		},
 		Getenv: func(string) string { return "" },
 		App:    app,
-		Stdout:  stdout,
-		Stderr:  stderr,
+		Stdout: stdout,
+		Stderr: stderr,
 	})
 	execute := func(args ...string) error {
 		root.SetArgs(args)
@@ -137,10 +137,10 @@ func TestDebugFlagInvokesCallback(t *testing.T) {
 			ConfigFile: filepath.Join(t.TempDir(), "config.yaml"),
 			CacheDir:   filepath.Join(t.TempDir(), "cache"),
 		},
-		Getenv:  func(string) string { return "" },
-		App:     &recordingHandler{},
-		Stdout:  stdout,
-		Stderr:  stderr,
+		Getenv: func(string) string { return "" },
+		App:    &recordingHandler{},
+		Stdout: stdout,
+		Stderr: stderr,
 		OnDebug: func(path string) error {
 			got = path
 			return nil
