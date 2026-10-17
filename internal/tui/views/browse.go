@@ -101,11 +101,15 @@ type BrowseData struct {
 	HasCore        bool // bottom Abilities card has data (browse.json or dossier)
 	Abilities      []domain.AbilitySlot
 
-	ShowDialog    bool
-	DialogSection int
-	DialogLabels  []string
-	DialogLines   []string
-	DialogOff     int
+	ShowDialog     bool
+	DialogSection  int
+	DialogLabels   []string
+	DialogLines    []string
+	DialogOff      int
+	DialogContext  []string // Form / Game / Method / notice above body
+	DialogSticky   []string // fixed rows above scroll (move header)
+	DialogPosition string   // "Rows a–b of n" below scroll
+	DialogSidebar  bool     // true when sidebar owns keyboard focus
 
 	SpriteANSI   string
 	SpriteNative bool
@@ -144,7 +148,12 @@ func Browse(d BrowseData) string {
 		if footer != "" && !strings.HasPrefix(footer, " ") {
 			footer = " " + footer
 		}
-		return components.DossierFrame(title, d.DialogSection, d.DialogLabels, d.DialogLines, d.DialogOff, d.Width, d.Height, footer)
+		return components.DossierFrameEx(title, d.DialogSection, d.DialogLabels, d.DialogLines, d.DialogOff, d.Width, d.Height, footer, components.DossierChrome{
+			ContextLines: d.DialogContext,
+			StickyLines:  d.DialogSticky,
+			PositionHint: d.DialogPosition,
+			SidebarFocus: d.DialogSidebar,
+		})
 	}
 	return renderBrowseBase(d, fr)
 }

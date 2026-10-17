@@ -124,6 +124,8 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 	entries := make([]domain.BrowseEntry, 0, total)
 	evoIDs := map[int]struct{}{}
 	moveIDs := map[int]struct{}{}
+	abilityIDs := map[int]struct{}{}
+	formIDs := map[int]struct{}{}
 	rep := DatasetBootstrapReport{Expected: total}
 	var done int
 	for res := range results {
@@ -156,6 +158,28 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 		for _, mid := range res.moveIDs {
 			moveIDs[mid] = struct{}{}
 		}
+		for _, aid := range res.abilityIDs {
+			abilityIDs[aid] = struct{}{}
+		}
+		for _, fid := range res.formIDs {
+			formIDs[fid] = struct{}{}
+		}
+		for _, alt := range res.alts {
+			builder.Pokemon[alt.poke.ID] = dataset.PokemonFromDomain(alt.poke)
+			builder.Learnsets[alt.poke.ID] = dataset.LearnsetFromPokemon(alt.poke)
+			builder.Encounters[alt.poke.ID] = dataset.EncountersFromDomain(alt.enc)
+			for _, mid := range referencedMoveIDs(alt.poke) {
+				moveIDs[mid] = struct{}{}
+			}
+			for _, a := range alt.poke.Abilities {
+				if a.ID > 0 {
+					abilityIDs[a.ID] = struct{}{}
+				}
+			}
+			for _, fid := range alt.poke.FormIDs {
+				formIDs[fid] = struct{}{}
+			}
+		}
 		entries = append(entries, res.entry)
 	}
 	if err := ctx.Err(); err != nil {
@@ -171,6 +195,22 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 
 	rep.MoveWanted = len(moveIDs)
 	if err := s.parallelMoveFetch(ctx, intSetKeys(moveIDs), progress, &rep, builder); err != nil {
+		s.finalizeIncomplete(id, staging, rep, err)
+		return err
+	}
+
+	report(progress, DatasetProgress{Stage: DatasetStageDataset, Done: 0, Total: 1, Message: "Fetching game catalog"})
+	if err := s.fetchCatalogs(ctx, builder); err != nil {
+		rep.add("catalog", 0, err, true)
+		s.finalizeIncomplete(id, staging, rep, err)
+		return err
+	}
+	report(progress, DatasetProgress{Stage: DatasetStageDataset, Done: 1, Total: 1, Message: "Game catalog ready"})
+	if err := s.parallelAbilityFetch(ctx, intSetKeys(abilityIDs), progress, builder); err != nil {
+		s.finalizeIncomplete(id, staging, rep, err)
+		return err
+	}
+	if err := s.parallelFormFetch(ctx, intSetKeys(formIDs), progress, builder); err != nil {
 		s.finalizeIncomplete(id, staging, rep, err)
 		return err
 	}
@@ -228,14 +268,22 @@ func (s *Service) datasetWorkers() int {
 	return workers
 }
 
+type altPokemon struct {
+	poke domain.Pokemon
+	enc  []domain.Encounter
+}
+
 type recordResult struct {
 	sum          domain.SpeciesSummary
 	entry        domain.BrowseEntry
 	poke         domain.Pokemon
 	sp           domain.Species
 	enc          []domain.Encounter
+	alts         []altPokemon
 	evoID        int
 	moveIDs      []int
+	abilityIDs   []int
+	formIDs      []int
 	err          error
 	storageFail  bool
 	failResource string
@@ -279,18 +327,43 @@ func (s *Service) fetchRecord(ctx context.Context, sum domain.SpeciesSummary) re
 
 	entry := domain.BrowseEntryFromRecord(sum, poke, sp)
 
+	var alts []altPokemon
+	for _, v := range sp.Varieties {
+		if v.PokemonID < 1 || v.PokemonID == poke.ID {
+			continue
+		}
+		alt, aerr := s.fetchPokemonByID(ctx, v.PokemonID)
+		if aerr != nil {
+			return recordResult{sum: sum, err: aerr, failResource: "pokemon", failID: v.PokemonID}
+		}
+		altEnc, encErr := s.fetchEncounters(ctx, alt.ID)
+		if encErr := optionalEmpty(encErr); encErr != nil {
+			return recordResult{sum: sum, err: encErr, failResource: "encounter", failID: alt.ID}
+		}
+		alts = append(alts, altPokemon{poke: alt, enc: altEnc})
+	}
+
+	var abilityIDs []int
+	for _, a := range poke.Abilities {
+		if a.ID > 0 {
+			abilityIDs = append(abilityIDs, a.ID)
+		}
+	}
 	evoID := 0
 	if sp.EvolutionChainID != 0 {
 		evoID = sp.EvolutionChainID
 	}
 	return recordResult{
-		sum:     sum,
-		entry:   entry,
-		poke:    poke,
-		sp:      sp,
-		enc:     enc,
-		evoID:   evoID,
-		moveIDs: levelUpMoveIDs(poke),
+		sum:        sum,
+		entry:      entry,
+		poke:       poke,
+		sp:         sp,
+		enc:        enc,
+		alts:       alts,
+		evoID:      evoID,
+		moveIDs:    referencedMoveIDs(poke),
+		abilityIDs: abilityIDs,
+		formIDs:    append([]int(nil), poke.FormIDs...),
 	}
 }
 
@@ -477,12 +550,109 @@ func (s *Service) fetchEvolution(ctx context.Context, id int) (domain.EvolutionT
 	return v.(domain.EvolutionTree), nil
 }
 
+func (s *Service) fetchPokemonByID(ctx context.Context, id int) (domain.Pokemon, error) {
+	if err := s.acquire(ctx); err != nil {
+		return domain.Pokemon{}, err
+	}
+	defer s.release()
+	return s.api.GetPokemon(ctx, id)
+}
+
 func (s *Service) fetchEncounters(ctx context.Context, pokemonID int) ([]domain.Encounter, error) {
 	if err := s.acquire(ctx); err != nil {
 		return nil, err
 	}
 	defer s.release()
 	return s.api.GetEncounters(ctx, pokemonID)
+}
+
+func (s *Service) parallelAbilityFetch(ctx context.Context, ids []int, progress DatasetProgressFunc, builder *dataset.Builder) error {
+	return s.parallelMetaFetch(ctx, ids, "ability", progress, func(ctx context.Context, id int) error {
+		a, err := s.fetchAbility(ctx, id)
+		if err != nil {
+			// Optional metadata — never block dataset activation.
+			debuglog.Cachef("dataset.ability skip id=%d err=%v", id, err)
+			return nil
+		}
+		if a.ID > 0 {
+			builder.Abilities[a.ID] = dataset.AbilityFromDomain(a)
+		}
+		return nil
+	})
+}
+
+func (s *Service) parallelFormFetch(ctx context.Context, ids []int, progress DatasetProgressFunc, builder *dataset.Builder) error {
+	return s.parallelMetaFetch(ctx, ids, "form", progress, func(ctx context.Context, id int) error {
+		f, err := s.fetchForm(ctx, id)
+		if err != nil {
+			debuglog.Cachef("dataset.form skip id=%d err=%v", id, err)
+			return nil
+		}
+		if f.ID > 0 {
+			builder.Forms[f.ID] = dataset.FormFromDomain(f)
+		}
+		return nil
+	})
+}
+
+// parallelMetaFetch downloads optional metadata ids with worker pool + progress.
+// Runs under DatasetStageDataset so the TUI leaves the moves rail and shows ready work.
+func (s *Service) parallelMetaFetch(ctx context.Context, ids []int, kind string, progress DatasetProgressFunc, work func(context.Context, int) error) error {
+	total := len(ids)
+	if total == 0 {
+		return nil
+	}
+	workers := s.datasetWorkers()
+	if workers > total {
+		workers = total
+	}
+	jobs := make(chan int, workers*2)
+	results := make(chan error, workers*2)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range jobs {
+				if ctx.Err() != nil {
+					results <- ctx.Err()
+					continue
+				}
+				results <- work(ctx, id)
+			}
+		}()
+	}
+	go func() {
+		for _, id := range ids {
+			select {
+			case <-ctx.Done():
+				close(jobs)
+				return
+			case jobs <- id:
+			}
+		}
+		close(jobs)
+	}()
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	done := 0
+	var firstErr error
+	for err := range results {
+		done++
+		report(progress, DatasetProgress{
+			Stage: DatasetStageDataset, Done: done, Total: total, Message: kind,
+		})
+		if err != nil && firstErr == nil && !errors.Is(err, context.Canceled) {
+			firstErr = err
+		}
+	}
+	if firstErr != nil {
+		return firstErr
+	}
+	return ctx.Err()
 }
 
 func (s *Service) fetchMove(ctx context.Context, id int) (domain.Move, error) {

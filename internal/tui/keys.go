@@ -22,6 +22,7 @@ type keyMap struct {
 	Enter     key.Binding
 	ViewCycle key.Binding
 	ForceQuit key.Binding
+	Game      key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -47,11 +48,11 @@ func defaultKeyMap() keyMap {
 		),
 		TabNext: key.NewBinding(
 			key.WithKeys("tab"),
-			key.WithHelp("tab", "section"),
+			key.WithHelp("tab", "focus"),
 		),
 		TabPrev: key.NewBinding(
 			key.WithKeys("shift+tab"),
-			key.WithHelp("S-Tab", "prev section"),
+			key.WithHelp("S-Tab", "focus"),
 		),
 		PageUp: key.NewBinding(
 			key.WithKeys("pgup"),
@@ -85,30 +86,64 @@ func defaultKeyMap() keyMap {
 			key.WithKeys("ctrl+c"),
 			key.WithHelp("ctrl+c", "quit"),
 		),
+		Game: key.NewBinding(
+			key.WithKeys("g"),
+			key.WithHelp("g", "game"),
+		),
 	}
+}
+
+// DialogHelpOpts configures dossier footer chips for the current focus.
+type DialogHelpOpts struct {
+	HasForms     bool
+	ContentFocus bool
+	Moves        bool
+	MoveDetail   bool
+	Picker       bool
 }
 
 // DialogShortHelp returns footer bindings for the full-screen dossier.
-// Rail: ↑/↓ move the section list. Stacked: ↑/↓ scroll; ←/→ still change
-// sections but stay off the short footer.
-func (k keyMap) DialogShortHelp(stacked bool) []key.Binding {
-	if stacked {
+func (k keyMap) DialogShortHelp(o DialogHelpOpts) []key.Binding {
+	if o.Picker {
 		return []key.Binding{
-			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "section")),
-			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "scroll")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "pick")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 		}
 	}
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "section")),
-		key.NewBinding(key.WithKeys("pgup"), key.WithHelp("PgUp/PgDn", "scroll")),
-		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+	if o.MoveDetail {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "move")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		}
 	}
+	out := []key.Binding{
+		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus")),
+	}
+	if !o.ContentFocus {
+		out = append(out,
+			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "section")),
+		)
+	} else if o.Moves {
+		out = append(out,
+			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "move")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "detail")),
+			key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "method")),
+		)
+	} else {
+		out = append(out,
+			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "scroll")),
+		)
+	}
+	out = append(out, key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "game")))
+	if o.HasForms {
+		out = append(out, key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "form")))
+	}
+	out = append(out, key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")))
+	return out
 }
 
 // ShortHelp is the browse footer binding list (FontGet-style chips).
-// F4/favourite lives in the frame top-right; esc help is overridden per-frame
-// when search/filters are active (see Model.browseFooterHelp).
 func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Up,

@@ -32,6 +32,8 @@ func (m Model) View() tea.View {
 	}
 	content := views.Browse(m.browseData())
 	switch {
+	case m.showDialog && m.dialogOverlayOpen():
+		content = m.dossierPickerView(content)
 	case m.showFilters:
 		content = m.filterView(content)
 	case m.showCompare || m.featureError != "":
@@ -108,13 +110,26 @@ func (m Model) browseData() views.BrowseData {
 		DialogLabels:  AllDialogSectionLabels(),
 		DialogLines:   m.dialogContentLines(),
 		DialogOff:     m.dialogVP.YOffset(),
+		DialogContext: m.dialogContextLines(m.dialogGeom().BodyW),
+		DialogSidebar: !m.dialogContentFocus,
 	}
 	if m.showDialog {
+		geom := m.dialogGeom()
+		sticky, hint := m.dialogMoveChrome(geom.BodyW, m.dialogPageSize(), m.dialogVP.YOffset())
+		data.DialogSticky = sticky
+		data.DialogPosition = hint
 		hintW := m.width
 		if hintW < 10 {
 			hintW = m.width
 		}
-		data.FooterHint = style.RenderCommandHelp(m.keys.DialogShortHelp(m.dialogStacked()), max(1, hintW-1))
+		helps := m.keys.DialogShortHelp(DialogHelpOpts{
+			HasForms:     m.dialogHasForms(),
+			ContentFocus: m.dialogContentFocus,
+			Moves:        m.dialogSection == DialogMoves,
+			MoveDetail:   m.moveDetailOpen,
+			Picker:       m.dialogOverlayOpen(),
+		})
+		data.FooterHint = style.RenderCommandHelp(helps, max(1, hintW-1))
 	}
 
 	rightID, _ := m.glanceDisplayID()

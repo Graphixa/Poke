@@ -14,6 +14,21 @@ type DetailSource interface {
 	LoadDossierExtras(ctx context.Context, speciesID int, slug string, core domain.Dossier) (domain.Dossier, error)
 }
 
+// CatalogSource supplies dataset catalogs for dossier form/game controls.
+type CatalogSource interface {
+	CatalogVersions() ([]domain.Version, error)
+	VersionGroupIDForVersion(versionID int) (int, bool)
+	SelectableFormsForSpecies(speciesID int) ([]domain.SelectableForm, error)
+	FormOptionsForGame(speciesID, gameVersionID int) ([]domain.FormOption, error)
+	ResolveDossierContext(speciesID, pokemonID, formID, gameVersionID int) (domain.ResolvedDossierContext, error)
+	LevelUpMovesForGroup(pokemonID, versionGroupID int) ([]domain.LevelUpMove, error)
+	MovesForGroup(pokemonID, versionGroupID int) ([]domain.LevelUpMove, error)
+	PokemonByID(ctx context.Context, pokemonID int) (domain.Pokemon, error)
+	TypeChart() (map[string]domain.TypeInfo, error)
+	AbilityByID(id int) (domain.Ability, bool)
+	AbilityBySlug(slug string) (domain.Ability, bool)
+}
+
 // PokemonSource loads default-variety Pokémon (including sprite URLs) for art.
 type PokemonSource interface {
 	PokemonForSprite(ctx context.Context, speciesID int) (domain.Pokemon, error)

@@ -42,6 +42,67 @@ func (d *DetailService) LoadDossierExtras(ctx context.Context, speciesID int, sl
 	return d.cache.DossierExtras(ctx, speciesID, slug, core)
 }
 
+// CatalogVersions implements tui.CatalogSource.
+func (d *DetailService) CatalogVersions() ([]domain.Version, error) {
+	return d.cache.CatalogVersions()
+}
+
+// VersionGroupIDForVersion implements tui.CatalogSource.
+func (d *DetailService) VersionGroupIDForVersion(versionID int) (int, bool) {
+	return d.cache.VersionGroupIDForVersion(versionID)
+}
+
+// SelectableFormsForSpecies implements tui.CatalogSource.
+func (d *DetailService) SelectableFormsForSpecies(speciesID int) ([]domain.SelectableForm, error) {
+	return d.cache.SelectableFormsForSpecies(speciesID)
+}
+
+// FormOptionsForGame implements tui.CatalogSource.
+func (d *DetailService) FormOptionsForGame(speciesID, gameVersionID int) ([]domain.FormOption, error) {
+	return d.cache.FormOptionsForGame(speciesID, gameVersionID)
+}
+
+// ResolveDossierContext implements tui.CatalogSource.
+func (d *DetailService) ResolveDossierContext(speciesID, pokemonID, formID, gameVersionID int) (domain.ResolvedDossierContext, error) {
+	return d.cache.ResolveDossierContext(speciesID, pokemonID, formID, gameVersionID)
+}
+
+// LevelUpMovesForGroup implements tui.CatalogSource.
+func (d *DetailService) LevelUpMovesForGroup(pokemonID, versionGroupID int) ([]domain.LevelUpMove, error) {
+	return d.cache.LevelUpMovesForGroup(pokemonID, versionGroupID)
+}
+
+// MovesForGroup implements tui.CatalogSource.
+func (d *DetailService) MovesForGroup(pokemonID, versionGroupID int) ([]domain.LevelUpMove, error) {
+	return d.cache.MovesForGroup(pokemonID, versionGroupID)
+}
+
+// TypeChart implements tui.CatalogSource.
+func (d *DetailService) TypeChart() (map[string]domain.TypeInfo, error) {
+	return d.cache.TypeChart()
+}
+
+// AbilityByID implements tui.CatalogSource.
+func (d *DetailService) AbilityByID(id int) (domain.Ability, bool) {
+	return d.cache.AbilityByID(id)
+}
+
+// AbilityBySlug implements tui.CatalogSource.
+func (d *DetailService) AbilityBySlug(slug string) (domain.Ability, bool) {
+	return d.cache.AbilityBySlug(slug)
+}
+
+// PokemonByID implements tui.CatalogSource.
+func (d *DetailService) PokemonByID(ctx context.Context, pokemonID int) (domain.Pokemon, error) {
+	ctx = cache.WithInteractivePriority(ctx)
+	p, err := d.cache.Pokemon(ctx, pokemonID)
+	if err != nil {
+		return domain.Pokemon{}, err
+	}
+	stampArtworkCDN(&p)
+	return p, nil
+}
+
 // LoadDossier returns the full per-species dossier (Enter/detail path).
 func (d *DetailService) LoadDossier(ctx context.Context, speciesID int) (domain.Dossier, error) {
 	return d.cache.Dossier(ctx, speciesID)

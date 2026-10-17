@@ -36,6 +36,12 @@ type Options struct {
 	DisableSprite bool
 	// BrowseEntries maps species ID → browse.json row (stats + About; optional).
 	BrowseEntries map[int]domain.BrowseEntry
+	// Catalog supplies versions/forms for dossier controls (optional).
+	Catalog CatalogSource
+	// SavedGameVersionID is restored dossier game preference (0 = unset).
+	SavedGameVersionID int
+	// SaveGameVersion persists a confirmed game choice (optional).
+	SaveGameVersion func(versionID int) error
 	// DossierWarmer pre-assembles dossier core or full dossiers in the background.
 	DossierWarmer DossierWarmer
 	// Warmer is an optional priority sprite prewarm service.
@@ -154,6 +160,38 @@ type Model struct {
 	dialogSection DialogSection
 	dialogVP      viewport.Model
 
+	// Dossier form/game session (UX v2 Stage C).
+	catalog            CatalogSource
+	dialogSpeciesID    int
+	dialogForms        []domain.SelectableForm
+	dialogFormIdx      int
+	dialogFormID       int
+	dialogPokemon      domain.Pokemon
+	dialogGameID       int // confirmed version id; 0 = unset
+	dialogGameLabel    string
+	dialogGameSlug     string
+	dialogMoveMethod   string
+	dialogNotice       string
+	dialogContentFocus bool // false = sidebar, true = content
+	dialogScroll       map[DialogSection]int
+	gamePickerOpen     bool
+	gamePickerFilter   string
+	gamePickerCursor   int
+	gamePickerItems    []domain.Version
+	gamePickerSuggest  int
+	formPickerOpen     bool
+	formPickerFilter   string
+	formPickerCursor   int
+	formPickerItems    []domain.FormOption
+	methodPickerOpen   bool
+	methodPickerCursor int
+	methodPickerItems  []string
+	dialogCatalogErr   string
+	saveGameVersion    func(int) error
+	moveDetailOpen     bool
+	moveFocusIdx       int
+	lastMoveFocusIdx   int
+
 	selectionGen int
 	trackedID    int
 	resources    map[int]*resourceCache
@@ -231,22 +269,26 @@ func NewModel(opts Options) Model {
 		layoutTh: layoutThresholds{
 			DisableSprite: opts.DisableSprite,
 		},
-		resources:     make(map[int]*resourceCache),
-		lruIDs:        nil,
-		imageState:    ImageBlank,
-		browseView:    BrowseGlance,
-		dialogSection: DialogOverview,
-		keys:          defaultKeyMap(),
-		search:        newSearchInput(),
-		dialogVP:      newContentViewport(),
-		warmer:        opts.Warmer,
-		dossierWarmer: opts.DossierWarmer,
-		artworkWarmer: opts.ArtworkWarmer,
-		nativeWarmer:  opts.NativeWarmer,
-		warmEvents:    opts.WarmEvents,
-		onUIReady:     opts.OnUIReady,
-		pokemonSrc:    opts.Pokemon,
-		browseEntries: opts.BrowseEntries,
+		resources:       make(map[int]*resourceCache),
+		lruIDs:          nil,
+		imageState:      ImageBlank,
+		browseView:      BrowseGlance,
+		dialogSection:   DialogOverview,
+		keys:            defaultKeyMap(),
+		search:          newSearchInput(),
+		dialogVP:        newContentViewport(),
+		catalog:         opts.Catalog,
+		dialogGameID:    opts.SavedGameVersionID,
+		saveGameVersion: opts.SaveGameVersion,
+		dialogScroll:    map[DialogSection]int{},
+		warmer:          opts.Warmer,
+		dossierWarmer:   opts.DossierWarmer,
+		artworkWarmer:   opts.ArtworkWarmer,
+		nativeWarmer:    opts.NativeWarmer,
+		warmEvents:      opts.WarmEvents,
+		onUIReady:       opts.OnUIReady,
+		pokemonSrc:      opts.Pokemon,
+		browseEntries:   opts.BrowseEntries,
 	}
 	m.favourites = make(map[int]bool, len(opts.Favourites))
 	for _, id := range opts.Favourites {
@@ -540,7 +582,21 @@ func (m *Model) syncDialogViewport() {
 }
 
 func (m *Model) dialogPageSize() int {
-	return m.dialogGeom().BodyH
+	geom := m.dialogGeom()
+	h := geom.BodyH
+	ctx := len(m.dialogContextLines(geom.BodyW))
+	if ctx > 0 {
+		h -= ctx + 1
+	}
+	sticky, hint := m.dialogMoveChrome(geom.BodyW, max(1, h), 0)
+	h -= len(sticky)
+	if hint != "" {
+		h--
+	}
+	if h < 1 {
+		h = 1
+	}
+	return h
 }
 
 func (m *Model) dialogGeom() components.DialogGeom {

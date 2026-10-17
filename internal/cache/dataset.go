@@ -156,7 +156,8 @@ func (s *Store) ReadBootstrapReport(id string) (DatasetBootstrapReport, error) {
 }
 
 // ActivateDataset atomically points active.json at a complete snapshot.
-// Incomplete snapshots are refused so a failed refresh cannot replace a good one.
+// Incomplete or wrong-schema snapshots are refused so a failed refresh cannot
+// replace a good one. Callers must build+validate the replacement first.
 func (s *Store) ActivateDataset(id string) error {
 	man, err := s.ReadDatasetManifest(id)
 	if err != nil {
@@ -164,6 +165,9 @@ func (s *Store) ActivateDataset(id string) error {
 	}
 	if !man.Complete {
 		return fmt.Errorf("cache: refuse to activate incomplete dataset %q", id)
+	}
+	if !supportedDatasetSchema(man.SchemaVersion) {
+		return fmt.Errorf("cache: refuse to activate dataset %q with schema %d (want %d)", id, man.SchemaVersion, dataset.SchemaVersion)
 	}
 	ptr := activePointer{SchemaVersion: man.SchemaVersion, DatasetID: id}
 	data, err := json.Marshal(ptr)

@@ -37,6 +37,26 @@ func (s *Store) AggregateEncountersPath(datasetID string) string {
 	return s.aggregatePath(datasetID, dataset.FileEncounters)
 }
 
+func (s *Store) AggregateVersionsPath(datasetID string) string {
+	return s.aggregatePath(datasetID, dataset.FileVersions)
+}
+
+func (s *Store) AggregateVersionGroupsPath(datasetID string) string {
+	return s.aggregatePath(datasetID, dataset.FileVersionGroups)
+}
+
+func (s *Store) AggregateTypesPath(datasetID string) string {
+	return s.aggregatePath(datasetID, dataset.FileTypes)
+}
+
+func (s *Store) AggregateAbilitiesPath(datasetID string) string {
+	return s.aggregatePath(datasetID, dataset.FileAbilities)
+}
+
+func (s *Store) AggregateFormsPath(datasetID string) string {
+	return s.aggregatePath(datasetID, dataset.FileForms)
+}
+
 func writeAggregateJSON(path string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -143,6 +163,67 @@ func (s *Store) LoadAggregateEncounters(datasetID string) (map[int][]dataset.Dat
 	return records, nil
 }
 
+// StoreAggregateVersions writes versions.json for a staging snapshot.
+func (s *Store) StoreAggregateVersions(datasetID string, records map[int]dataset.DatasetVersion) error {
+	return writeAggregateJSON(s.AggregateVersionsPath(datasetID), records)
+}
+
+func (s *Store) StoreAggregateVersionGroups(datasetID string, records map[int]dataset.DatasetVersionGroup) error {
+	return writeAggregateJSON(s.AggregateVersionGroupsPath(datasetID), records)
+}
+
+func (s *Store) StoreAggregateTypes(datasetID string, records map[int]dataset.DatasetType) error {
+	return writeAggregateJSON(s.AggregateTypesPath(datasetID), records)
+}
+
+func (s *Store) StoreAggregateAbilities(datasetID string, records map[int]dataset.DatasetAbility) error {
+	return writeAggregateJSON(s.AggregateAbilitiesPath(datasetID), records)
+}
+
+func (s *Store) StoreAggregateForms(datasetID string, records map[int]dataset.DatasetForm) error {
+	return writeAggregateJSON(s.AggregateFormsPath(datasetID), records)
+}
+
+func (s *Store) LoadAggregateVersions(datasetID string) (map[int]dataset.DatasetVersion, error) {
+	var records map[int]dataset.DatasetVersion
+	if err := readAggregateJSON(s.AggregateVersionsPath(datasetID), &records); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (s *Store) LoadAggregateVersionGroups(datasetID string) (map[int]dataset.DatasetVersionGroup, error) {
+	var records map[int]dataset.DatasetVersionGroup
+	if err := readAggregateJSON(s.AggregateVersionGroupsPath(datasetID), &records); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (s *Store) LoadAggregateTypes(datasetID string) (map[int]dataset.DatasetType, error) {
+	var records map[int]dataset.DatasetType
+	if err := readAggregateJSON(s.AggregateTypesPath(datasetID), &records); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (s *Store) LoadAggregateAbilities(datasetID string) (map[int]dataset.DatasetAbility, error) {
+	var records map[int]dataset.DatasetAbility
+	if err := readAggregateJSON(s.AggregateAbilitiesPath(datasetID), &records); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (s *Store) LoadAggregateForms(datasetID string) (map[int]dataset.DatasetForm, error) {
+	var records map[int]dataset.DatasetForm
+	if err := readAggregateJSON(s.AggregateFormsPath(datasetID), &records); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
 // StoreAggregateBuilder writes all aggregate files from a completed builder.
 func (s *Store) StoreAggregateBuilder(datasetID string, b *dataset.Builder) error {
 	if b == nil {
@@ -164,6 +245,21 @@ func (s *Store) StoreAggregateBuilder(datasetID string, b *dataset.Builder) erro
 		return err
 	}
 	if err := s.StoreAggregateEncounters(datasetID, b.Encounters); err != nil {
+		return err
+	}
+	if err := s.StoreAggregateVersions(datasetID, b.Versions); err != nil {
+		return err
+	}
+	if err := s.StoreAggregateVersionGroups(datasetID, b.VersionGroups); err != nil {
+		return err
+	}
+	if err := s.StoreAggregateTypes(datasetID, b.Types); err != nil {
+		return err
+	}
+	if err := s.StoreAggregateAbilities(datasetID, b.Abilities); err != nil {
+		return err
+	}
+	if err := s.StoreAggregateForms(datasetID, b.Forms); err != nil {
 		return err
 	}
 	return nil

@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -30,6 +31,14 @@ type loadedSnapshot struct {
 	encountersErr error
 	learnsets     map[int][]dataset.DatasetLearn
 	learnsetsErr  error
+	versions      map[int]domain.Version
+	versionsErr   error
+	forms         map[int]domain.PokemonForm
+	formsErr      error
+	types         map[string]domain.TypeInfo
+	typesErr      error
+	abilities     map[int]domain.Ability
+	abilitiesErr  error
 }
 
 func (s *Store) invalidateLoadedSnapshot() {
@@ -233,7 +242,7 @@ func (s *Store) LevelUpMoves(pokemonID int) ([]domain.LevelUpMove, error) {
 			return domain.Move{}, fmt.Errorf("%w: move %d", ErrNotFound, id)
 		}
 		return move, nil
-	})
+	}, 0)
 }
 
 func (s *Store) lookupPokemon(id int) (domain.Pokemon, bool, error) {
@@ -316,43 +325,114 @@ func supportedDatasetSchema(v int) bool {
 	return v == dataset.SchemaVersion
 }
 
-// EnsureCompatibleDataset clears incompatible prototype cache data.
-// Pre-release policy: discard incompatible data and rebuild rather than migrate older schemas.
+// DatasetNotice explains why the active dataset is unavailable without deleting it.
+type DatasetNotice struct {
+	NeedsUpdate bool   `json:"needs_update"`
+	Reason      string `json:"reason,omitempty"`
+	DatasetID   string `json:"dataset_id,omitempty"`
+	Schema      int    `json:"schema,omitempty"`
+}
+
+// EnsureCompatibleDataset validates the active snapshot for the current schema.
+// Incompatible or corrupt active pointers are deactivated and explained; dataset
+// directories and user prefs are preserved. A replacement must build+validate
+// separately before ActivateDataset.
 func (s *Store) EnsureCompatibleDataset() error {
 	if err := s.EnsureRoot(); err != nil {
 		return err
 	}
+	_ = s.clearDatasetNotice()
 	id, err := s.ActiveDatasetID()
 	if errors.Is(err, ErrNotFound) {
-		return s.resetLegacyMetadataIfPresent()
+		return s.noteLegacyMetadataIfPresent()
 	}
 	if err != nil {
-		return s.resetIncompatibleDataset("corrupt active pointer")
+		return s.deactivateIncompatibleDataset("", "corrupt active pointer")
 	}
 	man, err := s.ReadDatasetManifest(id)
-	if err != nil || !supportedDatasetSchema(man.SchemaVersion) {
-		return s.resetIncompatibleDataset(fmt.Sprintf("schema=%d id=%s", man.SchemaVersion, id))
+	if err != nil {
+		return s.deactivateIncompatibleDataset(id, "unreadable dataset manifest")
+	}
+	if !supportedDatasetSchema(man.SchemaVersion) {
+		return s.deactivateIncompatibleDataset(id, fmt.Sprintf("schema %d requires update (app expects %d)", man.SchemaVersion, dataset.SchemaVersion))
 	}
 	if _, err := os.Stat(s.AggregatePokemonPath(id)); errors.Is(err, os.ErrNotExist) {
-		return s.resetIncompatibleDataset(fmt.Sprintf("missing aggregate files id=%s", id))
+		return s.deactivateIncompatibleDataset(id, "missing aggregate files")
 	}
-	return s.resetLegacyMetadataIfPresent()
+	return s.noteLegacyMetadataIfPresent()
 }
 
-func (s *Store) resetLegacyMetadataIfPresent() error {
+func (s *Store) noteLegacyMetadataIfPresent() error {
 	legacyDirs := []string{"pokemon", "species", "moves", "evolution", "encounters"}
 	for _, dir := range legacyDirs {
 		path := filepath.Join(s.root, dir)
 		if _, err := os.Stat(path); err == nil {
-			return s.resetIncompatibleDataset("legacy metadata tree present")
+			// Do not delete; surface as update notice only when nothing is active.
+			if !s.HasActiveDataset() {
+				return s.writeDatasetNotice(DatasetNotice{
+					NeedsUpdate: true,
+					Reason:      "legacy metadata tree present; rebuild dataset to continue",
+				})
+			}
+			return nil
 		}
 	}
 	return nil
 }
 
-func (s *Store) resetIncompatibleDataset(reason string) error {
-	debuglog.Cachef("dataset.reset incompatible: %s", reason)
-	return s.Clear()
+func (s *Store) deactivateIncompatibleDataset(id, reason string) error {
+	debuglog.Cachef("dataset.deactivate incompatible: id=%s %s", id, reason)
+	s.setActiveDatasetID("")
+	_ = os.Remove(s.activePath())
+	s.invalidateLoadedSnapshot()
+	schema := 0
+	if id != "" {
+		if man, err := s.ReadDatasetManifest(id); err == nil {
+			schema = man.SchemaVersion
+		}
+	}
+	return s.writeDatasetNotice(DatasetNotice{
+		NeedsUpdate: true,
+		Reason:      reason,
+		DatasetID:   id,
+		Schema:      schema,
+	})
+}
+
+func (s *Store) datasetNoticePath() string {
+	return filepath.Join(s.root, "dataset_notice.json")
+}
+
+func (s *Store) writeDatasetNotice(n DatasetNotice) error {
+	data, err := json.Marshal(n)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(s.datasetNoticePath(), data, 0o600)
+}
+
+func (s *Store) clearDatasetNotice() error {
+	err := os.Remove(s.datasetNoticePath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// ReadDatasetNotice returns a pending update notice, if any.
+func (s *Store) ReadDatasetNotice() (DatasetNotice, error) {
+	data, err := os.ReadFile(s.datasetNoticePath())
+	if errors.Is(err, os.ErrNotExist) {
+		return DatasetNotice{}, ErrNotFound
+	}
+	if err != nil {
+		return DatasetNotice{}, err
+	}
+	var n DatasetNotice
+	if err := json.Unmarshal(data, &n); err != nil {
+		return DatasetNotice{}, fmt.Errorf("%w: dataset notice: %v", ErrCorrupt, err)
+	}
+	return n, nil
 }
 
 // PreloadDataset loads core aggregate files into memory (optional warm path).

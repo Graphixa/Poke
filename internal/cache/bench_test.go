@@ -25,7 +25,7 @@ func benchDataset(b *testing.B) (*Store, string) {
 		builder.Species[i] = dataset.SpeciesFromDomain(domain.Species{
 			ID: i, Slug: "p", DisplayName: "P", DefaultPokemonID: i,
 		})
-		builder.Learnsets[i] = []dataset.DatasetLearn{{Level: 1, MoveID: 1}}
+		builder.Learnsets[i] = []dataset.DatasetLearn{{PokemonID: i, LevelLearnedAt: 1, MoveID: 1, LearnMethod: "level-up", VersionGroupID: 1}}
 		builder.Moves[1] = dataset.DatasetMove{ID: 1, Slug: "pound", DisplayName: "Pound", PP: 35}
 		builder.Evolutions[i] = dataset.EvolutionFromDomain(domain.EvolutionTree{
 			Root: domain.EvolutionNode{SpeciesID: i, DisplayName: "P"},

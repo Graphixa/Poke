@@ -14,6 +14,7 @@ type Pokemon struct {
 	Abilities       []AbilitySlot
 	Stats           Stats
 	Moves           []LearnedMove
+	FormIDs         []int
 	Sprites         Sprites
 }
 
@@ -36,6 +37,7 @@ type TypeSlot struct {
 
 type AbilitySlot struct {
 	Slot     int    `json:"slot,omitempty"`
+	ID       int    `json:"id,omitempty"`
 	Name     string `json:"name"`
 	IsHidden bool   `json:"is_hidden,omitempty"`
 }
@@ -142,17 +144,20 @@ type Species struct {
 	DisplayName       string
 	Genus             string
 	Generation        string
-	Habitat           string
+	Habitat           string // empty means unavailable / not set by API
 	Shape             string
 	Color             string
 	GrowthRate        string
 	CaptureRate       int
 	BaseHappiness     int
 	GenderRate        int
+	HatchCounter      int
+	IsBaby            bool
 	IsLegendary       bool
 	IsMythical        bool
 	DefaultPokemonID  int
 	EvolutionChainID  int
+	EggGroups         []string
 	Names             []LocalizedName
 	Genera            []LocalizedText
 	FlavorTextEntries []FlavorText
@@ -172,6 +177,7 @@ type LocalizedText struct {
 type FlavorText struct {
 	Language          string
 	Version           string
+	VersionID         int
 	VersionOrder      int
 	VersionGroup      string
 	VersionGroupOrder int
@@ -226,6 +232,7 @@ type LearnedMove struct {
 }
 
 type MoveLearning struct {
+	VersionGroupID    int
 	VersionGroup      string
 	VersionGroupOrder int
 	Method            string
@@ -241,12 +248,15 @@ type Move struct {
 	Power       *int
 	Accuracy    *int
 	PP          int
+	Effect      string // English short effect; current reference unless historically resolved
 	Names       []LocalizedName
 }
 
 type Encounter struct {
 	Version           string
+	VersionID         int
 	VersionGroup      string
+	VersionGroupID    int
 	VersionGroupOrder int
 	Area              string
 	Method            string
@@ -254,6 +264,100 @@ type Encounter struct {
 	MaximumLevel      int
 	Chance            int
 	Conditions        []string
+}
+
+// Version is one game version (exact identity for encounters / descriptions).
+type Version struct {
+	ID             int
+	Slug           string
+	DisplayName    string
+	VersionGroupID int
+	Generation     string
+	Order          int // explicit chronological order within catalog
+}
+
+// VersionGroup groups highly similar versions for learnset resolution.
+type VersionGroup struct {
+	ID          int
+	Slug        string
+	DisplayName string
+	Generation  string
+	Order       int // explicit chronological order from API
+	VersionIDs  []int
+}
+
+// Ability is ability metadata with English effect text.
+type Ability struct {
+	ID          int
+	Slug        string
+	DisplayName string
+	Effect      string // English short effect
+}
+
+// TypeInfo holds defensive damage relations for a type.
+type TypeInfo struct {
+	ID       int
+	Slug     string
+	Name     string
+	NoDamage []string // damage_relations.no_damage_from
+	Half     []string // half_damage_from
+	Double   []string // double_damage_from
+}
+
+// PokemonForm is a pokemon-form resource (often cosmetic; parent is a Pokémon).
+type PokemonForm struct {
+	ID                  int
+	Slug                string
+	DisplayName         string
+	FormName            string
+	FormOrder           int
+	Order               int
+	IsDefault           bool
+	IsBattleOnly        bool
+	IsMega              bool
+	PokemonID           int
+	IntroVersionGroupID int    // version group where the form was introduced (0 unknown)
+	IntroVersionGroup   string // slug; empty unknown
+	Types               []string
+	Sprites             Sprites
+}
+
+// FormGameCompat is v1 form×game compatibility.
+type FormGameCompat int
+
+const (
+	FormCompatUnknown FormGameCompat = iota
+	FormCompatSupported
+	FormCompatUnsupported
+)
+
+// FormOption is a form picker row with compatibility for the selected game.
+type FormOption struct {
+	Form   SelectableForm
+	Compat FormGameCompat
+}
+
+// SelectableForm is a dossier form choice (variety and/or named form).
+type SelectableForm struct {
+	Key         string // stable UI key: "pokemon:<id>" or "form:<id>"
+	PokemonID   int
+	FormID      int // 0 when choice is the whole Pokémon variety
+	Slug        string
+	DisplayName string // "Default" for the species default; short label otherwise
+	IsDefault   bool
+}
+
+// ResolvedDossierContext is the shared identity after form/game resolution.
+type ResolvedDossierContext struct {
+	SpeciesID         int
+	PokemonID         int
+	FormID            int
+	GameVersionID     int
+	VersionGroupID    int
+	Compat            FormGameCompat
+	FellBackToDefault bool
+	Notice            string
+	FormLabel         string // resolved choice label ("Default", "Alola", …)
 }
 
 type SpeciesSummary struct {
@@ -265,10 +369,12 @@ type SpeciesSummary struct {
 	SpritePath string
 }
 
-// LevelUpMove is a resolved level-up learnset row for dossier / moves UI.
+// LevelUpMove is a resolved learnset row for dossier / moves UI.
+// Method is the learn method slug (level-up, machine, egg, tutor, …).
 type LevelUpMove struct {
-	Level int
-	Move  Move
+	Level  int
+	Method string
+	Move   Move
 }
 
 // Dossier is the per-species detail bundle persisted as dossier.json.

@@ -10,6 +10,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
 	"github.com/Graphixa/Pokedex/internal/favourites"
+	"github.com/Graphixa/Pokedex/internal/prefs"
 	"github.com/Graphixa/Pokedex/internal/render/sprite"
 	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
 	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
@@ -198,6 +199,7 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		Index:         search.Build(index),
 		Details:       details,
 		Pokemon:       details,
+		Catalog:       details,
 		Sprites:       tuiSprites{engine},
 		Selected:      req.Selected,
 		Prefill:       req.Prefill,
@@ -211,6 +213,11 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.Favourites = ids
 		opts.SaveFavourites = favouriteStore.Save
 	}
+	gameStore := prefs.GameStore{Path: filepath.Join(filepath.Dir(svc.Paths.ConfigFile), "game.json")}
+	if vid, err := gameStore.Load(); err == nil && vid > 0 {
+		opts.SavedGameVersionID = vid
+	}
+	opts.SaveGameVersion = gameStore.Save
 	if entries, err := svc.Cache.LoadBrowse(); err == nil && len(entries) > 0 {
 		byID := make(map[int]domain.BrowseEntry, len(entries))
 		for _, e := range entries {
