@@ -166,16 +166,15 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 	pal := style.CurrentPalette()
-	brand := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("poke")
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Components)).Render("Pokedex")
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("Poke - The terminal based Pokedex")
+	phase := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Components)).Render(downloadLabel(m.stage))
 	sub := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
 	body := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Components))
 	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", brand)
 	fmt.Fprintf(&b, "%s\n\n", title)
-	fmt.Fprintf(&b, "%s\n\n", stageRail(m.stage, pal))
+	fmt.Fprintf(&b, "%s\n\n", phase)
 	fmt.Fprintf(&b, "%s\n", m.prog.View())
 	if m.total > 0 {
 		fmt.Fprintf(&b, "%s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
@@ -200,80 +199,26 @@ func (m Model) View() tea.View {
 	return v
 }
 
-// bootstrapRail is the ordered first-run progress stages (short labels).
-var bootstrapRail = []struct {
-	id    Stage
-	label string
-}{
-	{StageIndex, "index"},
-	{StageEnrich, "types"},
-	{StageRecords, "records"},
-	{StageEvolution, "evo"},
-	{StageMoves, "moves"},
-	{StageDataset, "ready"},
-}
-
-func stageRail(current Stage, pal style.Palette) string {
-	idx := stageIndex(current)
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
-	done := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Secondary))
-	active := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary))
-	sep := dim.Render(" · ")
-
-	var b strings.Builder
-	for i, s := range bootstrapRail {
-		if i > 0 {
-			b.WriteString(sep)
-		}
-		switch {
-		case i < idx:
-			b.WriteString(done.Render(s.label))
-		case i == idx:
-			b.WriteString(active.Render(s.label))
-		default:
-			b.WriteString(dim.Render(s.label))
-		}
-	}
-	if current == StageArtwork {
-		b.WriteString(sep)
-		b.WriteString(active.Render("art"))
-	}
-	return b.String()
-}
-
-func stageIndex(stage Stage) int {
-	if stage == StageArtwork {
-		return len(bootstrapRail) // past ready; art appended separately
-	}
-	for i, s := range bootstrapRail {
-		if s.id == stage {
-			return i
-		}
-	}
-	return -1
-}
-
-func stageLabel(stage Stage) string {
+func downloadLabel(stage Stage) string {
 	switch stage {
 	case StageIndex:
-		return "index"
+		return "Downloading Generating index"
 	case StageEnrich:
-		return "types"
+		return "Downloading Configuring types"
 	case StageRecords:
-		return "records"
+		return "Downloading Fetching records"
 	case StageEvolution:
-		return "evo"
+		return "Downloading Building evolutions"
 	case StageMoves:
-		return "moves"
+		return "Downloading Fetching moves"
 	case StageDataset:
-		return "ready"
+		return "Downloading Finalizing dataset"
 	case StageArtwork:
-		return "art"
+		return "Downloading Artwork"
+	case "":
+		return "Downloading…"
 	default:
-		if stage == "" {
-			return "Working"
-		}
-		return string(stage)
+		return "Downloading " + string(stage)
 	}
 }
 
