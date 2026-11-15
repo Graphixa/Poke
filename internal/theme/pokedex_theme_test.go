@@ -1,8 +1,8 @@
-﻿package theme_test
+package theme_test
 
 import (
-	"testing"
 	"github.com/Graphixa/Pokedex/internal/theme"
+	"testing"
 )
 
 func TestLoadEmbeddedPokedex(t *testing.T) {
