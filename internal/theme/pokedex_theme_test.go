@@ -10,7 +10,7 @@ func TestLoadEmbeddedPokedex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.ThemeName != "Pokédex" || f.Style != "dark" || f.Colors.Primary != "#F22B4E" {
+	if f.ThemeName != "Pokédex" || f.Style != "dark" || f.Colors.Primary != "#ff4061" {
 		t.Fatalf("unexpected theme: %+v", f)
 	}
 	if err := theme.Validate(f); err != nil {
