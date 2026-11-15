@@ -41,10 +41,17 @@ func (s GameStore) Load() (int, error) {
 	return d.VersionID, nil
 }
 
-// Save writes the confirmed game version id (must be > 0).
+// Save writes the confirmed game version id. versionID 0 clears the preference (All).
 func (s GameStore) Save(versionID int) error {
-	if versionID < 1 {
+	if versionID < 0 {
 		return fmt.Errorf("invalid version id %d", versionID)
+	}
+	if versionID == 0 {
+		err := os.Remove(s.Path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
 	}
 	b, err := json.MarshalIndent(gameDoc{Version: gameDocVersion, VersionID: versionID}, "", "  ")
 	if err != nil {

@@ -106,10 +106,11 @@ type BrowseData struct {
 	DialogLabels   []string
 	DialogLines    []string
 	DialogOff      int
-	DialogContext  []string // Form / Game / Method / notice above body
+	DialogContext  []string // notice above body
 	DialogSticky   []string // fixed rows above scroll (move header)
 	DialogPosition string   // "Rows a–b of n" below scroll
 	DialogSidebar  bool     // true when sidebar owns keyboard focus
+	DialogTopRight string   // dossier top-border chips (M/G)
 
 	SpriteANSI   string
 	SpriteNative bool
@@ -153,6 +154,7 @@ func Browse(d BrowseData) string {
 			StickyLines:  d.DialogSticky,
 			PositionHint: d.DialogPosition,
 			SidebarFocus: d.DialogSidebar,
+			TopRight:     d.DialogTopRight,
 		})
 	}
 	return renderBrowseBase(d, fr)

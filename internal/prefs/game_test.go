@@ -21,4 +21,11 @@ func TestGameStoreRoundTrip(t *testing.T) {
 	if err != nil || id != 40 {
 		t.Fatalf("id=%d err=%v", id, err)
 	}
+	if err := s.Save(0); err != nil {
+		t.Fatal(err)
+	}
+	id, err = s.Load()
+	if err != nil || id != 0 {
+		t.Fatalf("clear All id=%d err=%v", id, err)
+	}
 }

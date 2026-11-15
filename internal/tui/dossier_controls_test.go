@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -68,21 +69,62 @@ func TestDialogContextLines(t *testing.T) {
 	m.dialogMoveMethod = "level-up"
 	lines := m.dialogContextLines(80)
 	joined := strings.Join(lines, "\n")
-	if !strings.Contains(joined, "Form: Partner [F]") || !strings.Contains(joined, "Game: Pearl [G]") {
-		t.Fatalf("context=%v", lines)
+	// Form/Game/Method are top-border chips, not body context.
+	for _, ban := range []string{"Form:", "Game:", "Method:"} {
+		if strings.Contains(joined, ban) {
+			t.Fatalf("body must hide %s: %v", ban, lines)
+		}
 	}
-	if !strings.Contains(joined, "Method: Level-up [M]") {
-		t.Fatalf("method missing: %v", lines)
-	}
-	m.dialogSection = DialogOverview
+	m.dialogNotice = "Fell back to default form"
 	lines = m.dialogContextLines(80)
-	if strings.Contains(strings.Join(lines, "\n"), "Method:") {
-		t.Fatalf("overview must hide method: %v", lines)
+	if len(lines) != 1 || lines[0] != m.dialogNotice {
+		t.Fatalf("notice only: %v", lines)
 	}
-	m.dialogForms = m.dialogForms[:1]
-	lines = m.dialogContextLines(80)
-	if strings.Contains(strings.Join(lines, "\n"), "Form:") {
-		t.Fatalf("single form hides Form: %v", lines)
+}
+
+func TestEnsureMoveFocusVisible(t *testing.T) {
+	m := NewModel(Options{})
+	m.width = 100
+	m.height = 24
+	m.showDialog = true
+	m.dialogSection = DialogMoves
+	m.dialogContentFocus = true
+	m.dialogGameID = 12
+	m.dialogGameLabel = "Pearl"
+	m.dialogMoveMethod = "level-up"
+	pow := 40
+	rows := make([]domain.LevelUpMove, 40)
+	for i := range rows {
+		rows[i] = domain.LevelUpMove{
+			Level:  i + 1,
+			Method: "level-up",
+			Move:   domain.Move{DisplayName: fmt.Sprintf("Move%d", i+1), Type: "normal", DamageClass: "physical", Power: &pow},
+		}
+	}
+	m.resources = map[int]*resourceCache{
+		1: {
+			HasCore:  true,
+			HasMoves: true,
+			Moves:    rows,
+			Pokemon:  domain.Pokemon{ID: 1},
+			Species:  domain.Species{ID: 1},
+		},
+	}
+	m.filtered = []domain.SpeciesSummary{{ID: 1}}
+	m.cursor = 0
+	m.syncDialogViewport()
+	vis := m.dialogPageSize()
+	if vis < 2 {
+		t.Fatalf("page size %d too small for test", vis)
+	}
+	m.moveFocusIdx = vis - 1
+	m.dialogVP.SetYOffset(0)
+	m.nudgeMoveFocus(1)
+	m.syncDialogViewport()
+	m.ensureMoveFocusVisible()
+	off := m.dialogVP.YOffset()
+	if m.moveFocusIdx < off || m.moveFocusIdx >= off+vis {
+		t.Fatalf("focus %d not visible: off=%d vis=%d", m.moveFocusIdx, off, vis)
 	}
 }
 

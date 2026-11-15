@@ -354,6 +354,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, m.keys.Clear) {
 			m.exitMoveDetail()
 			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
 			return m, nil
 		}
 		if key.Matches(msg, m.keys.Up) {
@@ -383,6 +384,9 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, m.keys.TabNext) || key.Matches(msg, m.keys.TabPrev) {
 		m.toggleDialogFocus()
 		m.syncDialogViewport()
+		if m.dialogContentFocus && m.dialogSection == DialogMoves {
+			m.ensureMoveFocusVisible()
+		}
 		return m, nil
 	}
 
@@ -447,11 +451,13 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, m.keys.Up) {
 			m.nudgeMoveFocus(-1)
 			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
 			return m, nil
 		}
 		if key.Matches(msg, m.keys.Down) {
 			m.nudgeMoveFocus(1)
 			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
 			return m, nil
 		}
 		if key.Matches(msg, m.keys.Enter) {
@@ -464,6 +470,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, m.keys.Home) {
 			m.moveFocusIdx = 0
 			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
 			return m, nil
 		}
 		if key.Matches(msg, m.keys.End) {
@@ -471,6 +478,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.moveFocusIdx = n - 1
 			}
 			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
 			return m, nil
 		}
 	}

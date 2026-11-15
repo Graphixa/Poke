@@ -76,9 +76,6 @@ func (m Model) dialogContentLines() []string {
 		}
 		return prependGeneralRef(formatEvolutionLines(r.Evolution, r.Species.Slug, r.Pokemon.DisplayName))
 	case DialogMoves:
-		if m.dialogGameID < 1 {
-			return []string{"Choose a game to view this information [G]"}
-		}
 		if !r.HasMoves && r.loadingExtras {
 			return []string{"Loading…"}
 		}
@@ -123,14 +120,18 @@ func sectionErrorLines(err error) []string {
 
 // dialogMoveChrome returns sticky learnset banner + table header, and a position hint.
 func (m Model) dialogMoveChrome(bodyW, scrollH, scrollOff int) (sticky []string, hint string) {
-	if m.dialogSection != DialogMoves || m.moveDetailOpen || m.dialogOverlayOpen() || m.dialogGameID < 1 {
+	if m.dialogSection != DialogMoves || m.moveDetailOpen || m.dialogOverlayOpen() {
 		return nil, ""
 	}
 	rows := m.dialogMoveRows()
 	if len(rows) == 0 {
 		return nil, ""
 	}
-	sticky = moveStickyLines(rows, bodyW, m.dialogGameLabel, m.dialogMoveMethod)
+	gameLabel := m.dialogGameLabel
+	if m.dialogGameID < 1 {
+		gameLabel = "All"
+	}
+	sticky = moveStickyLines(rows, bodyW, gameLabel, m.dialogMoveMethod)
 	vis := scrollH
 	if vis < 1 {
 		vis = 1
@@ -581,7 +582,7 @@ func formatEncounterLines(rows []domain.Encounter) []string {
 
 func formatEncounterLinesForGame(rows []domain.Encounter, gameID int, gameSlug string) []string {
 	if gameID < 1 {
-		return []string{"Choose a game to view this information [G]"}
+		return formatEncounterLines(rows)
 	}
 	var filtered []domain.Encounter
 	for _, e := range rows {
@@ -597,7 +598,7 @@ func formatEncounterLinesForGame(rows []domain.Encounter, gameID int, gameSlug s
 
 func formatFlavourLinesForGame(s domain.Species, gameID int, gameSlug string) []string {
 	if gameID < 1 {
-		return []string{"Choose a game to view this information [G]"}
+		return formatFlavourLinesAll(s)
 	}
 	var lines []string
 	seen := map[string]struct{}{}
@@ -620,6 +621,47 @@ func formatFlavourLinesForGame(s domain.Species, gameID int, gameSlug string) []
 		return []string{"No records available for this selection."}
 	}
 	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+// formatFlavourLinesAll groups English flavour text by game version.
+func formatFlavourLinesAll(s domain.Species) []string {
+	grouped := map[string][]string{}
+	var versions []string
+	seen := map[string]map[string]struct{}{}
+	for _, f := range s.FlavorTextEntries {
+		if f.Language != "" && f.Language != "en" {
+			continue
+		}
+		v := f.Version
+		if v == "" {
+			v = "unknown"
+		}
+		text := output.CleanFlavor(f.Text)
+		if seen[v] == nil {
+			seen[v] = map[string]struct{}{}
+			versions = append(versions, v)
+		}
+		if _, ok := seen[v][text]; ok {
+			continue
+		}
+		seen[v][text] = struct{}{}
+		grouped[v] = append(grouped[v], text)
+	}
+	if len(versions) == 0 {
+		return []string{"No records available for this selection."}
+	}
+	var lines []string
+	for _, v := range versions {
+		lines = append(lines, primaryText(output.TitleFromSlug(v)))
+		for _, text := range grouped[v] {
+			lines = append(lines, wrapWords(text, 56)...)
+			lines = append(lines, "")
+		}
+	}
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
 	return lines

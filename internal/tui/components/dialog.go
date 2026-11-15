@@ -100,10 +100,11 @@ func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 
 // DossierChrome is stationary chrome around the scroll body (not in the border title).
 type DossierChrome struct {
-	ContextLines []string // Form / Game / Method / notice
+	ContextLines []string // notice rows above body
 	StickyLines  []string // e.g. move table header; not scrolled
 	PositionHint string   // e.g. "Rows 8–24 of 42"; pinned below scroll
 	SidebarFocus bool     // strong section highlight when sidebar owns focus
+	TopRight     string   // right-aligned top-border chips (M/G), like browse F4
 }
 
 // DossierFrame renders a full-terminal dossier (title card + footer), not an overlay.
@@ -133,7 +134,7 @@ func DossierFrameEx(title string, section int, sectionLabels, bodyLines []string
 		Width(termW).
 		Height(frameH).
 		Render(inner)
-	card = stampDialogTitle(card, title, termW)
+	card = stampDialogTitle(card, title, termW, chrome.TopRight)
 
 	if footer == "" {
 		return card
@@ -283,7 +284,7 @@ func dialogSectionPager(active int, labels []string, width int) string {
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, boldSty().Render(pager))
 }
 
-func stampDialogTitle(card, title string, width int) string {
+func stampDialogTitle(card, title string, width int, topRight string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return card
@@ -306,12 +307,25 @@ func stampDialogTitle(card, title string, width int) string {
 	}
 	border := lipgloss.NewStyle().Foreground(style.BorderColor())
 	titleSt := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
-	prefix := border.Render("╭─") + titleSt.Render(label) + border.Render("─")
-	remain := tw - lipgloss.Width(prefix) - 1
+	horiz := border.Render("─")
+	prefix := border.Render("╭─") + titleSt.Render(label) + horiz
+	remain := tw - lipgloss.Width(prefix) - 1 // minus ╮
 	if remain < 0 {
 		remain = 0
 	}
-	lines[0] = prefix + strings.Repeat(border.Render("─"), remain) + border.Render("╮")
+	topRight = strings.TrimSpace(topRight)
+	if topRight == "" {
+		lines[0] = prefix + strings.Repeat(horiz, remain) + border.Render("╮")
+		return strings.Join(lines, "\n")
+	}
+	// Right-align chips before ╮ (same idea as browse F4): ──  M  method  G  choose game  ─╮
+	suffix := " " + topRight + "  "
+	sw := lipgloss.Width(suffix) + 1 // +1 trailing horiz
+	if sw >= remain {
+		lines[0] = prefix + lipgloss.NewStyle().MaxWidth(remain).Render(suffix) + border.Render("╮")
+	} else {
+		lines[0] = prefix + strings.Repeat(horiz, remain-sw) + suffix + horiz + border.Render("╮")
+	}
 	return strings.Join(lines, "\n")
 }
 

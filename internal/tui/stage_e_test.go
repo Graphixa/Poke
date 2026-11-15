@@ -16,11 +16,14 @@ func TestStageE_NoAlternateFormsHidesFormContext(t *testing.T) {
 	m.dialogGameLabel = "Pearl"
 	m.dialogGameID = 12
 	joined := strings.Join(m.dialogContextLines(80), "\n")
-	if m.dialogHasForms() || strings.Contains(joined, "Form:") {
-		t.Fatalf("single form must hide Form control: %q", joined)
+	if m.dialogHasForms() {
+		t.Fatal("single form must not report HasForms")
 	}
-	if !strings.Contains(joined, "Game: Pearl [G]") {
-		t.Fatalf("game always visible: %q", joined)
+	// Form/Game/Method are top-border chips, not body context.
+	for _, ban := range []string{"Form:", "Game:", "Method:"} {
+		if strings.Contains(joined, ban) {
+			t.Fatalf("body must hide %s: %q", ban, joined)
+		}
 	}
 }
 
@@ -68,8 +71,8 @@ func TestStageE_MissingEncountersAndDescriptions(t *testing.T) {
 		t.Fatalf("desc=%q", desc[0])
 	}
 	noGame := formatEncounterLinesForGame(nil, 0, "")
-	if !strings.Contains(noGame[0], "Choose a game") {
-		t.Fatalf("unset game=%q", noGame[0])
+	if noGame[0] != "No wild encounters recorded." {
+		t.Fatalf("All games empty=%q", noGame[0])
 	}
 }
 

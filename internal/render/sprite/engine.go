@@ -195,7 +195,6 @@ func (e *Engine) LookupCached(ctx context.Context, pokemon domain.Pokemon, cells
 		}
 		opts.ContentHash = canonical
 		if rend.Name() == "image" {
-			opts.BackgroundColor = NativeLetterboxBG()
 			if hit, result := e.lookupNativeFrame(ctx, rend, opts, canonical, kind); hit {
 				return result, true
 			}
@@ -272,7 +271,11 @@ func (e *Engine) HasNativeFile(ctx context.Context, pokemon domain.Pokemon, cell
 	if cells >= SmallestFrameBucket() {
 		fw, fh = FrameSizeFor(cells)
 	}
-	return e.hasNativeFile(NativeCacheKey(ref.Hash, e.protocolName(), fw, fh, NativeLetterboxBG(), e.SixelColors))
+	bg := e.Background
+	if bg.A == 0 {
+		bg = DefaultBackground
+	}
+	return e.hasNativeFile(NativeCacheKey(ref.Hash, e.protocolName(), fw, fh, bg, e.SixelColors))
 }
 
 func (e *Engine) protocolName() string {
@@ -457,7 +460,6 @@ func (e *Engine) renderChain(ctx context.Context, pokemon domain.Pokemon, opts R
 		key := ""
 		switch {
 		case rend.Name() == "image" && IsHexSHA256(opts.ContentHash):
-			opts.BackgroundColor = NativeLetterboxBG()
 			key = nativeCacheKey(opts.ContentHash, rend, opts.Width, opts.Height, opts.BackgroundColor, opts.SixelColors)
 		case rend.Name() != "image" && rend.Name() != "placeholder" && opts.ContentHash != "":
 			color := effectiveColor(opts.ColorMode, e.Caps)

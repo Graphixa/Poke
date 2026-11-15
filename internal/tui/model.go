@@ -168,7 +168,7 @@ type Model struct {
 	dialogFormIdx      int
 	dialogFormID       int
 	dialogPokemon      domain.Pokemon
-	dialogGameID       int // confirmed version id; 0 = unset
+	dialogGameID       int // confirmed version id; 0 = All
 	dialogGameLabel    string
 	dialogGameSlug     string
 	dialogMoveMethod   string

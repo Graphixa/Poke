@@ -125,13 +125,21 @@ func (m Model) browseData() views.BrowseData {
 			hintW = m.width
 		}
 		helps := m.keys.DialogShortHelp(DialogHelpOpts{
-			HasForms:     m.dialogHasForms(),
 			ContentFocus: m.dialogContentFocus,
 			Moves:        m.dialogSection == DialogMoves,
 			MoveDetail:   m.moveDetailOpen,
 			Picker:       m.dialogOverlayOpen(),
 		})
 		data.FooterHint = style.RenderCommandHelp(helps, max(1, hintW-1))
+		// M then G, right-aligned: G stays put when Method chip vanishes off Moves.
+		if !m.dialogOverlayOpen() {
+			var chips []string
+			if m.dialogSection == DialogMoves && !m.moveDetailOpen {
+				chips = append(chips, style.RenderKeyWithDescription("M", "method"))
+			}
+			chips = append(chips, style.RenderKeyWithDescription("G", "choose game"))
+			data.DialogTopRight = strings.Join(chips, "  ")
+		}
 	}
 
 	rightID, _ := m.glanceDisplayID()

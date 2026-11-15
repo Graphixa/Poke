@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/Graphixa/Pokedex/internal/domain"
@@ -30,56 +29,14 @@ func (m *Model) toggleDialogFocus() {
 	}
 }
 
-// dialogContextLines builds Form/Game/Method/notice rows for the chrome.
+// dialogContextLines builds notice rows for the chrome.
+// Form/Game/Method live as top-border chips (or are hidden); picker code stays.
 func (m Model) dialogContextLines(width int) []string {
-	if width < 20 {
-		width = 20
+	_ = width
+	if m.dialogNotice == "" {
+		return nil
 	}
-	game := m.dialogGameLabel
-	if game == "" {
-		if m.dialogGameID == 0 {
-			game = "—"
-		} else {
-			game = fmt.Sprintf("#%d", m.dialogGameID)
-		}
-	}
-	gamePart := fmt.Sprintf("Game: %s [G]", game)
-
-	var formPart string
-	if m.dialogHasForms() {
-		name := "Default"
-		if m.dialogFormIdx >= 0 && m.dialogFormIdx < len(m.dialogForms) {
-			f := m.dialogForms[m.dialogFormIdx]
-			if f.DisplayName != "" {
-				name = f.DisplayName
-			}
-		}
-		formPart = fmt.Sprintf("Form: %s [F]", name)
-	}
-
-	var lines []string
-	if formPart != "" {
-		combined := formPart + "    " + gamePart
-		if len(combined) <= width {
-			lines = append(lines, combined)
-		} else {
-			lines = append(lines, formPart, gamePart)
-		}
-	} else {
-		lines = append(lines, gamePart)
-	}
-
-	if m.dialogSection == DialogMoves {
-		method := m.dialogMoveMethod
-		if method == "" {
-			method = "level-up"
-		}
-		lines = append(lines, fmt.Sprintf("Method: %s [M]", methodHeading(method)))
-	}
-	if m.dialogNotice != "" {
-		lines = append(lines, m.dialogNotice)
-	}
-	return lines
+	return []string{m.dialogNotice}
 }
 
 func (m *Model) exitMoveDetail() {
@@ -304,11 +261,11 @@ func (m *Model) openGamePicker() {
 	}
 	m.gamePickerOpen = true
 	m.gamePickerFilter = ""
-	m.gamePickerItems = vers
+	m.gamePickerItems = withAllGameOption(vers)
 	m.gamePickerSuggest = 0
 	m.gamePickerCursor = 0
 	if m.dialogGameID > 0 {
-		for i, v := range vers {
+		for i, v := range m.gamePickerItems {
 			if v.ID == m.dialogGameID {
 				m.gamePickerCursor = i
 				break
@@ -329,11 +286,17 @@ func (m *Model) closeGamePicker(confirm bool) {
 			m.gamePickerCursor = len(m.gamePickerItems) - 1
 		}
 		v := m.gamePickerItems[m.gamePickerCursor]
-		m.dialogGameID = v.ID
-		m.dialogGameSlug = v.Slug
-		m.dialogGameLabel = v.DisplayName
-		if m.dialogGameLabel == "" {
-			m.dialogGameLabel = v.Slug
+		if v.ID == 0 {
+			m.dialogGameID = 0
+			m.dialogGameSlug = ""
+			m.dialogGameLabel = ""
+		} else {
+			m.dialogGameID = v.ID
+			m.dialogGameSlug = v.Slug
+			m.dialogGameLabel = v.DisplayName
+			if m.dialogGameLabel == "" {
+				m.dialogGameLabel = v.Slug
+			}
 		}
 		if m.saveGameVersion != nil {
 			_ = m.saveGameVersion(v.ID)
@@ -355,9 +318,12 @@ func (m *Model) filterGamePicker() {
 	}
 	q := strings.ToLower(strings.TrimSpace(m.gamePickerFilter))
 	if q == "" {
-		m.gamePickerItems = all
+		m.gamePickerItems = withAllGameOption(all)
 	} else {
 		var out []domain.Version
+		if strings.Contains("all", q) || strings.Contains("(all)", q) {
+			out = append(out, allGameOption())
+		}
 		for _, v := range all {
 			name := strings.ToLower(v.DisplayName + " " + v.Slug)
 			if strings.Contains(name, q) {
@@ -369,6 +335,14 @@ func (m *Model) filterGamePicker() {
 	if m.gamePickerCursor >= len(m.gamePickerItems) {
 		m.gamePickerCursor = max(0, len(m.gamePickerItems)-1)
 	}
+}
+
+func allGameOption() domain.Version {
+	return domain.Version{ID: 0, Slug: "all", DisplayName: "(All)"}
+}
+
+func withAllGameOption(vers []domain.Version) []domain.Version {
+	return append([]domain.Version{allGameOption()}, vers...)
 }
 
 func (m *Model) openFormPicker() {
@@ -538,6 +512,22 @@ func (m *Model) nudgeMoveFocus(delta int) {
 		m.moveFocusIdx = len(rows) - 1
 	}
 	m.lastMoveFocusIdx = m.moveFocusIdx
+}
+
+// ensureMoveFocusVisible scrolls the dossier viewport so the focused move row stays on screen.
+func (m *Model) ensureMoveFocusVisible() {
+	vis := m.dialogPageSize()
+	if vis <= 0 || m.moveFocusIdx < 0 {
+		return
+	}
+	off := m.dialogVP.YOffset()
+	if m.moveFocusIdx < off {
+		m.dialogVP.SetYOffset(m.moveFocusIdx)
+		return
+	}
+	if m.moveFocusIdx >= off+vis {
+		m.dialogVP.SetYOffset(m.moveFocusIdx - vis + 1)
+	}
 }
 
 func (m *Model) dialogMoveRowsAll() []domain.LevelUpMove {

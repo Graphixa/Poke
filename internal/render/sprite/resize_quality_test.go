@@ -48,7 +48,7 @@ func TestNativeCacheKeyRoundTrip(t *testing.T) {
 	bg := color.RGBA{R: 0x31, G: 0x32, B: 0x44, A: 255}
 	key := sprite.NativeCacheKey("named-25-pikachu-artwork", "sixel", 40, 20, bg, 64)
 	pxW, pxH := sprite.PixelSize(40, 20)
-	wantBG := sprite.BackgroundHash(sprite.NativeLetterboxBG())
+	wantBG := sprite.BackgroundHash(bg)
 	wantPrefix := fmt.Sprintf("named-25-pikachu-artwork-image-sixel-%dx%d-%s-c64-", pxW, pxH, wantBG)
 	if !strings.HasPrefix(key, wantPrefix) || !strings.HasSuffix(key, sprite.AlgorithmVersion) {
 		t.Fatalf("key=%q want prefix %q", key, wantPrefix)
@@ -78,8 +78,8 @@ func TestNativeCacheKeyPaletteIdentity(t *testing.T) {
 	}
 	bg2 := color.RGBA{R: 1, G: 2, B: 3, A: 255}
 	kBg := sprite.NativeCacheKey(hash, "sixel", 32, 16, bg2, 64)
-	if k64 != kBg {
-		t.Fatal("theme background must not change native cache key")
+	if k64 == kBg {
+		t.Fatal("sixel keys must include theme background (letterbox is baked in)")
 	}
 	kKitty := sprite.NativeCacheKey(hash, "kitty", 32, 16, bg, 64)
 	kKitty2 := sprite.NativeCacheKey(hash, "kitty", 32, 16, bg2, 64)

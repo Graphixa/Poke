@@ -75,19 +75,21 @@ func ParseCacheKey(key string) (hash string, source SpriteSource, mode string, w
 //	<hash>-image[-<proto>]-<w>x<h>-<bg>[-c<palette>]-<version>
 //
 // Sixel keys include c64|c128|c256 before the version. Non-sixel protocols omit palette.
-// The bg slot is always DefaultBackground: live theme base must not key native
-// frames or a theme switch orphans the whole image cache. Kitty/iTerm ignore bg
-// in encode; Sixel letterboxes against the same fixed color (see NativeLetterboxBG).
+// Sixel bakes the letterbox into pixels, so the bg slot is the live theme base.
+// Kitty/iTerm ignore encode bg — their key uses a fixed DefaultBackground tag so
+// a theme switch does not orphan those caches.
 //
-// Example: abc...-image-sixel-320x160-000000-c64-v13
+// Example: abc...-image-sixel-320x160-282a36-c64-v13
 func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA, sixelColors int) string {
-	_ = bg // callers may still pass theme bg; identity is theme-independent
 	tag := "image"
 	if proto != "" {
 		tag = "image-" + proto
 	}
 	pxW, pxH := PixelSize(w, h)
-	bgTag := BackgroundHash(NativeLetterboxBG())
+	bgTag := BackgroundHash(bg)
+	if proto != "sixel" {
+		bgTag = BackgroundHash(DefaultBackground)
+	}
 	if proto == "sixel" {
 		colors := EffectiveSixelColors(sixelColors)
 		return fmt.Sprintf("%s-%s-%dx%d-%s-c%d-%s",
@@ -96,10 +98,6 @@ func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA, sixelCol
 	return fmt.Sprintf("%s-%s-%dx%d-%s-%s",
 		contentHash, tag, pxW, pxH, bgTag, AlgorithmVersion)
 }
-
-// NativeLetterboxBG is the fixed composite color for native frame encode/keys.
-// Theme panel clears still use style.BaseRGBA(); only the bitmap letterbox is frozen.
-func NativeLetterboxBG() color.RGBA { return DefaultBackground }
 
 // ParseNativeCacheKey splits a key produced by NativeCacheKey.
 // Returns sixelColors as 0 when the protocol is not sixel.

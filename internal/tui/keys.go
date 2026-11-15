@@ -95,7 +95,6 @@ func defaultKeyMap() keyMap {
 
 // DialogHelpOpts configures dossier footer chips for the current focus.
 type DialogHelpOpts struct {
-	HasForms     bool
 	ContentFocus bool
 	Moves        bool
 	MoveDetail   bool
@@ -103,6 +102,7 @@ type DialogHelpOpts struct {
 }
 
 // DialogShortHelp returns footer bindings for the full-screen dossier.
+// G/M are top-border chips (like F4), not footer.
 func (k keyMap) DialogShortHelp(o DialogHelpOpts) []key.Binding {
 	if o.Picker {
 		return []key.Binding{
@@ -123,21 +123,19 @@ func (k keyMap) DialogShortHelp(o DialogHelpOpts) []key.Binding {
 	if !o.ContentFocus {
 		out = append(out,
 			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "section")),
+			k.PageUp,
 		)
 	} else if o.Moves {
 		out = append(out,
 			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "move")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "detail")),
-			key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "method")),
+			k.PageUp,
 		)
 	} else {
 		out = append(out,
 			key.NewBinding(key.WithKeys("up"), key.WithHelp("↑/↓", "scroll")),
+			k.PageUp,
 		)
-	}
-	out = append(out, key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "game")))
-	if o.HasForms {
-		out = append(out, key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "form")))
 	}
 	out = append(out, key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")))
 	return out

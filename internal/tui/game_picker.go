@@ -46,15 +46,18 @@ func (m Model) gamePickerLines(width int) []string {
 		if label == "" {
 			label = v.Slug
 		}
+		if v.ID == 0 {
+			label = "(All)"
+		}
 		prefix := "  "
 		line := label
-		if v.ID == m.gamePickerSuggest && m.dialogGameID == 0 {
+		if v.ID == m.gamePickerSuggest && m.dialogGameID == 0 && v.ID != 0 {
 			line += "  · suggested"
 		}
 		if i == m.gamePickerCursor {
 			prefix = "> "
 			line = lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true).Render(prefix + line)
-		} else if v.ID == m.dialogGameID {
+		} else if v.ID == m.dialogGameID || (v.ID == 0 && m.dialogGameID == 0) {
 			line = lipgloss.NewStyle().Foreground(style.SecondaryColor()).Render(prefix + line)
 		} else {
 			line = prefix + line
