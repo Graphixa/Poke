@@ -607,7 +607,3 @@ func (m *Model) dialogPageSize() int {
 func (m *Model) dialogGeom() components.DialogGeom {
 	return components.DialogLayout(m.width, m.height, AllDialogSectionLabels())
 }
-
-func (m *Model) dialogStacked() bool {
-	return m.dialogGeom().Stacked
-}

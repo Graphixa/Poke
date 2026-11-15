@@ -150,9 +150,8 @@ func (m Model) dialogMoveChrome(bodyW, scrollH, scrollOff int) (sticky []string,
 	// When content-focused, prefer selection window around focus.
 	if m.dialogContentFocus && m.moveFocusIdx >= 0 {
 		start = m.moveFocusIdx + 1
-		end = start
-		if end > len(rows) {
-			end = len(rows)
+		if start > len(rows) {
+			start = len(rows)
 		}
 		hint = fmt.Sprintf("Row %d of %d", start, len(rows))
 		return sticky, hint

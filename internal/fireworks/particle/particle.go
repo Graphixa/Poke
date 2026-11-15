@@ -202,10 +202,6 @@ const (
 	Spawning
 )
 
-func state(age, ttl time.Duration) State {
-	return stateWithPhaseTiming(age, ttl, DefaultPhaseTiming())
-}
-
 func stateWithPhaseTiming(age, ttl time.Duration, phases PhaseTiming) State {
 	if ttl == 0 || age >= ttl {
 		return Dead

@@ -6,20 +6,12 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-func (m *Model) dialogUsesGame() bool {
-	return m.dialogSection.UsesGame()
-}
-
 func (m *Model) dialogHasForms() bool {
 	return len(m.dialogForms) > 1
 }
 
 func (m *Model) dialogOverlayOpen() bool {
 	return m.gamePickerOpen || m.formPickerOpen || m.methodPickerOpen
-}
-
-func (m *Model) dialogFocusContent() bool {
-	return m.dialogContentFocus
 }
 
 func (m *Model) toggleDialogFocus() {
