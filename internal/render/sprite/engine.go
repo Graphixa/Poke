@@ -242,7 +242,7 @@ func (e *Engine) lookupAssetRefs(ctx context.Context, pokemon domain.Pokemon, na
 	return nil
 }
 
-// WarmRender forces the chafa backend at interactive (fast) quality for
+// WarmRender forces the chafa backend at interactive quality for
 // background warm. Full Mosaic prewarm is too expensive and unused on native
 // terminals (browse skips chafa warm when NativeImage is set).
 func (e *Engine) WarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
