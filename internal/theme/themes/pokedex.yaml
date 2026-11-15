@@ -1,0 +1,12 @@
+theme_name: "Pokédex"
+style: dark
+
+colors:
+  primary: "#ff4061"
+  secondary: "#47bcff"
+  components: "#EEF1F4"
+  placeholders: "#8A96A3"
+  base: "#1B1E24"
+  warning: "#FFD143"
+  error: "#FF4B4B"
+  success: "#47C97A"

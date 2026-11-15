@@ -20,7 +20,7 @@ func (h *Handler) Theme(ctx context.Context) error {
 	themesDir := theme.ThemesDir(filepath.Dir(h.Paths.ConfigFile))
 	current := svc.Config.Theme.Name
 	if current == "" {
-		current = "catppuccin"
+		current = "dracula"
 	}
 	err = tui.RunThemePicker(tui.ThemePickerOptions{
 		Current:   current,

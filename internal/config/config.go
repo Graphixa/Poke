@@ -124,7 +124,7 @@ func Default() Config {
 		TUI: TUI{
 			ShowSprite: true,
 		},
-		Theme: Theme{Name: "catppuccin"},
+		Theme: Theme{Name: "dracula"},
 		Network: Network{
 			Timeout:        Duration{10 * time.Second},
 			Retries:        3,
