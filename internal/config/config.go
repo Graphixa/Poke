@@ -475,8 +475,17 @@ func Edit(path string, getenv func(string) string) error {
 	if len(command) == 0 {
 		return errors.New("no editor command configured")
 	}
-	args := append(command[1:], path)
+	args := append(append([]string{}, command[1:]...), path)
 	cmd := exec.Command(command[0], args...) // #nosec G204 -- user $VISUAL/$EDITOR or platform default
+	if !editorWaits(command) {
+		// GUI editors (notepad, code, cursor, …): open and return so the TTY
+		// is not stuck until the window closes / CTRL+C.
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("open config in %s: %w", command[0], err)
+		}
+		go func() { _ = cmd.Wait() }() // reap; ignore exit
+		return nil
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -484,6 +493,27 @@ func Edit(path string, getenv func(string) string) error {
 		return fmt.Errorf("open config in %s: %w", command[0], err)
 	}
 	return nil
+}
+
+// editorWaits is true for TTY editors (vim/nano/…) or when --wait/-w is set.
+// GUI editors return false so Edit can fire-and-forget.
+func editorWaits(command []string) bool {
+	if len(command) == 0 {
+		return true
+	}
+	for _, a := range command[1:] {
+		if a == "--wait" || a == "-w" {
+			return true
+		}
+	}
+	base := strings.ToLower(filepath.Base(command[0]))
+	base = strings.TrimSuffix(base, ".exe")
+	switch base {
+	case "vi", "vim", "nvim", "nano", "emacs", "helix", "hx", "micro":
+		return true
+	default:
+		return false
+	}
 }
 
 func splitCommand(value string) []string {

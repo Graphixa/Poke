@@ -171,6 +171,24 @@ func TestSelectEditor(t *testing.T) {
 	}
 }
 
+func TestEditorWaits(t *testing.T) {
+	if !editorWaits([]string{"vim"}) {
+		t.Fatal("vim should wait")
+	}
+	if !editorWaits([]string{"code", "--wait"}) {
+		t.Fatal("code --wait should wait")
+	}
+	if editorWaits([]string{"notepad"}) {
+		t.Fatal("notepad should not wait")
+	}
+	if editorWaits([]string{"code"}) {
+		t.Fatal("code without --wait should not wait")
+	}
+	if editorWaits([]string{"cursor.exe"}) {
+		t.Fatal("cursor should not wait")
+	}
+}
+
 func TestLoadRejectsLegacySpriteModes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("render:\n  sprite_mode: braille\n"), 0o600); err != nil {
