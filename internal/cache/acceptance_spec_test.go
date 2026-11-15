@@ -167,7 +167,8 @@ func TestSixelCacheKeyStableAcrossSizes(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantW, wantH := sprite.PixelSize(w, h)
-		if parsed != hash || proto != "sixel" || pxW != wantW || pxH != wantH || bgHash != "313244" || ver != sprite.AlgorithmVersion {
+		wantBG := sprite.BackgroundHash(sprite.NativeLetterboxBG())
+		if parsed != hash || proto != "sixel" || pxW != wantW || pxH != wantH || bgHash != wantBG || ver != sprite.AlgorithmVersion {
 			t.Fatalf("cells=%d parsed hash=%s proto=%s %dx%d bg=%s ver=%s", cells, parsed, proto, pxW, pxH, bgHash, ver)
 		}
 	}
