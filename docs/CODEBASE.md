@@ -96,7 +96,7 @@ Two production paths:
 - **CLI / update:** `Service.SyncArtwork` walks the index, compares CDN URL + SHA, downloads official-artwork PNGs, and invalidates native frames when bytes change. It emits `ArtworkSyncProgress`; app owns the composite dataset-refresh → artwork-sync presentation.
 - **Browse / setup:** `prewarm.NewArtwork` (selected / neighbors / background scan). Resolves via `sprite.SourceResolver` (store then HTTP). Stage `"artwork"`. Started on `OnUIReady` or blocking (`Wait`) in setup wizard.
 
-Consent: `config.Setup.ArtworkMode` (`off|blocking|background`) + `SpriteHD`. Browse starts the warmer only when setup asked for background or config says background + HD enabled.
+Consent: `config.Setup.ArtworkMode` (`off|blocking|background`). Browse starts the warmer when mode is `background` (or setup asked for background).
 
 ### 4. Native image-cache construction
 

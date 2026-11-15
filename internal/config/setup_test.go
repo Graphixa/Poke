@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Graphixa/Pokedex/internal/config"
@@ -20,8 +21,8 @@ func TestNeedsSetupAndArtworkConsent(t *testing.T) {
 	if cfg.EffectiveArtworkMode() != config.ArtworkModeBlocking {
 		t.Fatalf("mode = %q", cfg.EffectiveArtworkMode())
 	}
-	if !cfg.SpriteHDEnabled() {
-		t.Fatal("accepted consent should enable sprite_hd")
+	if !cfg.ArtworkWarmEnabled() {
+		t.Fatal("accepted blocking consent should enable artwork warm")
 	}
 	cfg.MarkSetupComplete()
 	if cfg.NeedsSetup() {
@@ -29,8 +30,8 @@ func TestNeedsSetupAndArtworkConsent(t *testing.T) {
 	}
 
 	cfg.ApplyArtworkConsent(config.ArtworkConsentDeclined, config.ArtworkModeOff)
-	if cfg.SpriteHDEnabled() {
-		t.Fatal("declined consent should disable sprite_hd")
+	if cfg.ArtworkWarmEnabled() {
+		t.Fatal("declined consent should disable artwork warm")
 	}
 	if cfg.EffectiveArtworkMode() != config.ArtworkModeOff {
 		t.Fatalf("mode = %q", cfg.EffectiveArtworkMode())
@@ -55,11 +56,15 @@ func TestSetupRoundTripYAML(t *testing.T) {
 	if loaded.EffectiveArtworkMode() != config.ArtworkModeBackground {
 		t.Fatalf("mode = %q", loaded.EffectiveArtworkMode())
 	}
-	if !loaded.SpriteHDEnabled() {
-		t.Fatal("sprite_hd should be auto")
+	if !loaded.ArtworkWarmEnabled() {
+		t.Fatal("background mode should enable artwork warm")
 	}
 	data, _ := os.ReadFile(path)
 	if len(data) == 0 {
 		t.Fatal("empty config file")
+	}
+	raw := string(data)
+	if strings.Contains(raw, "sprite_hd") || strings.Contains(raw, "show_sprite") {
+		t.Fatalf("legacy knobs should not be written: %s", raw)
 	}
 }

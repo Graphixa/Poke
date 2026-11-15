@@ -204,7 +204,7 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		Selected:      req.Selected,
 		Prefill:       req.Prefill,
 		Context:       runCtx,
-		DisableSprite: !svc.Config.TUI.ShowSprite || svc.Config.EffectiveSpriteMode() == "off",
+		DisableSprite: svc.Config.EffectiveSpriteMode() == "off",
 	}
 	favouriteStore := favourites.Store{Path: filepath.Join(filepath.Dir(svc.Paths.ConfigFile), "favourites.json")}
 	if ids, err := favouriteStore.Load(); err != nil {
@@ -264,7 +264,7 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 
 	wantArtworkBG := startBgArtwork ||
-		(svc.Config.EffectiveArtworkMode() == config.ArtworkModeBackground && svc.Config.SpriteHDEnabled())
+		svc.Config.EffectiveArtworkMode() == config.ArtworkModeBackground
 	if wantArtworkBG && !opts.DisableSprite {
 		useProgress = true
 		artworkWarmer := prewarm.NewArtwork(index, warmLoader,
