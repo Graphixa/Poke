@@ -32,6 +32,8 @@ func (m Model) View() tea.View {
 	}
 	content := views.Browse(m.browseData())
 	switch {
+	case m.showBirthday:
+		content = m.birthdayView()
 	case m.showDialog && m.dialogOverlayOpen():
 		content = m.dossierPickerView(content)
 	case m.showFilters:

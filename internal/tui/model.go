@@ -11,6 +11,7 @@ import (
 
 	"github.com/Graphixa/Pokedex/internal/debuglog"
 	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Pokedex/internal/fireworks"
 	"github.com/Graphixa/Pokedex/internal/search"
 	"github.com/Graphixa/Pokedex/internal/textwidth"
 	"github.com/Graphixa/Pokedex/internal/tui/components"
@@ -251,6 +252,10 @@ type Model struct {
 	pokemonSrc PokemonSource
 
 	showDialog bool
+
+	showBirthday     bool
+	declanEnterCount int
+	birthday         *fireworks.Show
 
 	quitting bool
 }

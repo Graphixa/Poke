@@ -198,4 +198,8 @@ CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Go
 
 Licensed under [GPL-3.0](LICENSE).
 
+## Credits
+
+Terminal fireworks animation adapted from [erik-adelbert/firework](https://github.com/erik-adelbert/firework) (MIT). See [`internal/fireworks/LICENSE.MIT`](internal/fireworks/LICENSE.MIT).
+
 Release notes are grouped from conventional commit subjects (`feat`, `fix`, `docs`, …).

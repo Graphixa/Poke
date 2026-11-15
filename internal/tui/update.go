@@ -50,6 +50,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case birthdayTickMsg:
+		return m.onBirthdayTick(msg)
+
 	case tea.WindowSizeMsg:
 		// Wipe sixel at the pre-resize art origin before layout moves — WT does
 		// not erase old placements when CUP shifts.
@@ -65,6 +68,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDialog {
 			m.syncDialogViewport()
 		}
+		m.resizeBirthday()
 		m.invalidateNativePaintGeometry()
 		m.markNativeOverlayDirty()
 		layoutCmd := m.handleSpriteLayoutChange(prevShow, prevSide)
@@ -251,6 +255,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.requestQuit()
 	}
 
+	if m.showBirthday {
+		return m.handleBirthdayKey(msg)
+	}
+
 	if m.showFilters || m.showCompare || m.featureError != "" {
 		return m.handleFeatureKey(msg)
 	}
@@ -274,7 +282,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Enter) {
-		return m.openDialog()
+		return m.handleBirthdayEnter()
 	}
 
 	if key.Matches(msg, m.keys.ViewCycle) {
@@ -546,6 +554,9 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.search, cmd = m.search.Update(msg)
 	if m.search.Value() != prev {
+		if !isBirthdayQuery(m.search.Value()) {
+			m.declanEnterCount = 0
+		}
 		m.refilter()
 		m.dialogVP.GotoTop()
 		return m, tea.Batch(cmd, m.syncSelectionLoads())

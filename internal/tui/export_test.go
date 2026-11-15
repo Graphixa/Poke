@@ -15,6 +15,8 @@ import (
 
 func (m Model) Query() string                      { return m.queryValue() }
 func (m Model) DialogVisible() bool                { return m.showDialog }
+func (m Model) BirthdayVisible() bool              { return m.showBirthday }
+func (m Model) DeclanEnterCount() int              { return m.declanEnterCount }
 func (m Model) Quitting() bool                     { return m.quitting }
 func (m Model) ActiveBrowseView() BrowseView       { return m.browseView }
 func (m Model) ActiveDialogSection() DialogSection { return m.dialogSection }
