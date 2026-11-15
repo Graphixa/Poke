@@ -6,24 +6,42 @@ The canonical command is **`poke`**. **`pokedex`** is an equivalent alias (same 
 
 ## Install
 
+### One-liner (recommended)
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.ps1 | iex
+```
+
+Pin a version with `POKE_VERSION=1.0.0` (shell) or `$env:POKE_VERSION="1.0.0"` (PowerShell). Scripts download the GitHub Release archive, verify `checksums.txt`, and install both `poke` and `pokedex`.
+
+### Winget (Windows)
+
+```powershell
+winget install --id Graphixa.Poke
+```
+
+### Homebrew (macOS)
+
+```bash
+brew tap Graphixa/homebrew-tap
+brew install poke
+```
+
+### Chocolatey (Windows)
+
+Coming soon (`choco install poke`). Package scaffolding is in-repo; publish follows the first Chocolatey.org approval.
+
 ### From a GitHub Release
 
 Download the archive for your OS/architecture from the [Releases](https://github.com/Graphixa/Pokedex/releases) page, extract it, and put the binaries on your `PATH`.
 
-Each archive includes both names:
-
-| Platform | Executables |
-| --- | --- |
-| Linux / macOS | `poke` and `pokedex` (identical binaries; a Homebrew tap may later install `pokedex` as a symlink) |
-| Windows | `poke.exe` and `pokedex.exe` |
-
-Verify the download with `checksums.txt` from the same release.
-
-```bash
-# Example after extracting a Linux/macOS archive
-./poke version
-./pokedex version
-```
+Each archive includes both names (`poke` / `pokedex`, or `.exe` on Windows). Verify with `checksums.txt` from the same release.
 
 ### From source
 
@@ -33,15 +51,10 @@ Requires Go 1.26+.
 git clone https://github.com/Graphixa/Pokedex.git
 cd Pokedex
 go build -o poke ./cmd/poke
-# optional alias name
 cp poke pokedex   # or: ln -s poke pokedex
 ```
 
-### Homebrew / Scoop
-
-- **Homebrew tap:** planned immediately after the first tagged GitHub Release. Not part of the v1 packaging gate.
-- **Scoop:** not supported (out of scope for v1).
-
+Scoop is not supported (out of scope for v1).
 ## Quick start
 
 ```bash
@@ -181,6 +194,8 @@ On Windows without `bash` on `PATH`, archive verification can use:
 pwsh -File scripts/verify-release-archives.ps1
 ```
 
-CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser and publishes GitHub Release assets with checksums.
+CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser (tests + check first), publishes GitHub Release assets with checksums, updates the Homebrew tap, and opens a Winget PR. Chocolatey packs from a separate Windows workflow after the release.
+
+Licensed under [GPL-3.0](LICENSE).
 
 Release notes are grouped from conventional commit subjects (`feat`, `fix`, `docs`, …).

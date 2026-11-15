@@ -33,7 +33,7 @@ builds:
         -X github.com/Graphixa/Pokedex/pkg/version.Date={{.Date}}
 
   # Second Windows executable and Unix alias binary (same package as poke).
-  # Archives ship both names; Homebrew can later install pokedex as a symlink.
+  # Archives ship both names; Homebrew cask installs poke and pokedex.
   - id: pokedex
     main: ./cmd/poke
     binary: pokedex
@@ -69,15 +69,11 @@ archives:
       - goos: windows
         formats:
           - zip
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- .Version }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
+    # FontGet-compatible: poke_<ver>_<os>_<arch>.tar.gz|zip (lowercase os/arch)
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
+      - LICENSE
 
 checksum:
   name_template: checksums.txt
@@ -111,8 +107,74 @@ release:
   draft: false
   prerelease: auto
   name_template: "poke {{.Version}}"
-  # Scoop is out of scope for v1. Homebrew tap is a post-v1 follow-up
-  # after the first tagged GitHub Release (see README).
+
+# Homebrew Cask (macOS) — Graphixa/homebrew-tap
+homebrew_casks:
+  - name: poke
+    repository:
+      owner: Graphixa
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/Graphixa/Pokedex"
+    description: "Cross-platform terminal Pokédex powered by PokeAPI"
+    license: "GPL-3.0"
+    ids:
+      - default
+    binaries:
+      - poke
+      - pokedex
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/poke"]
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/pokedex"]
+          end
+
+# Winget — auto-PR to microsoft/winget-pkgs via Graphixa/winget-pkgs fork
+winget:
+  - name: Poke
+    publisher: Graphixa
+    short_description: "Cross-platform terminal Pokédex powered by PokeAPI"
+    license: "gpl-3.0"
+    ids:
+      - default
+    goamd64: v1
+    package_identifier: Graphixa.Poke
+    commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
+    url_template: "https://github.com/Graphixa/Pokedex/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    path: manifests/g/Graphixa/Poke/{{.Version}}
+    homepage: "https://github.com/Graphixa/Pokedex"
+    description: "Cross-platform terminal Pokédex powered by PokeAPI. Browse with a keyboard-first TUI, or look up stats and evolution chains from the command line."
+    license_url: "https://github.com/Graphixa/Pokedex/blob/main/LICENSE"
+    publisher_url: "https://github.com/Graphixa"
+    publisher_support_url: "https://github.com/Graphixa/Pokedex/issues"
+    release_notes: "{{.Changelog}}"
+    release_notes_url: "https://github.com/Graphixa/Pokedex/releases/tag/v{{.Version}}"
+    copyright: "Copyright (c) Graphixa"
+    copyright_url: "https://github.com/Graphixa/Pokedex/blob/main/LICENSE"
+    installation_notes: "poke and pokedex will be available on PATH. Run 'poke --help' to get started."
+    tags:
+      - pokemon
+      - pokedex
+      - pokeapi
+      - cli
+      - tui
+      - terminal
+      - cross-platform
+    repository:
+      owner: Graphixa
+      name: winget-pkgs
+      branch: "poke-{{ .Version }}"
+      token: "{{ .Env.WINGET_PR_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
