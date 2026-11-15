@@ -82,7 +82,7 @@ Target import rules. `app` is allowed to assemble services and translate progres
 
 ### 2. Dataset bootstrap
 
-1. Triggered when `!cache.Service.HasActiveDataset()` on browse, or `poke update` / `poke cache refresh`.
+1. Triggered when `!cache.Service.HasActiveDataset()` on browse, or `poke update`.
 2. App chooses TUI (`tui/bootstrap.Run`) if stderr is a terminal, else throttled CLI lines (`formatBootstrapProgress`).
 3. `Service.BootstrapDataset` is single-flight (`group.Do("dataset-bootstrap")`).
 4. Stages (`cache.DatasetStage`): `index` → parallel `records` (pokemon+species+encounters) → `evolution` → `moves` → validate → write aggregates → `dataset` activate.
@@ -208,7 +208,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 - **Responsibility:** `Runtime`, `Execute`, `Main`, exit codes, lazy services, theme apply before TUI.
 - **Types / funcs:** `Runtime`, `OSRuntime`, `Execute`, `Main`, `ExitCode`, `ApplyTheme`, `lazyServices`.
-- **Tests:** `app_test.go` (execute/exit), `reset_test.go`.
+- **Tests:** `app_test.go` (execute/exit).
 
 #### `contracts.go`
 
@@ -216,7 +216,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `bootstrap.go`
 
-- **Responsibility:** `Services`, `BuildServices`, `LoadServices`, CLI cache commands (`Refresh`, `Clear`, `WarmSprites`, `Update`, `Reset`).
+- **Responsibility:** `Services`, `BuildServices`, `LoadServices`, CLI cache commands (`Clear`, `Update`).
 - **Types / funcs:** `Services`, `cacheCommands`, `FixedClock`.
 - **Concurrency:** none in this file (delegates to cache).
 - **Tests:** `bootstrap_test.go`.
@@ -224,7 +224,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 #### `dataset_bootstrap.go`
 
 - **Responsibility:** terminal vs CLI progress for dataset runs and the composite update operation; explicit dataset → bootstrap stage mapping.
-- **Types / funcs:** `runDatasetBootstrap`, `cacheDatasetProgress`, `cacheUpdateProgress`, `bootstrapStageFromDataset`, `throttledProgress`, `formatBootstrapProgress`.
+- **Types / funcs:** `runDatasetBootstrap`, `cacheUpdateProgress`, `bootstrapStageFromDataset`, `throttledProgress`, `formatBootstrapProgress`.
 - **Ownership:** presentation strings live in app (`"index"|"enrich"|"records"|…`) duplicated with `tui/bootstrap.stageLabel`.
 - **Tests:** `dataset_bootstrap_test.go`.
 
@@ -394,7 +394,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `artwork_sync.go`
 
-- Selective official-artwork sync for `poke update` / `cache warm-sprites`.
+- Selective official-artwork sync for `poke update`.
 
 #### `asset.go` / `sprites.go` / `sprite_meta.go` / `paths.go`
 
@@ -639,7 +639,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 | Package | Test files |
 | --- | --- |
-| `app` | `app_test.go`, `bootstrap_test.go`, `browse_test.go`, `dataset_bootstrap_test.go`, `handler_test.go`, `reset_test.go` |
+| `app` | `app_test.go`, `bootstrap_test.go`, `browse_test.go`, `dataset_bootstrap_test.go`, `handler_test.go` |
 | `cli` | `root_test.go`, `cache_test.go`, `search_random_test.go` |
 | `config` | `config_test.go`, `setup_test.go` |
 | `cache` | many (see cache section); plus `typeseed_test.go` |

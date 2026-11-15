@@ -37,9 +37,9 @@ func queryCellPixelSize() (pxW, pxH int, ok bool) {
 	if err != nil {
 		return 0, 0, false
 	}
-	defer func() { _ = cr.Close() }()
 
 	if _, err := out.WriteString("\x1b[16t"); err != nil {
+		_ = cr.Close()
 		return 0, 0, false
 	}
 
@@ -72,6 +72,11 @@ func queryCellPixelSize() (pxW, pxH int, ok bool) {
 		r := <-done // reader unblocks on Cancel; never leaks a stdin read
 		buf = r.buf
 	}
+	_ = cr.Close()
+	// Cancel can split a CSI reply (e.g. bubbletea DECRPM ?2027;Ps$y) across the
+	// consumed buf and the OS console buffer — swallow the tail while still raw.
+	_ = drainRawOnce(in, stdinDrainIdle)
+
 	pxW, pxH, ok = parseCellSizeReport(buf)
 	debuglog.Renderf("render.cellsize.query ok=%v pxW=%d pxH=%d bytes=%d", ok, pxW, pxH, len(buf))
 	return pxW, pxH, ok
@@ -116,11 +121,15 @@ func atoiBytes(b []byte) int {
 	return n
 }
 
-const stdinDrainTimeout = 30 * time.Millisecond
+const (
+	stdinDrainIdle    = 40 * time.Millisecond
+	stdinDrainMaxWait = 200 * time.Millisecond
+)
 
 // drainPendingStdin discards console input still sitting in the OS buffer.
-// Browse search is always focused; leftover keys from setup ([Y]/N) or the
-// cell-size probe gap otherwise type themselves into the filter on first paint.
+// Browse search is always focused; leftover keys from setup ([Y]/N), theme
+// picker teardown, or a split cell-size/DECRPM reply otherwise type into the
+// filter on first paint (e.g. "027;3$y" from mode 2027).
 func drainPendingStdin() {
 	in := os.Stdin
 	if !term.IsTerminal(int(in.Fd())) {
@@ -132,9 +141,25 @@ func drainPendingStdin() {
 	}
 	defer func() { _ = term.Restore(int(in.Fd()), oldState) }()
 
+	deadline := time.Now().Add(stdinDrainMaxWait)
+	total := 0
+	for time.Now().Before(deadline) {
+		n := drainRawOnce(in, stdinDrainIdle)
+		total += n
+		if n == 0 {
+			break
+		}
+	}
+	if total > 0 {
+		debuglog.Renderf("stdin.drain discarded=%d", total)
+	}
+}
+
+// drainRawOnce reads stdin until idle or Cancel. Caller must already be raw.
+func drainRawOnce(in *os.File, idle time.Duration) int {
 	cr, err := cancelreader.NewReader(in)
 	if err != nil {
-		return
+		return 0
 	}
 	defer func() { _ = cr.Close() }()
 
@@ -152,14 +177,11 @@ func drainPendingStdin() {
 		done <- n
 	}()
 
-	var n int
 	select {
-	case n = <-done:
-	case <-time.After(stdinDrainTimeout):
+	case n := <-done:
+		return n
+	case <-time.After(idle):
 		cr.Cancel()
-		n = <-done
-	}
-	if n > 0 {
-		debuglog.Renderf("stdin.drain discarded=%d", n)
+		return <-done
 	}
 }

@@ -43,9 +43,7 @@ type Options struct {
 
 // CacheCommands handles cache maintenance subcommands.
 type CacheCommands interface {
-	Refresh(context.Context) error
 	Clear() error
-	WarmSprites(context.Context) error
 	Update(context.Context) error
 }
 
@@ -228,17 +226,6 @@ func newCacheCommand(options Options) *cobra.Command {
 		},
 	})
 	parent.AddCommand(&cobra.Command{
-		Use:   "refresh",
-		Short: "Rebuild the local metadata dataset snapshot",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if options.Cache == nil {
-				return fmt.Errorf("cache refresh is unavailable")
-			}
-			return options.Cache.Refresh(cmd.Context())
-		},
-	})
-	parent.AddCommand(&cobra.Command{
 		Use:   "clear",
 		Short: "Delete the application cache directory",
 		Args:  cobra.NoArgs,
@@ -247,18 +234,6 @@ func newCacheCommand(options Options) *cobra.Command {
 				return fmt.Errorf("cache clear is unavailable")
 			}
 			return options.Cache.Clear()
-		},
-	})
-	parent.AddCommand(&cobra.Command{
-		Use:   "warm-sprites",
-		Short: "Download official artwork PNGs into the local cache",
-		Long:  "Fetches official-artwork PNGs for the national dex into the user cache. Does not ship or redistribute sprites; all work is local.",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if options.Cache == nil {
-				return fmt.Errorf("cache warm-sprites is unavailable")
-			}
-			return options.Cache.WarmSprites(cmd.Context())
 		},
 	})
 	return parent

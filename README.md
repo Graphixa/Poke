@@ -76,14 +76,10 @@ poke random --stats
 
 # Cache / config helpers
 poke cache path
-poke cache refresh   # same as: poke update
 poke cache clear
 poke config path
 poke config init
 poke config edit
-
-# Clear cache and config to re-run first-run setup
-poke reset
 
 # Colour themes (interactive selector with live preview)
 poke theme
@@ -91,7 +87,7 @@ poke theme
 
 All of the above work with `pokedex` instead of `poke`.
 
-Default theme is **Catppuccin**. Bundled themes include Nord, Dracula, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can be placed next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
+Default theme is **Catppuccin**. Bundled themes include Pokédex, Nord, Dracula, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can be placed next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
 
 ## Prototype branch
 
@@ -152,7 +148,7 @@ Official artwork downloads in the background after the TUI opens (and can resume
 | Failed update | Previous snapshot stays active |
 | Artwork still downloading | List and text stay usable; selected missing art is prioritised |
 
-`poke update` / `poke cache refresh` rebuild a new dataset snapshot beside the active one, then switch `active.json` only if the snapshot is complete. They also sync official artwork.
+`poke update` rebuilds a new dataset snapshot beside the active one, switches `active.json` only if the snapshot is complete, and syncs official artwork.
 
 ### Renderer fallback
 
@@ -169,7 +165,7 @@ Braille and ASCII modes are no longer in the production path; old config values 
 | Problem | What to try |
 | --- | --- |
 | Empty cache / offline error | Connect to the network and run `poke update` |
-| Stale or odd data | `poke cache refresh`, or `poke cache clear` then `poke update` |
+| Stale or odd data | `poke update`, or `poke cache clear` then `poke update` |
 | Corrupt cache entry | App quarantines bad files under `corrupt/` and rebuilds; clear cache if needed |
 | Rate limited (HTTP 429) | Wait and retry; client backs off automatically |
 | Not found (inline flags) | Check spelling/slug/number; inline mode exits non-zero |

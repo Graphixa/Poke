@@ -17,15 +17,8 @@ import (
 )
 
 type stubCacheCommands struct {
-	refresh func(context.Context) error
-	clear   func() error
-}
-
-func (s stubCacheCommands) Refresh(ctx context.Context) error {
-	if s.refresh != nil {
-		return s.refresh(ctx)
-	}
-	return nil
+	clear  func() error
+	update func(context.Context) error
 }
 
 func (s stubCacheCommands) Clear() error {
@@ -35,8 +28,12 @@ func (s stubCacheCommands) Clear() error {
 	return nil
 }
 
-func (s stubCacheCommands) WarmSprites(context.Context) error { return nil }
-func (s stubCacheCommands) Update(context.Context) error      { return nil }
+func (s stubCacheCommands) Update(ctx context.Context) error {
+	if s.update != nil {
+		return s.update(ctx)
+	}
+	return nil
+}
 
 type stubAPI struct {
 	list      []domain.SpeciesSummary
@@ -273,8 +270,7 @@ func TestMainInlineNotFoundWritesStderr(t *testing.T) {
 		},
 		App: handler,
 		Cache: stubCacheCommands{
-			refresh: func(context.Context) error { return nil },
-			clear:   func() error { return nil },
+			clear: func() error { return nil },
 		},
 		Stdout: stdout,
 		Stderr: stderr,

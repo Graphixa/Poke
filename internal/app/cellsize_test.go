@@ -19,6 +19,9 @@ func TestParseCellSizeReport(t *testing.T) {
 		{"\x1b[4;340;800t", 0, 0, false},        // wrong op (text-area report)
 		{"", 0, 0, false},
 		{"\x1b[6;;t", 0, 0, false},
+		// DECRPM (bubbletea unicode-core mode 2027) must not parse as cell size.
+		{"\x1b[?2027;3$y", 0, 0, false},
+		{"\x1b[?2027;3$y\x1b[6;20;10t", 10, 20, true},
 	}
 	for _, c := range cases {
 		w, h, ok := parseCellSizeReport([]byte(c.in))

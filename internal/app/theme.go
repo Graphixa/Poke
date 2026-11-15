@@ -22,7 +22,7 @@ func (h *Handler) Theme(ctx context.Context) error {
 	if current == "" {
 		current = "catppuccin"
 	}
-	return tui.RunThemePicker(tui.ThemePickerOptions{
+	err = tui.RunThemePicker(tui.ThemePickerOptions{
 		Current:   current,
 		ThemesDir: themesDir,
 		Save: func(name string) error {
@@ -37,4 +37,8 @@ func (h *Handler) Theme(ctx context.Context) error {
 			return nil
 		},
 	})
+	// Bubble Tea mode reports (DECRPM ?2026/?2027) can land after the picker
+	// exits; leave them for the next poke and they type into browse search.
+	drainPendingStdin()
+	return err
 }
