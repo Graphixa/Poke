@@ -11,6 +11,10 @@ import (
 	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
 )
 
+// WorldScale shrinks burst speed/gravity for single-width terminal cells.
+// Erik's engine was tuned for dense CJK double-width grids (~0.25–0.35 fits poke).
+var WorldScale = 0.30
+
 type Particle struct {
 	pos, vel, acc vec.Vec
 
@@ -44,10 +48,15 @@ func NewWithPhaseTiming(
 
 	phases.normalize()
 
+	s := WorldScale
+	if s <= 0 {
+		s = 1
+	}
+
 	return &Particle{
 		pos: p0,
-		vel: v0,
-		acc: a0,
+		vel: v0.Scale(s),
+		acc: a0.Scale(s),
 
 		ttl:    ttl,
 		phases: phases,
@@ -110,8 +119,12 @@ func (p *Particle) Update(
 	const ms = time.Millisecond
 
 	for range dt.Milliseconds() {
-		// Apply gravity and external forces
-		acc := vec.Vec{X: 0, Y: 10 * gravity}.Add(p.acc)
+		// WorldScale shrinks v0 by s; quadratic drag needs g∝s² or bursts collapse into rain.
+		gs := WorldScale
+		if gs <= 0 {
+			gs = 1
+		}
+		acc := vec.Vec{X: 0, Y: 10 * gravity * gs * gs}.Add(p.acc)
 
 		if applyForce != nil {
 			acc = acc.Add(applyForce(p))

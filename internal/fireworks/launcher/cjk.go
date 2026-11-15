@@ -1,5 +1,5 @@
 // Adapted from https://github.com/erik-adelbert/firework (MIT)
-// Glyphs switched to small ASCII sparks for denser terminal fireworks.
+// Dense single-width sparks so radial trails read as starburst spokes.
 
 package launcher
 
@@ -17,22 +17,22 @@ type runset struct {
 
 var palettes = [][]runset{
 	particle.Spawning: {
-		{0.3, []rune("·.,'`")},
-		{0.5, []rune(":+*")},
-		{0.7, []rune("*oO")},
-		{1.0, []rune("@#%")},
+		{0.3, []rune("·.+*")},
+		{0.5, []rune("*+o")},
+		{0.7, []rune("*oO@")},
+		{1.0, []rune("@#%*")},
 	},
 
 	particle.Active: {
-		{0.2, []rune("·.")},
-		{0.6, []rune(":+*")},
-		{0.85, []rune("*o")},
-		{1.0, []rune("@#")},
+		{0.2, []rune("*+")},
+		{0.5, []rune("*oO")},
+		{0.8, []rune("@#*")},
+		{1.0, []rune("@#%*")},
 	},
 
 	particle.Fading: {
-		{0.6, []rune("·.,'")},
-		{1.0, []rune(":+ ")},
+		{0.5, []rune("·.+*")},
+		{1.0, []rune(":+· ")},
 	},
 
 	particle.Dead: {

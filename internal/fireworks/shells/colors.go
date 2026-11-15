@@ -278,18 +278,26 @@ func PickKamuroLut() LUT {
 }
 
 func themeLut() LUT {
+	// One accent per firework (primary or secondary), then darker shades.
+	// Gradient() further dims as particles fade — no rainbow LUT.
 	p := style.CurrentPalette()
-	out := make(LUT, 0, 6)
-	for _, hex := range []string{p.Primary, p.Secondary, p.Success, p.Warning, p.Error, p.Components} {
+	accents := make([]color.RGBA, 0, 2)
+	for _, hex := range []string{p.Primary, p.Secondary} {
 		if c, ok := parseHexRGBA(hex); ok {
-			out = append(out, c)
+			accents = append(accents, c)
 		}
 	}
-	if len(out) == 0 {
+	if len(accents) == 0 {
 		l, _ := helper.Pick(luts)
 		return l
 	}
-	return out
+	base, _ := helper.Pick(accents)
+	return LUT{
+		scaleColor(base, 1.00),
+		scaleColor(base, 0.80),
+		scaleColor(base, 0.60),
+		scaleColor(base, 0.40),
+	}
 }
 
 func parseHexRGBA(hex string) (color.RGBA, bool) {

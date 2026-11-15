@@ -6,7 +6,7 @@ import (
 	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-func TestThemeLutUsesPalette(t *testing.T) {
+func TestThemeLutUsesAccentShades(t *testing.T) {
 	prev := UseThemeColors
 	prevPal := style.CurrentPalette()
 	t.Cleanup(func() {
@@ -15,38 +15,44 @@ func TestThemeLutUsesPalette(t *testing.T) {
 	})
 
 	style.SetPalette(style.Palette{
-		Primary:      "#112233",
-		Secondary:    "#445566",
-		Success:      "#778899",
-		Warning:      "#aabbcc",
-		Error:        "#ddeeff",
-		Components:   "#010203",
+		Primary:      "#ff0000",
+		Secondary:    "#0000ff",
+		Success:      "#00ff00",
+		Warning:      "#ffff00",
+		Error:        "#ff00ff",
+		Components:   "#ffffff",
 		Placeholders: "#000000",
 		Base:         "#111111",
 	})
 	UseThemeColors = true
 
 	lut := PickLut()
-	if len(lut) != 6 {
-		t.Fatalf("theme lut len = %d want 6", len(lut))
+	if len(lut) != 4 {
+		t.Fatalf("theme lut len = %d want 4 shades", len(lut))
 	}
-	want := [][3]uint8{
-		{0x11, 0x22, 0x33},
-		{0x44, 0x55, 0x66},
-		{0x77, 0x88, 0x99},
-		{0xaa, 0xbb, 0xcc},
-		{0xdd, 0xee, 0xff},
-		{0x01, 0x02, 0x03},
-	}
+	// All shades same hue family: either red-ish or blue-ish, not mixed green/yellow.
+	r0, b0 := lut[0].R, lut[0].B
+	redFamily := r0 > b0
 	for i, c := range lut {
-		if c.R != want[i][0] || c.G != want[i][1] || c.B != want[i][2] || c.A != 0xff {
-			t.Fatalf("lut[%d] = %#v want RGB%v A=ff", i, c, want[i])
+		if redFamily {
+			if c.R <= c.B {
+				t.Fatalf("lut[%d]=%#v left red family", i, c)
+			}
+		} else if c.B <= c.R {
+			t.Fatalf("lut[%d]=%#v left blue family", i, c)
+		}
+		if i > 0 {
+			// Later entries are darker (lower max channel).
+			prevBright := max(lut[i-1].R, lut[i-1].G, lut[i-1].B)
+			curBright := max(c.R, c.G, c.B)
+			if curBright > prevBright {
+				t.Fatalf("shades not descending: [%d]=%d > [%d]=%d", i, curBright, i-1, prevBright)
+			}
 		}
 	}
 
 	UseThemeColors = false
-	classic := PickLut()
-	if len(classic) == 0 {
+	if len(PickLut()) == 0 {
 		t.Fatal("classic lut empty")
 	}
 }

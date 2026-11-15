@@ -9,11 +9,15 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Graphixa/Pokedex/internal/fireworks"
+	"github.com/Graphixa/Pokedex/internal/fireworks/shells"
 	"github.com/Graphixa/Pokedex/internal/fireworks/sym"
 )
 
 const birthdayTrigger = "declan"
 const birthdayEnterNeed = 3
+
+// Flip to true for theme-tinted fireworks (classic presets when false).
+const birthdayUseThemeColors = true
 
 type birthdayTickMsg time.Time
 
@@ -51,6 +55,7 @@ func (m Model) handleBirthdayEnter() (tea.Model, tea.Cmd) {
 func (m Model) openBirthday() (tea.Model, tea.Cmd) {
 	m.showBirthday = true
 	m.declanEnterCount = 0
+	shells.UseThemeColors = birthdayUseThemeColors
 	now := time.Now()
 	w, h := birthdayGrid(m.width, m.height)
 	if m.birthday == nil {
@@ -128,21 +133,11 @@ func stampBirthdayBanner(screen []sym.Symbol, w, h int) {
 	}
 	if w < maxW {
 		banner = []string{"Happy Birthday", "Declan"}
-		maxW = len(banner[0])
-		for _, ln := range banner {
-			if n := len(ln); n > maxW {
-				maxW = n
-			}
-		}
 	}
 
 	startRow := (h - len(banner)) / 2
 	if startRow < 0 {
 		startRow = 0
-	}
-	startCol := (w - maxW) / 2
-	if startCol < 0 {
-		startCol = 0
 	}
 
 	for i, ln := range banner {
@@ -150,8 +145,13 @@ func stampBirthdayBanner(screen []sym.Symbol, w, h int) {
 		if row < 0 || row >= h {
 			continue
 		}
-		col := startCol
-		for _, r := range ln {
+		runes := []rune(ln)
+		// Center each line so Declan sits under Happy Birthday.
+		col := (w - len(runes)) / 2
+		if col < 0 {
+			col = 0
+		}
+		for _, r := range runes {
 			if col >= w {
 				break
 			}
