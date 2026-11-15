@@ -174,3 +174,4 @@ func ReferencedMoveIDs(p domain.Pokemon) []int {
 	}
 	return ids
 }
+
