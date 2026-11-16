@@ -3,31 +3,27 @@ package bootstrap
 import (
 	"strings"
 	"testing"
-
-	"github.com/Graphixa/Pokedex/internal/tui/style"
 )
 
-func TestStageLabel(t *testing.T) {
+func TestDownloadLabel(t *testing.T) {
 	t.Parallel()
-	cases := map[string]string{
-		"index":     "index",
-		"enrich":    "types",
-		"records":   "records",
-		"evolution": "evo",
-		"moves":     "moves",
-		"dataset":   "ready",
-		"artwork":   "art",
+	cases := map[Stage]string{
+		StageIndex:     "Downloading Generating index",
+		StageEnrich:    "Downloading Configuring types",
+		StageRecords:   "Downloading Fetching records",
+		StageEvolution: "Downloading Building evolutions",
+		StageMoves:     "Downloading Fetching moves",
+		StageDataset:   "Downloading Finalizing dataset",
+		StageArtwork:   "Downloading Artwork",
+		"":             "Downloading…",
 	}
 	for stage, want := range cases {
-		if got := stageLabel(Stage(stage)); got != want {
-			t.Fatalf("stageLabel(%q)=%q want %q", stage, got, want)
+		if got := downloadLabel(stage); got != want {
+			t.Fatalf("downloadLabel(%q)=%q want %q", stage, got, want)
 		}
 	}
-	if got := stageLabel(""); got != "Working" {
-		t.Fatalf("empty stage=%q want Working", got)
-	}
-	if got := stageLabel("unknown"); got != "unknown" {
-		t.Fatalf("unknown stage must pass through, got %q", got)
+	if got := downloadLabel("unknown"); got != "Downloading unknown" {
+		t.Fatalf("unknown stage=%q", got)
 	}
 }
 
@@ -49,37 +45,21 @@ func TestProgressMsgUpdatesPercent(t *testing.T) {
 	}
 }
 
-func TestStageRailHighlightsCurrent(t *testing.T) {
-	t.Parallel()
-	pal := style.CurrentPalette()
-	rail := stageRail(StageRecords, pal)
-	if !strings.Contains(rail, "records") {
-		t.Fatalf("rail missing records: %q", rail)
-	}
-	if stageIndex(StageRecords) != 2 {
-		t.Fatalf("records index=%d want 2", stageIndex(StageRecords))
-	}
-	if stageIndex(StageArtwork) != len(bootstrapRail) {
-		t.Fatalf("artwork index=%d", stageIndex(StageArtwork))
-	}
-	art := stageRail(StageArtwork, pal)
-	if !strings.Contains(art, "art") {
-		t.Fatalf("artwork rail missing art: %q", art)
-	}
-}
-
-func TestViewShowsPokedexTitle(t *testing.T) {
+func TestViewShowsTitleAndPhase(t *testing.T) {
 	m := New(Deps{})
 	m.width, m.height = 80, 24
 	m.stage = StageRecords
 	m.done, m.total = 389, 1025
 	m.status = "Chimchar"
 	got := m.View().Content
-	if !strings.Contains(got, "Pokedex") {
-		t.Fatalf("view missing Pokedex title:\n%s", got)
+	if !strings.Contains(got, "Poke - The terminal based Pokedex") {
+		t.Fatalf("view missing title:\n%s", got)
 	}
-	if strings.Contains(got, "Building Pokédex") {
-		t.Fatalf("old headline still present:\n%s", got)
+	if !strings.Contains(got, "Downloading Fetching records") {
+		t.Fatalf("view missing phase line:\n%s", got)
+	}
+	if strings.Contains(got, "index ·") || strings.Contains(got, "records ·") {
+		t.Fatalf("old stage rail still present:\n%s", got)
 	}
 	if !strings.Contains(got, "Chimchar") {
 		t.Fatalf("view missing status:\n%s", got)
