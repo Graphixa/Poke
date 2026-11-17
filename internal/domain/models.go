@@ -371,9 +371,11 @@ type SpeciesSummary struct {
 
 // LevelUpMove is a resolved learnset row for dossier / moves UI.
 // Method is the learn method slug (level-up, machine, egg, tutor, …).
+// Game is an optional display label when the All-games learnset expands per version.
 type LevelUpMove struct {
 	Level  int
 	Method string
+	Game   string
 	Move   Move
 }
 

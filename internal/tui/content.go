@@ -82,11 +82,12 @@ func (m Model) dialogContentLines() []string {
 			return sectionErrorLines(r.MovesErr)
 		}
 		moves := m.dialogMoveRows()
+		game := m.gameFilterLabel()
 		if m.moveDetailOpen {
 			return formatMoveDetailLines(moves, m.moveFocusIdx, bodyW)
 		}
 		// Scrollable rows only; sticky header/position come from dialogChrome.
-		return formatMoveDataRowsFocused(moves, bodyW, true, m.moveFocusIdx)
+		return formatMoveDataRowsFocused(moves, bodyW, true, m.moveFocusIdx, game)
 	case DialogEncounters:
 		if !r.HasEncounters && r.loadingExtras {
 			return []string{"Loading…"}
@@ -97,7 +98,7 @@ func (m Model) dialogContentLines() []string {
 		rows := m.dialogEncounterRows()
 		return formatEncounterTableRowsFocused(rows, bodyW, m.encounterFocusIdx)
 	case DialogDescriptions:
-		return formatFlavourLinesForGame(r.Species, m.dialogGameID, m.dialogGameSlug)
+		return formatFlavourLinesForGame(r.Species, m.dialogGameID, m.dialogGameSlug, m.gameFilterLabel())
 	case DialogBiology:
 		return formatBiologyLines(poke, r.Species)
 	default:
@@ -114,53 +115,47 @@ func sectionErrorLines(err error) []string {
 }
 
 // dialogChrome returns sticky table headers and the pinned status/position line.
+// Sticky headers stay even while G/F/M pickers overlay so the faint dossier
+// behind the card keeps its table header.
 func (m Model) dialogChrome(bodyW, scrollH, scrollOff int) (sticky []string, hint string) {
-	if m.dialogOverlayOpen() {
-		return nil, ""
-	}
+	left := m.gameStatusLeft()
 	switch m.dialogSection {
 	case DialogMoves:
-		if m.moveDetailOpen {
-			return nil, ""
-		}
 		rows := m.dialogMoveRows()
 		if len(rows) == 0 {
 			return nil, ""
 		}
-		sticky = moveStickyLines(rows, bodyW, m.dialogMoveMethod)
-		left := "Learnset: All"
-		if m.dialogGameID >= 1 {
-			left = "Learnset: " + m.dialogGameLabel
-			if m.dialogGameLabel == "" {
-				left = "Learnset: " + output.GameLabel(m.dialogGameSlug, "")
-			}
-		}
-		vis := scrollH
-		if vis < 1 {
-			vis = 1
-		}
-		start := scrollOff + 1
-		if start < 1 {
-			start = 1
-		}
-		end := scrollOff + vis
-		if end > len(rows) {
-			end = len(rows)
-		}
-		if start > end {
-			start = end
+		if !m.moveDetailOpen {
+			sticky = moveStickyLines(rows, bodyW, m.dialogMoveMethod, m.gameFilterLabel())
 		}
 		right := ""
 		if m.moveFocusIdx >= 0 {
-			start = m.moveFocusIdx + 1
+			start := m.moveFocusIdx + 1
 			if start > len(rows) {
 				start = len(rows)
 			}
 			right = fmt.Sprintf("Row %d of %d", start, len(rows))
-		} else if len(rows) > vis {
-			right = fmt.Sprintf("Rows %d–%d of %d", start, end, len(rows))
-		} else if len(rows) > 0 {
-			right = fmt.Sprintf("Rows 1–%d of %d", len(rows), len(rows))
+		} else {
+			vis := scrollH
+			if vis < 1 {
+				vis = 1
+			}
+			start := scrollOff + 1
+			if start < 1 {
+				start = 1
+			}
+			end := scrollOff + vis
+			if end > len(rows) {
+				end = len(rows)
+			}
+			if start > end {
+				start = end
+			}
+			if len(rows) > vis {
+				right = fmt.Sprintf("Rows %d–%d of %d", start, end, len(rows))
+			} else {
+				right = fmt.Sprintf("Rows 1–%d of %d", len(rows), len(rows))
+			}
 		}
 		hint = statusLine(left, right, bodyW)
 		return sticky, hint
@@ -170,13 +165,6 @@ func (m Model) dialogChrome(bodyW, scrollH, scrollOff int) (sticky []string, hin
 			return nil, ""
 		}
 		sticky = []string{tableHeaderBand(encounterTableHeader(bodyW), bodyW)}
-		left := "All"
-		if m.dialogGameID >= 1 {
-			left = m.dialogGameLabel
-			if left == "" {
-				left = output.GameLabel(m.dialogGameSlug, "")
-			}
-		}
 		right := ""
 		if m.encounterFocusIdx >= 0 && m.encounterFocusIdx < len(rows) {
 			right = fmt.Sprintf("Row %d of %d", m.encounterFocusIdx+1, len(rows))
@@ -186,18 +174,27 @@ func (m Model) dialogChrome(bodyW, scrollH, scrollOff int) (sticky []string, hin
 		hint = statusLine(left, right, bodyW)
 		return sticky, hint
 	case DialogDescriptions:
-		if m.dialogGameID < 1 {
-			return nil, ""
-		}
-		label := m.dialogGameLabel
-		if label == "" {
-			label = output.GameLabel(m.dialogGameSlug, "")
-		}
-		hint = statusLine(label, "", bodyW)
+		hint = statusLine(left, "", bodyW)
 		return nil, hint
 	default:
 		return nil, ""
 	}
+}
+
+func (m Model) gameFilterLabel() string {
+	if m.dialogGameID >= 1 {
+		if m.dialogGameLabel != "" {
+			return m.dialogGameLabel
+		}
+		if label := output.GameLabel(m.dialogGameSlug, ""); label != "" {
+			return label
+		}
+	}
+	return "All"
+}
+
+func (m Model) gameStatusLeft() string {
+	return "Game: " + m.gameFilterLabel()
 }
 
 func statusLine(left, right string, bodyW int) string {
@@ -595,8 +592,8 @@ func formatEncounterLinesForGame(rows []domain.Encounter, gameID int, gameSlug s
 }
 
 func encounterColumnFlags(bodyW int) (showChance bool) {
-	// Area(flex) + Method + Level + Game + spaces; Chance optional (" %5d%%" = 7).
-	const fixedNoChance, chanceCol = 39, 7
+	// Area(flex) + Method + Level + Game + spaces; Chance optional (" %-7s" = 8).
+	const fixedNoChance, chanceCol = 39, 8
 	showChance = true
 	if bodyW > 0 && bodyW < fixedNoChance+chanceCol {
 		showChance = false
@@ -605,10 +602,10 @@ func encounterColumnFlags(bodyW int) (showChance bool) {
 }
 
 func encounterAreaWidth(bodyW int, showChance bool) int {
-	// "%-*s %-12s %-10s" + optional " %5d%%" + " %-14s"
+	// "%-*s %-12s %-10s" + optional " %-7s" + " %-14s"
 	fixed := 1 + 12 + 1 + 10 + 1 + 14
 	if showChance {
-		fixed += 7 // " %5d%%"
+		fixed += 8 // " %-7s" — right pad so Chance doesn't crowd Game
 	}
 	areaW := bodyW - fixed
 	if areaW < 12 {
@@ -622,7 +619,7 @@ func encounterTableHeader(bodyW int) string {
 	areaW := encounterAreaWidth(bodyW, showChance)
 	header := fmt.Sprintf("%-*s %-12s %-10s", areaW, "Area", "Method", "Level")
 	if showChance {
-		header += fmt.Sprintf(" %6s", "Chance")
+		header += fmt.Sprintf(" %-7s", "Chance")
 	}
 	header += fmt.Sprintf(" %-14s", "Game")
 	return header
@@ -654,7 +651,7 @@ func formatEncounterTableRowsMapped(rows []domain.Encounter, bodyW int) (lines [
 			truncate(level, 10),
 		)
 		if showChance {
-			line += fmt.Sprintf(" %5d%%", e.Chance)
+			line += fmt.Sprintf(" %-7s", fmt.Sprintf("%d%%", e.Chance))
 		}
 		line += fmt.Sprintf(" %-14s", truncate(game, 14))
 		lines = append(lines, line)
@@ -663,7 +660,7 @@ func formatEncounterTableRowsMapped(rows []domain.Encounter, bodyW int) (lines [
 			for _, c := range e.Conditions {
 				conds = append(conds, output.TitleFromSlug(c))
 			}
-			lines = append(lines, "  ↳ "+strings.Join(conds, ", "))
+			lines = append(lines, tuistyle.StatusMuted("  ↳ "+strings.Join(conds, ", ")))
 		}
 	}
 	return lines, mainLine
@@ -681,11 +678,14 @@ func formatEncounterTableRowsFocused(rows []domain.Encounter, bodyW int, focusId
 	return lines
 }
 
-func formatFlavourLinesForGame(s domain.Species, gameID int, gameSlug string) []string {
+func formatFlavourLinesForGame(s domain.Species, gameID int, gameSlug, gameLabel string) []string {
 	if gameID < 1 {
 		return formatFlavourLinesAll(s)
 	}
-	var lines []string
+	if gameLabel == "" {
+		gameLabel = output.GameLabel(gameSlug, "")
+	}
+	var texts []string
 	seen := map[string]struct{}{}
 	for _, f := range s.FlavorTextEntries {
 		if f.Language != "" && f.Language != "en" {
@@ -699,22 +699,23 @@ func formatFlavourLinesForGame(s domain.Species, gameID int, gameSlug string) []
 			continue
 		}
 		seen[text] = struct{}{}
-		lines = append(lines, wrapWords(text, 56)...)
-		lines = append(lines, "")
+		texts = append(texts, text)
 	}
-	if len(lines) == 0 {
+	if len(texts) == 0 {
 		return []string{"No records available for this selection."}
 	}
-	if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return lines
+	return flavourFactBlocks(gameLabel, texts)
 }
 
-// formatFlavourLinesAll groups English flavour text by game version.
+// formatFlavourLinesAll groups English flavour text by game version (catalog order).
 func formatFlavourLinesAll(s domain.Species) []string {
+	type ver struct {
+		slug  string
+		order int
+	}
 	grouped := map[string][]string{}
-	var versions []string
+	orderOf := map[string]int{}
+	var versions []ver
 	seen := map[string]map[string]struct{}{}
 	for _, f := range s.FlavorTextEntries {
 		if f.Language != "" && f.Language != "en" {
@@ -727,7 +728,16 @@ func formatFlavourLinesAll(s domain.Species) []string {
 		text := output.CleanFlavor(f.Text)
 		if seen[v] == nil {
 			seen[v] = map[string]struct{}{}
-			versions = append(versions, v)
+			versions = append(versions, ver{slug: v, order: f.VersionOrder})
+			orderOf[v] = f.VersionOrder
+		} else if f.VersionOrder > 0 && (orderOf[v] == 0 || f.VersionOrder < orderOf[v]) {
+			orderOf[v] = f.VersionOrder
+			for i := range versions {
+				if versions[i].slug == v {
+					versions[i].order = f.VersionOrder
+					break
+				}
+			}
 		}
 		if _, ok := seen[v][text]; ok {
 			continue
@@ -738,22 +748,58 @@ func formatFlavourLinesAll(s domain.Species) []string {
 	if len(versions) == 0 {
 		return []string{"No records available for this selection."}
 	}
+	sort.SliceStable(versions, func(i, j int) bool {
+		if versions[i].order != versions[j].order {
+			return versions[i].order < versions[j].order
+		}
+		return versions[i].slug < versions[j].slug
+	})
 	var lines []string
 	for _, v := range versions {
-		lines = append(lines, primaryText(output.GameLabel(v, "")))
-		for _, text := range grouped[v] {
-			lines = append(lines, wrapWords(text, 56)...)
+		block := flavourFactBlocks(output.GameLabel(v.slug, ""), grouped[v.slug])
+		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
-	}
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
+		lines = append(lines, block...)
 	}
 	return lines
 }
 
-func formatMoveDataRowsFocused(rows []domain.LevelUpMove, bodyW int, focus bool, focusIdx int) []string {
-	lines := formatMoveDataRows(rows, bodyW)
+// flavourFactBlocks renders game label left + indented flavour (About-style).
+func flavourFactBlocks(label string, texts []string) []string {
+	if label == "" {
+		label = "—"
+	}
+	indent := strings.Repeat(" ", factValueCol)
+	wrapW := 56 - factValueCol
+	if wrapW < 24 {
+		wrapW = 24
+	}
+	var lines []string
+	labelled := false
+	for _, text := range texts {
+		wraps := wrapWords(text, wrapW)
+		if len(wraps) == 0 {
+			continue
+		}
+		if !labelled {
+			lines = append(lines, boldPrimary(fmt.Sprintf("%-16s", truncate(label, 16)))+" "+wraps[0])
+			labelled = true
+			for _, w := range wraps[1:] {
+				lines = append(lines, indent+w)
+			}
+		} else {
+			lines = append(lines, "")
+			for _, w := range wraps {
+				lines = append(lines, indent+w)
+			}
+		}
+	}
+	return lines
+}
+
+func formatMoveDataRowsFocused(rows []domain.LevelUpMove, bodyW int, focus bool, focusIdx int, gameLabel string) []string {
+	lines := formatMoveDataRows(rows, bodyW, gameLabel)
 	if !focus || len(rows) == 0 || focusIdx < 0 || focusIdx >= len(lines) {
 		return lines
 	}
@@ -798,18 +844,103 @@ func formatMoveDetailLines(rows []domain.LevelUpMove, idx, bodyW int) []string {
 	if mv.Accuracy != nil {
 		acc = fmt.Sprintf("%d", *mv.Accuracy)
 	}
-	lines := []string{
-		boldPrimary(name),
-		fmt.Sprintf("%s · %s · Pow %s · Acc %s · PP %d",
-			output.TitleFromSlug(mv.Type), output.TitleFromSlug(mv.DamageClass), pow, acc, mv.PP),
-		"",
+
+	listW := 0
+	if bodyW >= 48 {
+		listW = 16
 	}
+	detailW := bodyW
+	if listW > 0 {
+		detailW = bodyW - listW - 1
+		if detailW < 28 {
+			detailW = 28
+			listW = bodyW - detailW - 1
+		}
+	}
+
+	detail := []string{boldPrimary(name)}
 	if mv.Effect != "" {
-		lines = append(lines, wrapWords(mv.Effect, max(24, bodyW))...)
+		detail = append(detail, wrapWords(mv.Effect, max(24, detailW))...)
 	} else {
-		lines = append(lines, "No effect text available.")
+		detail = append(detail, "No effect text available.")
 	}
-	return lines
+	detail = append(detail,
+		"",
+		factLine("Type", tuistyle.TypeLabel(mv.Type)),
+		factLine("Category", output.TitleFromSlug(mv.DamageClass)),
+		factLine("Pow", pow),
+		factLine("Acc", acc),
+		factLine("PP", fmt.Sprintf("%d", mv.PP)),
+	)
+	if listW < 8 {
+		return detail
+	}
+	return joinMoveDetailColumns(detail, moveDetailSideList(rows, idx, listW), bodyW, listW)
+}
+
+func moveDetailSideList(rows []domain.LevelUpMove, idx, width int) []string {
+	if width < 8 || len(rows) == 0 {
+		return nil
+	}
+	const window = 12
+	start := idx - window/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + window
+	if end > len(rows) {
+		end = len(rows)
+		start = end - window
+		if start < 0 {
+			start = 0
+		}
+	}
+	out := make([]string, 0, end-start+3)
+	out = append(out, boldPrimary(truncate("Move List", width)))
+	if start > 0 {
+		out = append(out, tuistyle.StatusMuted("…"))
+	}
+	for i := start; i < end; i++ {
+		name := rows[i].Move.DisplayName
+		if name == "" {
+			name = output.TitleFromSlug(rows[i].Move.Slug)
+		}
+		label := truncate(name, width)
+		if i == idx {
+			out = append(out, tableFocusBand(label, width))
+		} else {
+			out = append(out, label)
+		}
+	}
+	if end < len(rows) {
+		out = append(out, tuistyle.StatusMuted("…"))
+	}
+	return out
+}
+
+func joinMoveDetailColumns(left, right []string, bodyW, rightW int) []string {
+	// Same vertical rule as browse combined frame / compare columns.
+	sep := lipgloss.NewStyle().Foreground(tuistyle.BorderColor()).Render("│")
+	leftW := bodyW - rightW - textwidth.Width(sep)
+	if leftW < 12 {
+		leftW = 12
+	}
+	n := len(left)
+	if len(right) > n {
+		n = len(right)
+	}
+	out := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		l, r := "", ""
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		out = append(out, textwidth.PadRight(l, leftW)+sep+r)
+	}
+	return out
 }
 
 func stripANSIForFocus(s string) string {
@@ -834,7 +965,9 @@ func stripANSIForFocus(s string) string {
 }
 
 func moveColumnFlags(bodyW int) (showAcc, showPP bool) {
-	const baseW, accCol, ppCol = 48, 6, 5
+	// Keep Pow/Acc/PP/Game whenever possible; shrink Move name first.
+	// base ≈ Lvl+Type+Cat+Pow+Game + short Move; Acc/PP optional.
+	const baseW, accCol, ppCol = 46, 6, 5
 	showAcc, showPP = true, true
 	need := baseW + accCol + ppCol
 	if bodyW > 0 && bodyW < need {
@@ -847,34 +980,58 @@ func moveColumnFlags(bodyW int) (showAcc, showPP bool) {
 	return showAcc, showPP
 }
 
-// moveNameWidth gives leftover body width to the Move column.
-func moveNameWidth(bodyW int, showAcc, showPP bool) int {
-	// Lvl(5)+sp + Type(10)+sp + Cat(8)+sp + Pow(5) = 32
-	fixed := 5 + 1 + 10 + 1 + 8 + 1 + 5
+const moveNameColPref = 16
+
+// moveColWidths: Move stays near pref width; leftover goes to Game (fixes cramped Game).
+func moveColWidths(bodyW int, showAcc, showPP bool) (moveW, gameW int) {
+	// Lvl(5)+sp + [Move] + sp + Type(8)+sp + Cat(8)+sp + Pow(5) [+Acc][+PP] + sp + [Game]
+	fixed := 5 + 1 + 1 + 8 + 1 + 8 + 1 + 5
 	if showAcc {
 		fixed += 1 + 5
 	}
 	if showPP {
 		fixed += 1 + 4
 	}
-	w := bodyW - fixed
-	if w < 12 {
-		w = 12
+	fixed += 1 // space before Game
+	remain := bodyW - fixed
+	if remain < 14 {
+		remain = 14
 	}
-	return w
+	moveW = moveNameColPref
+	if moveW > remain-8 {
+		moveW = remain - 8
+	}
+	if moveW < 10 {
+		moveW = 10
+	}
+	gameW = remain - moveW
+	if gameW < 4 {
+		gameW = 4
+	}
+	return moveW, gameW
 }
 
-func moveStickyLines(rows []domain.LevelUpMove, bodyW int, method string) []string {
+// moveNameWidth is the Move column width (tests / callers that only need Move).
+func moveNameWidth(bodyW int, showAcc, showPP bool) int {
+	moveW, _ := moveColWidths(bodyW, showAcc, showPP)
+	return moveW
+}
+
+func moveStickyLines(rows []domain.LevelUpMove, bodyW int, method, gameLabel string) []string {
 	if method == "" {
 		method = "level-up"
 	}
 	showAcc, showPP := moveColumnFlags(bodyW)
-	moveW := moveNameWidth(bodyW, showAcc, showPP)
-	return []string{tableHeaderBand(moveTableHeader(method, moveW, showAcc, showPP), bodyW)}
+	moveW, gameW := moveColWidths(bodyW, showAcc, showPP)
+	return []string{tableHeaderBand(moveTableHeader(method, moveW, gameW, showAcc, showPP), bodyW)}
 }
 
 // formatMoveLines builds a full moves view (sticky + rows) for tests.
 func formatMoveLines(rows []domain.LevelUpMove, bodyW int) []string {
+	return formatMoveLinesGame(rows, bodyW, "All")
+}
+
+func formatMoveLinesGame(rows []domain.LevelUpMove, bodyW int, gameLabel string) []string {
 	if len(rows) == 0 {
 		return []string{"No records available for this selection."}
 	}
@@ -882,17 +1039,20 @@ func formatMoveLines(rows []domain.LevelUpMove, bodyW int) []string {
 	if method == "" {
 		method = "level-up"
 	}
-	out := moveStickyLines(rows, bodyW, method)
-	out = append(out, formatMoveDataRows(rows, bodyW)...)
+	out := moveStickyLines(rows, bodyW, method, gameLabel)
+	out = append(out, formatMoveDataRows(rows, bodyW, gameLabel)...)
 	return out
 }
 
-func formatMoveDataRows(rows []domain.LevelUpMove, bodyW int) []string {
+func formatMoveDataRows(rows []domain.LevelUpMove, bodyW int, gameLabel string) []string {
 	if len(rows) == 0 {
 		return []string{"No records available for this selection."}
 	}
+	if gameLabel == "" {
+		gameLabel = "All"
+	}
 	showAcc, showPP := moveColumnFlags(bodyW)
-	moveW := moveNameWidth(bodyW, showAcc, showPP)
+	moveW, gameW := moveColWidths(bodyW, showAcc, showPP)
 	method := rows[0].Method
 	if method == "" {
 		method = "level-up"
@@ -903,7 +1063,7 @@ func formatMoveDataRows(rows []domain.LevelUpMove, bodyW int) []string {
 		if rm == "" {
 			rm = method
 		}
-		lines = append(lines, formatMoveTableRow(row, rm, moveW, showAcc, showPP))
+		lines = append(lines, formatMoveTableRow(row, rm, moveW, gameW, showAcc, showPP, gameLabel))
 	}
 	return lines
 }
@@ -923,15 +1083,18 @@ func methodHeading(method string) string {
 	}
 }
 
-func moveTableHeader(method string, moveW int, showAcc, showPP bool) string {
+func moveTableHeader(method string, moveW, gameW int, showAcc, showPP bool) string {
 	if moveW < 4 {
 		moveW = 4
 	}
+	if gameW < 4 {
+		gameW = 4
+	}
 	var header string
 	if method == "level-up" {
-		header = fmt.Sprintf("%-5s %-*s %-10s %-8s %5s", "Lvl", moveW, "Move", "Type", "Cat", "Pow")
+		header = fmt.Sprintf("%-5s %-*s %-8s %-8s %5s", "Lvl", moveW, "Move", "Type", "Cat", "Pow")
 	} else {
-		header = fmt.Sprintf("%-5s %-*s %-10s %-8s %5s", "", moveW, "Move", "Type", "Cat", "Pow")
+		header = fmt.Sprintf("%-5s %-*s %-8s %-8s %5s", "", moveW, "Move", "Type", "Cat", "Pow")
 	}
 	if showAcc {
 		header += fmt.Sprintf(" %5s", "Acc")
@@ -939,12 +1102,23 @@ func moveTableHeader(method string, moveW int, showAcc, showPP bool) string {
 	if showPP {
 		header += fmt.Sprintf(" %4s", "PP")
 	}
+	header += fmt.Sprintf(" %-*s", gameW, "Game")
 	return header
 }
 
-func formatMoveTableRow(row domain.LevelUpMove, method string, moveW int, showAcc, showPP bool) string {
+func formatMoveTableRow(row domain.LevelUpMove, method string, moveW, gameW int, showAcc, showPP bool, gameLabel string) string {
 	if moveW < 4 {
 		moveW = 4
+	}
+	if gameW < 4 {
+		gameW = 4
+	}
+	label := row.Game
+	if label == "" {
+		label = gameLabel
+	}
+	if label == "" {
+		label = "All"
 	}
 	pow := "—"
 	if row.Move.Power != nil {
@@ -958,10 +1132,12 @@ func formatMoveTableRow(row domain.LevelUpMove, method string, moveW int, showAc
 	if method == "level-up" {
 		lvl = fmt.Sprintf("%d", row.Level)
 	}
-	line := fmt.Sprintf("%-5s %-*s %-10s %-8s %5s",
+	typeDisp := truncate(output.TitleFromSlug(row.Move.Type), 8)
+	typeCell := textwidth.PadRight(tuistyle.TypeLabelText(row.Move.Type, typeDisp), 8)
+	line := fmt.Sprintf("%-5s %-*s %s %-8s %5s",
 		lvl,
 		moveW, truncate(name, moveW),
-		truncate(output.TitleFromSlug(row.Move.Type), 10),
+		typeCell,
 		truncate(output.TitleFromSlug(row.Move.DamageClass), 8),
 		pow,
 	)
@@ -975,6 +1151,7 @@ func formatMoveTableRow(row domain.LevelUpMove, method string, moveW int, showAc
 	if showPP {
 		line += fmt.Sprintf(" %4d", row.Move.PP)
 	}
+	line += fmt.Sprintf(" %-*s", gameW, truncate(label, gameW))
 	return line
 }
 

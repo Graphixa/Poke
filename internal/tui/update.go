@@ -351,7 +351,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.moveDetailOpen {
-		if key.Matches(msg, m.keys.Clear) {
+		if key.Matches(msg, m.keys.Clear) || msg.String() == "backspace" || msg.String() == "ctrl+h" {
 			m.exitMoveDetail()
 			m.syncDialogViewport()
 			m.ensureMoveFocusVisible()

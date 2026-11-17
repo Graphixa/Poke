@@ -158,6 +158,49 @@ func TestSectionUsesGame(t *testing.T) {
 	}
 }
 
+func TestDialogMoveRowsAllExpandsByGame(t *testing.T) {
+	cat := stubCatalog{
+		versions: []domain.Version{
+			{ID: 1, Slug: "red", DisplayName: "Red", VersionGroupID: 1, Order: 1},
+			{ID: 2, Slug: "blue", DisplayName: "Blue", VersionGroupID: 1, Order: 2},
+			{ID: 40, Slug: "scarlet", DisplayName: "Scarlet", VersionGroupID: 25, Order: 40},
+		},
+		vg: map[int]int{1: 1, 2: 1, 40: 25},
+		moves: map[int][]domain.LevelUpMove{
+			4*1000 + 1: {
+				{Level: 7, Method: "level-up", Move: domain.Move{DisplayName: "Ember"}},
+				{Level: 1, Method: "level-up", Move: domain.Move{DisplayName: "Scratch"}},
+			},
+			4*1000 + 25: {
+				{Level: 1, Method: "level-up", Move: domain.Move{DisplayName: "Scratch"}},
+				{Level: 12, Method: "level-up", Move: domain.Move{DisplayName: "Fire Spin"}},
+			},
+		},
+		pokemon: map[int]domain.Pokemon{4: {ID: 4}},
+	}
+	m := NewModel(Options{Catalog: cat, Context: context.Background()})
+	m.catalog = cat
+	m.dialogGameID = 0
+	m.filtered = []domain.SpeciesSummary{{ID: 4, DisplayName: "Charmander"}}
+	m.cursor = 0
+	m.resources[4] = &resourceCache{
+		Pokemon: domain.Pokemon{ID: 4},
+		Moves:   []domain.LevelUpMove{{Level: 1, Method: "level-up", Move: domain.Move{DisplayName: "FallbackOnly"}}},
+	}
+	rows := m.dialogMoveRows()
+	if len(rows) != 6 { // Red+Blue share vg (2×2) + Scarlet (2)
+		t.Fatalf("want 6 all-game rows, got %d %#v", len(rows), rows)
+	}
+	if rows[0].Game != "Red" || rows[2].Game != "Blue" || rows[4].Game != "Scarlet" {
+		t.Fatalf("game order Red→Blue→Scarlet: %q %q %q", rows[0].Game, rows[2].Game, rows[4].Game)
+	}
+	for _, row := range rows {
+		if row.Game == "" || row.Game == "All" {
+			t.Fatalf("each row needs real game label: %#v", row)
+		}
+	}
+}
+
 func TestSelectFormUsesCatalogPokemon(t *testing.T) {
 	cat := stubCatalog{
 		forms: []domain.SelectableForm{

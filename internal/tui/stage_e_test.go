@@ -66,7 +66,7 @@ func TestStageE_MissingEncountersAndDescriptions(t *testing.T) {
 	if enc[0] != "No records available for this selection." {
 		t.Fatalf("enc=%q", enc[0])
 	}
-	desc := formatFlavourLinesForGame(domain.Species{}, 40, "scarlet")
+	desc := formatFlavourLinesForGame(domain.Species{}, 40, "scarlet", "Scarlet")
 	if desc[0] != "No records available for this selection." {
 		t.Fatalf("desc=%q", desc[0])
 	}
@@ -81,11 +81,11 @@ func TestStageE_LearnsetDiffersByGameLabel(t *testing.T) {
 	sv := formatMoveLines([]domain.LevelUpMove{
 		{Level: 0, Method: "machine", Move: domain.Move{DisplayName: "Tera Blast", Type: "normal", DamageClass: "special", Power: &pow}},
 	}, 80)
-	if !strings.HasPrefix(statusLine("Learnset: Red", "Row 1 of 1", 80), "Learnset: Red") {
-		t.Fatal("red learnset status missing")
+	if !strings.HasPrefix(statusLine("Game: Red", "Row 1 of 1", 80), "Game: Red") {
+		t.Fatal("red game status missing")
 	}
 	svJoined := strings.Join(sv, "\n")
-	if !strings.HasPrefix(statusLine("Learnset: Scarlet", "Row 1 of 1", 80), "Learnset: Scarlet") || !strings.Contains(svJoined, "Tera Blast") {
+	if !strings.HasPrefix(statusLine("Game: Scarlet", "Row 1 of 1", 80), "Game: Scarlet") || !strings.Contains(svJoined, "Tera Blast") {
 		t.Fatalf("scarlet learnset missing:\n%s", svJoined)
 	}
 }

@@ -48,18 +48,24 @@ func TestMovesSingleMethodTable(t *testing.T) {
 			t.Fatalf("moves missing %q:\n%s", want, joined)
 		}
 	}
-	if strings.Contains(joined, "Move attributes: current.") || strings.Contains(joined, "Learnset: Pearl") {
-		t.Fatalf("learnset belongs on status line, not sticky:\n%s", joined)
+	if strings.Contains(joined, "Move attributes: current.") {
+		t.Fatalf("attributes disclaimer must not appear in sticky:\n%s", joined)
 	}
 	if strings.Contains(joined, "Machine") {
 		t.Fatalf("single-method table must not list other methods:\n%s", joined)
 	}
-	sticky := moveStickyLines(rows, 80, "level-up")
+	sticky := moveStickyLines(rows, 80, "level-up", "Pearl")
 	if len(sticky) != 1 || !strings.Contains(stripANSIForFocus(sticky[0]), "Lvl") {
 		t.Fatalf("sticky=%v", sticky)
 	}
-	hint := statusLine("Learnset: Pearl", "Row 1 of 2", 80)
-	if !strings.Contains(hint, "Learnset: Pearl") || !strings.Contains(hint, "Row 1 of 2") {
+	hint := statusLine("Game: Pearl", "Row 1 of 2", 80)
+	if !strings.Contains(hint, "Game: Pearl") || !strings.Contains(hint, "Row 1 of 2") {
 		t.Fatalf("status line=%q", hint)
+	}
+	if !strings.Contains(joined, "Game") || !strings.Contains(stripANSIForFocus(joined), "All") {
+		t.Fatalf("moves table should include Game column:\n%s", joined)
+	}
+	if strings.Contains(joined, "All Games") {
+		t.Fatalf("Game label should be All not All Games:\n%s", joined)
 	}
 }

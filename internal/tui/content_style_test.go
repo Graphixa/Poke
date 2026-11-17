@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -68,8 +69,8 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 		},
 	}}, 80)
 
-	moveW := moveNameWidth(80, true, true)
-	wantHeader := tableHeaderBand(moveTableHeader("level-up", moveW, true, true), 80)
+	moveW, gameW := moveColWidths(80, true, true)
+	wantHeader := tableHeaderBand(moveTableHeader("level-up", moveW, gameW, true, true), 80)
 	var header, dataRow string
 	for _, line := range lines {
 		plain := stripANSIForFocus(line)
@@ -87,8 +88,12 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 	if strings.Contains(header, "\x1b[48") || strings.Contains(header, "48;") {
 		t.Fatalf("header must not use background: %q", header)
 	}
-	if strings.Contains(dataRow, "\x1b[") {
-		t.Fatalf("move row should remain plain: %q", dataRow)
+	requireANSI(t, dataRow) // type colour on unfocused rows
+	if !strings.Contains(stripANSIForFocus(dataRow), "All") {
+		t.Fatalf("Game column should show All: %q", dataRow)
+	}
+	if strings.Contains(stripANSIForFocus(dataRow), "All…") || strings.Contains(stripANSIForFocus(dataRow), "All Games") {
+		t.Fatalf("Game must not truncate All / say All Games: %q", dataRow)
 	}
 	if !strings.Contains(dataRow, "25") {
 		t.Fatalf("move row should include PP: %q", dataRow)
@@ -238,20 +243,22 @@ func TestGlanceAbilityGridStableSlots(t *testing.T) {
 }
 
 func TestFlavourStylesVersionOnly(t *testing.T) {
-	lines := formatFlavourLines(domain.Species{FlavorTextEntries: []domain.FlavorText{{
+	lines := formatFlavourLinesAll(domain.Species{FlavorTextEntries: []domain.FlavorText{{
 		Language:     "en",
 		Version:      "lets-go-eevee",
 		VersionOrder: 1,
 		Text:         "Tough fights could excite this Pokémon.",
 	}}})
 
-	if lines[0] != primaryText("Lets Go Eevee") {
-		t.Fatalf("version heading not styled: %q", lines[0])
+	plain := stripANSIForFocus(lines[0])
+	if !strings.HasPrefix(plain, "Lets Go Eevee") || !strings.Contains(plain, "Tough fights") {
+		t.Fatalf("want labelled flavour fact line: %q", lines[0])
+	}
+	wantLabel := boldPrimary(fmt.Sprintf("%-16s", "Lets Go Eevee"))
+	if !strings.HasPrefix(lines[0], wantLabel) {
+		t.Fatalf("game label should match About-style fact line:\n got %q\nwant prefix %q", lines[0], wantLabel)
 	}
 	requireANSI(t, lines[0])
-	if strings.Contains(lines[1], "\x1b[") {
-		t.Fatalf("flavour paragraph should remain plain: %q", lines[1])
-	}
 }
 
 func TestLocationsTableAllGames(t *testing.T) {
@@ -274,6 +281,7 @@ func TestLocationsTableAllGames(t *testing.T) {
 	if len(lines) < 2 || !strings.Contains(lines[1], "↳") || !strings.Contains(lines[1], "Morning") {
 		t.Fatalf("conditions should use ↳: %v", lines)
 	}
+	requireANSI(t, lines[1]) // condition sub-rows are muted
 	if textwidth.Width(lines[0]) > 80 {
 		t.Fatalf("row wider than body (%d): %q", textwidth.Width(lines[0]), lines[0])
 	}
@@ -328,6 +336,90 @@ func TestAbilityLayout(t *testing.T) {
 	}
 	if !strings.Contains(joined, "\n\n") {
 		t.Fatalf("abilities should be separated by a blank line:\n%s", joined)
+	}
+}
+
+func TestChanceColumnPadsBeforeGame(t *testing.T) {
+	row := formatEncounterTableRows([]domain.Encounter{{
+		Version: "yellow", Area: "cerulean-city-area", Method: "gift",
+		MinimumLevel: 10, MaximumLevel: 10, Chance: 100,
+	}}, 80)[0]
+	// "100%" left-aligned in %-7s — must not butt directly against Game.
+	if strings.Contains(row, "100%Yellow") || !strings.Contains(row, "100% ") {
+		t.Fatalf("Chance should leave gap before Game: %q", row)
+	}
+	idx := strings.Index(row, "100%")
+	rest := row[idx+len("100%"):]
+	if !strings.HasPrefix(rest, " ") || !strings.Contains(rest, "Yellow") {
+		t.Fatalf("Chance/Game crowding: %q", row)
+	}
+}
+
+func TestMoveDetailFactLayoutAndSideList(t *testing.T) {
+	pow, acc := 40, 100
+	rows := []domain.LevelUpMove{
+		{Level: 1, Method: "level-up", Move: domain.Move{DisplayName: "Tackle", Type: "normal", DamageClass: "physical", Power: &pow, Accuracy: &acc, PP: 35, Effect: "Inflicts regular damage."}},
+		{Level: 3, Method: "level-up", Move: domain.Move{DisplayName: "Growl", Type: "normal", DamageClass: "status", PP: 40}},
+	}
+	lines := formatMoveDetailLines(rows, 0, 72)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(lines[0], boldPrimary("Tackle")) {
+		t.Fatalf("name first: %q", lines[0])
+	}
+	if !strings.Contains(joined, "Inflicts regular damage.") {
+		t.Fatalf("effect under name:\n%s", joined)
+	}
+	for _, label := range []string{"Type", "Pow", "Acc", "PP"} {
+		if !strings.Contains(joined, boldPrimary(fmt.Sprintf("%-16s", label))) {
+			t.Fatalf("missing fact %s:\n%s", label, joined)
+		}
+	}
+	if !strings.Contains(joined, "Growl") {
+		t.Fatalf("side list should show sibling moves:\n%s", joined)
+	}
+	if !strings.Contains(joined, "Move List") {
+		t.Fatalf("side list needs Move List header:\n%s", joined)
+	}
+	if !strings.Contains(joined, "│") {
+		t.Fatalf("detail/list need vertical divider:\n%s", joined)
+	}
+	requireANSI(t, joined) // type colour on Type value
+}
+
+func TestEncounterSortFollowsGameOrder(t *testing.T) {
+	rows := []domain.Encounter{
+		{VersionID: 3, Version: "yellow", Area: "a", Method: "walk"},
+		{VersionID: 1, Version: "red", Area: "b", Method: "walk"},
+		{VersionID: 2, Version: "blue", Area: "c", Method: "walk"},
+	}
+	order := map[string]int{"id:1": 1, "id:2": 2, "id:3": 3}
+	sorted := sortEncountersByGameOrder(rows, order)
+	if sorted[0].Version != "red" || sorted[1].Version != "blue" || sorted[2].Version != "yellow" {
+		t.Fatalf("order=%v %v %v", sorted[0].Version, sorted[1].Version, sorted[2].Version)
+	}
+}
+
+func TestDialogChromeKeepsHeaderDuringGamePicker(t *testing.T) {
+	m := NewModel(Options{})
+	m.width, m.height = 100, 40
+	m.showDialog = true
+	m.dialogSection = DialogEncounters
+	m.filtered = []domain.SpeciesSummary{{ID: 1, DisplayName: "Bulbasaur"}}
+	m.cursor = 0
+	m.resources[1] = &resourceCache{
+		HasEncounters: true,
+		Encounters: []domain.Encounter{{
+			Version: "red", Area: "pallet-town", Method: "gift",
+			MinimumLevel: 5, MaximumLevel: 5, Chance: 100,
+		}},
+	}
+	m.gamePickerOpen = true
+	sticky, hint := m.dialogChrome(m.dialogGeom().BodyW, 10, 0)
+	if len(sticky) == 0 || !strings.Contains(stripANSIForFocus(sticky[0]), "Area") {
+		t.Fatalf("sticky header should survive G picker: %v", sticky)
+	}
+	if !strings.Contains(hint, "Game:") {
+		t.Fatalf("status should keep Game label during picker: %q", hint)
 	}
 }
 

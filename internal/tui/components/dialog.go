@@ -79,7 +79,9 @@ func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 	if innerW < 20 {
 		innerW = 20
 	}
-	h := frameH - 6 // border + padding + section header + divider
+	// border(2) + top pad(1) + section header + divider; no bottom pad so
+	// PositionHint can sit flush on the inner bottom edge.
+	h := frameH - 5
 	if h < 1 {
 		h = 1
 	}
@@ -117,7 +119,7 @@ func DossierFrameEx(title string, section int, sectionLabels, bodyLines []string
 	card := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(style.BorderColor()).
-		Padding(1, 0).
+		Padding(1, 0, 0, 0). // top only — status line flush to bottom border
 		Width(termW).
 		Height(frameH).
 		Render(inner)

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Graphixa/Poke/internal/domain"
@@ -527,16 +529,75 @@ func (m Model) dialogEncounterRows() []domain.Encounter {
 		return nil
 	}
 	rows := r.Encounters
-	if m.dialogGameID < 1 {
-		return rows
+	if m.dialogGameID >= 1 {
+		var filtered []domain.Encounter
+		for _, e := range rows {
+			if e.VersionID == m.dialogGameID || (m.dialogGameSlug != "" && e.Version == m.dialogGameSlug) {
+				filtered = append(filtered, e)
+			}
+		}
+		rows = filtered
 	}
-	var filtered []domain.Encounter
-	for _, e := range rows {
-		if e.VersionID == m.dialogGameID || (m.dialogGameSlug != "" && e.Version == m.dialogGameSlug) {
-			filtered = append(filtered, e)
+	return sortEncountersByGameOrder(rows, m.versionOrderIndex())
+}
+
+// versionOrderIndex maps version id/slug → catalog Order (game picker order).
+func (m Model) versionOrderIndex() map[string]int {
+	out := map[string]int{}
+	if m.catalog == nil {
+		return out
+	}
+	vers, err := m.catalog.CatalogVersions()
+	if err != nil {
+		return out
+	}
+	for i, v := range vers {
+		ord := v.Order
+		if ord == 0 {
+			ord = i + 1
+		}
+		if v.ID > 0 {
+			out[fmt.Sprintf("id:%d", v.ID)] = ord
+		}
+		if v.Slug != "" {
+			out["slug:"+v.Slug] = ord
 		}
 	}
-	return filtered
+	return out
+}
+
+func sortEncountersByGameOrder(rows []domain.Encounter, order map[string]int) []domain.Encounter {
+	if len(rows) < 2 {
+		return rows
+	}
+	out := append([]domain.Encounter(nil), rows...)
+	key := func(e domain.Encounter) int {
+		if e.VersionID > 0 {
+			if o, ok := order[fmt.Sprintf("id:%d", e.VersionID)]; ok {
+				return o
+			}
+		}
+		if e.Version != "" {
+			if o, ok := order["slug:"+e.Version]; ok {
+				return o
+			}
+		}
+		if e.VersionGroupOrder > 0 {
+			return e.VersionGroupOrder
+		}
+		return 1 << 30
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		oi, oj := key(out[i]), key(out[j])
+		if oi != oj {
+			return oi < oj
+		}
+		if out[i].Area != out[j].Area {
+			return out[i].Area < out[j].Area
+		}
+		return out[i].Method < out[j].Method
+	})
+	return out
 }
 
 func (m *Model) nudgeEncounterFocus(delta int) {
@@ -586,9 +647,12 @@ func (m *Model) dialogMoveRowsAll() []domain.LevelUpMove {
 	if r == nil {
 		return nil
 	}
-	if m.catalog != nil && m.dialogGameID > 0 {
+	if m.catalog == nil {
+		return r.Moves
+	}
+	pokeID := m.currentFormPokemonID(r.Pokemon.ID)
+	if m.dialogGameID > 0 {
 		if vg, ok := m.catalog.VersionGroupIDForVersion(m.dialogGameID); ok {
-			pokeID := m.currentFormPokemonID(r.Pokemon.ID)
 			if rows, err := m.catalog.MovesForGroup(pokeID, vg); err == nil && len(rows) > 0 {
 				return rows
 			}
@@ -596,8 +660,53 @@ func (m *Model) dialogMoveRowsAll() []domain.LevelUpMove {
 				return rows
 			}
 		}
+		return r.Moves
 	}
-	return r.Moves
+	// All: expand every catalog version's learnset (picker order), tag Game, keep level order within each.
+	vers, err := m.catalog.CatalogVersions()
+	if err != nil || len(vers) == 0 {
+		return r.Moves
+	}
+	byVG := map[int][]domain.LevelUpMove{}
+	var out []domain.LevelUpMove
+	for _, v := range vers {
+		vg, ok := m.catalog.VersionGroupIDForVersion(v.ID)
+		if !ok || vg < 1 {
+			continue
+		}
+		rows, cached := byVG[vg]
+		if !cached {
+			rows, err = m.catalog.MovesForGroup(pokeID, vg)
+			if err != nil || len(rows) == 0 {
+				rows, err = m.catalog.LevelUpMovesForGroup(pokeID, vg)
+			}
+			if err != nil {
+				rows = nil
+			}
+			sort.SliceStable(rows, func(i, j int) bool {
+				if rows[i].Level != rows[j].Level {
+					return rows[i].Level < rows[j].Level
+				}
+				return rows[i].Move.DisplayName < rows[j].Move.DisplayName
+			})
+			byVG[vg] = rows
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		label := v.DisplayName
+		if label == "" {
+			label = v.Slug
+		}
+		for _, row := range rows {
+			row.Game = label
+			out = append(out, row)
+		}
+	}
+	if len(out) == 0 {
+		return r.Moves
+	}
+	return out
 }
 
 func (m *Model) dialogMoveRows() []domain.LevelUpMove {
