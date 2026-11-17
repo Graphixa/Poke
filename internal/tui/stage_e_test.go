@@ -34,7 +34,7 @@ func TestStageE_RegionalTypingInOverview(t *testing.T) {
 		Abilities:   []domain.AbilitySlot{{Slot: 1, Name: "gluttony"}},
 	}
 	s := domain.Species{Genus: "Mouse Pokémon", Generation: "generation-vii"}
-	joined := strings.Join(formatOverviewLines(alolan, s, 60, nil), "\n")
+	joined := strings.Join(formatOverviewLines(alolan, s, 60, nil, 0, ""), "\n")
 	if !strings.Contains(joined, "Dark") || !strings.Contains(joined, "Normal") {
 		t.Fatalf("regional typing missing:\n%s", joined)
 	}
@@ -62,7 +62,7 @@ func TestStageE_BranchedEvolutionNoStageFinal(t *testing.T) {
 }
 
 func TestStageE_MissingEncountersAndDescriptions(t *testing.T) {
-	enc := formatEncounterLinesForGame(nil, 40, "scarlet")
+	enc := formatEncounterLinesForGame(nil, 40, "scarlet", 80)
 	if enc[0] != "No records available for this selection." {
 		t.Fatalf("enc=%q", enc[0])
 	}
@@ -70,7 +70,7 @@ func TestStageE_MissingEncountersAndDescriptions(t *testing.T) {
 	if desc[0] != "No records available for this selection." {
 		t.Fatalf("desc=%q", desc[0])
 	}
-	noGame := formatEncounterLinesForGame(nil, 0, "")
+	noGame := formatEncounterLinesForGame(nil, 0, "", 80)
 	if noGame[0] != "No wild encounters recorded." {
 		t.Fatalf("All games empty=%q", noGame[0])
 	}
@@ -78,17 +78,14 @@ func TestStageE_MissingEncountersAndDescriptions(t *testing.T) {
 
 func TestStageE_LearnsetDiffersByGameLabel(t *testing.T) {
 	pow := 40
-	red := formatMoveLines([]domain.LevelUpMove{
-		{Level: 1, Method: "level-up", Move: domain.Move{DisplayName: "Tackle", Type: "normal", DamageClass: "physical", Power: &pow}},
-	}, 80, "Red")
 	sv := formatMoveLines([]domain.LevelUpMove{
 		{Level: 0, Method: "machine", Move: domain.Move{DisplayName: "Tera Blast", Type: "normal", DamageClass: "special", Power: &pow}},
-	}, 80, "Scarlet")
-	if !strings.Contains(strings.Join(red, "\n"), "Learnset: Red") {
-		t.Fatalf("red learnset label missing")
+	}, 80)
+	if !strings.HasPrefix(statusLine("Learnset: Red", "Row 1 of 1", 80), "Learnset: Red") {
+		t.Fatal("red learnset status missing")
 	}
 	svJoined := strings.Join(sv, "\n")
-	if !strings.Contains(svJoined, "Learnset: Scarlet") || !strings.Contains(svJoined, "Tera Blast") {
+	if !strings.HasPrefix(statusLine("Learnset: Scarlet", "Row 1 of 1", 80), "Learnset: Scarlet") || !strings.Contains(svJoined, "Tera Blast") {
 		t.Fatalf("scarlet learnset missing:\n%s", svJoined)
 	}
 }
@@ -132,7 +129,7 @@ func TestStageE_RapidFormAndGameClearsMoveDetail(t *testing.T) {
 	}
 }
 
-func TestStageE_OverviewIgnoresSelectedGameBlurb(t *testing.T) {
+func TestStageE_OverviewBlurbFollowsGame(t *testing.T) {
 	s := domain.Species{
 		Genus: "Seed Pokémon",
 		FlavorTextEntries: []domain.FlavorText{
@@ -141,8 +138,12 @@ func TestStageE_OverviewIgnoresSelectedGameBlurb(t *testing.T) {
 		},
 	}
 	p := domain.Pokemon{Types: []domain.TypeSlot{{Name: "grass"}}}
-	joined := strings.Join(formatOverviewLines(p, s, 60, nil), "\n")
-	if !strings.Contains(joined, "Newest reference.") {
-		t.Fatalf("overview must use reference order, not selected game:\n%s", joined)
+	newest := strings.Join(formatOverviewLines(p, s, 60, nil, 0, ""), "\n")
+	if !strings.Contains(newest, "Newest reference.") {
+		t.Fatalf("no game selected uses newest entry:\n%s", newest)
+	}
+	red := strings.Join(formatOverviewLines(p, s, 60, nil, 0, "red"), "\n")
+	if !strings.Contains(red, "Old entry.") || strings.Contains(red, "Newest reference.") {
+		t.Fatalf("selected game should drive overview blurb:\n%s", red)
 	}
 }
