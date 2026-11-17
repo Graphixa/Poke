@@ -423,6 +423,39 @@ func TestDialogChromeKeepsHeaderDuringGamePicker(t *testing.T) {
 	}
 }
 
+func TestDialogOverviewPaintsFromBrowseWithoutCore(t *testing.T) {
+	m := NewModel(Options{
+		BrowseEntries: map[int]domain.BrowseEntry{
+			4: {
+				ID: 4, Slug: "charmander", Name: "Charmander", Types: []string{"fire"},
+				HP: 39, Attack: 52, Defence: 43, SpAttack: 60, SpDefence: 50, Speed: 65,
+				HeightDecimeter: 6, WeightHectogram: 85, Genus: "Lizard Pokémon",
+				Abilities: []domain.AbilitySlot{{Name: "blaze"}},
+			},
+		},
+		DisableSprite: true,
+	})
+	m.width, m.height = 100, 40
+	m.showDialog = true
+	m.dialogSection = DialogOverview
+	m.filtered = []domain.SpeciesSummary{{ID: 4, Slug: "charmander", DisplayName: "Charmander", Types: []string{"fire"}}}
+	m.cursor = 0
+	m.dialogPokemon = domain.PokemonFromBrowse(m.browseEntries[4])
+
+	joined := strings.Join(m.dialogContentLines(), "\n")
+	if strings.Contains(joined, "Loading…") {
+		t.Fatalf("overview should not wait on core: %q", joined)
+	}
+	if !strings.Contains(stripANSIForFocus(joined), "Lizard Pokémon") {
+		t.Fatalf("want browse genus, got %q", joined)
+	}
+
+	m.dialogSection = DialogMoves
+	if got := strings.Join(m.dialogContentLines(), "\n"); got != "Loading…" {
+		t.Fatalf("moves without core should wait, got %q", got)
+	}
+}
+
 func requireANSI(t *testing.T, s string) {
 	t.Helper()
 	if !strings.Contains(s, "\x1b[") {

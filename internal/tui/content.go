@@ -46,24 +46,29 @@ func (m Model) dialogContentLines() []string {
 		return []string{"No Pokémon selected."}
 	}
 	r := m.resources[sel.ID]
-	if r == nil || (!r.HasCore && r.loadingCore) {
-		return []string{"Loading…"}
-	}
-	if r.CoreErr != nil && !r.HasCore {
-		return []string{usererr.Message(r.CoreErr)}
-	}
-	if !r.HasCore {
+	poke, species, fromCore := m.dossierPaint(sel.ID, r)
+	if !fromCore {
+		// Overview/Stats can paint from browse.json; other tabs need core/extras.
+		switch m.dialogSection {
+		case DialogOverview, DialogStats:
+			if poke.ID > 0 || poke.DisplayName != "" {
+				bodyW := m.dialogGeom().BodyW
+				if m.dialogSection == DialogStats {
+					return formatStatsBars(poke)
+				}
+				return m.formatOverviewLines(poke, species, bodyW)
+			}
+		}
+		if r != nil && r.CoreErr != nil {
+			return []string{usererr.Message(r.CoreErr)}
+		}
 		return []string{"Loading…"}
 	}
 
 	bodyW := m.dialogGeom().BodyW
-	poke := r.Pokemon
-	if m.dialogPokemon.ID > 0 {
-		poke = m.dialogPokemon
-	}
 	switch m.dialogSection {
 	case DialogOverview:
-		return m.formatOverviewLines(poke, r.Species, bodyW)
+		return m.formatOverviewLines(poke, species, bodyW)
 	case DialogStats:
 		return formatStatsBars(poke)
 	case DialogEvolution:
@@ -104,6 +109,26 @@ func (m Model) dialogContentLines() []string {
 	default:
 		return nil
 	}
+}
+
+// dossierPaint returns pokemon/species for dossier body. fromCore is true when
+// dossier core is loaded; otherwise poke/species may be browse.json stubs.
+func (m Model) dossierPaint(id int, r *resourceCache) (domain.Pokemon, domain.Species, bool) {
+	if r != nil && r.HasCore {
+		poke := r.Pokemon
+		if m.dialogPokemon.ID > 0 {
+			poke = m.dialogPokemon
+		}
+		return poke, r.Species, true
+	}
+	if e, ok := m.browseEntries[id]; ok {
+		poke := domain.PokemonFromBrowse(e)
+		if m.dialogPokemon.ID > 0 {
+			poke = m.dialogPokemon
+		}
+		return poke, domain.SpeciesFromBrowse(e), false
+	}
+	return domain.Pokemon{}, domain.Species{}, false
 }
 
 func sectionErrorLines(err error) []string {

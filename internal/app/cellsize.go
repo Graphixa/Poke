@@ -1,10 +1,10 @@
 package app
 
-// Cell pixel-size probe (XTWINOPS CSI 16 t), run once before the browse TUI
-// starts. Sixel paints at pixel resolution: encoding with a guessed cell
-// height taller than the terminal's real cell spills the sprite past the art
-// box (browse overpaint). The reply (CSI 6 ; height ; width t) removes the
-// guess; no reply within the timeout keeps the 10×20 default.
+// Cell pixel-size probe (XTWINOPS CSI 16 t). Started as soon as native caps
+// are known so it overlaps browse index/wiring; result is applied before
+// tea.Run / warmers. Sixel paints at pixel resolution: encoding with a guessed
+// cell height taller than the terminal's real cell spills past the art box.
+// No reply within the timeout keeps the 10×20 default.
 
 import (
 	"bytes"
@@ -17,7 +17,24 @@ import (
 	"github.com/Graphixa/Poke/internal/debuglog"
 )
 
-const cellSizeQueryTimeout = 200 * time.Millisecond
+const cellSizeQueryTimeout = 50 * time.Millisecond
+
+type cellSizeResult struct {
+	pxW, pxH int
+	ok       bool
+}
+
+// startQueryCellPixelSize runs the XTWINOPS probe off the critical path so
+// browse wiring can overlap the wait. Caller must receive from the channel
+// before tea.Run (probe owns raw stdin until done).
+func startQueryCellPixelSize() <-chan cellSizeResult {
+	ch := make(chan cellSizeResult, 1)
+	go func() {
+		w, h, ok := queryCellPixelSize()
+		ch <- cellSizeResult{pxW: w, pxH: h, ok: ok}
+	}()
+	return ch
+}
 
 // queryCellPixelSize asks the terminal for its cell size in pixels.
 // Safe no-op (ok=false) when stdin/stdout are not terminals or the host
@@ -122,8 +139,9 @@ func atoiBytes(b []byte) int {
 }
 
 const (
-	stdinDrainIdle    = 40 * time.Millisecond
-	stdinDrainMaxWait = 200 * time.Millisecond
+	// ponytail: short idle — empty buffer paid this once per drain; was 40/200ms.
+	stdinDrainIdle    = 10 * time.Millisecond
+	stdinDrainMaxWait = 40 * time.Millisecond
 )
 
 // drainPendingStdin discards console input still sitting in the OS buffer.

@@ -103,7 +103,13 @@ func (s *Service) LoadBrowse() ([]domain.BrowseEntry, error) {
 	if !s.store.HasActiveDataset() {
 		return nil, ErrNotFound
 	}
+	s.localOnly.Store(true)
 	return s.store.LoadBrowse()
+}
+
+// PreloadDataset warms aggregates (learnsets/encounters/…) after browse is up.
+func (s *Service) PreloadDataset() error {
+	return s.store.PreloadDataset()
 }
 
 func (s *Service) Clear() error {

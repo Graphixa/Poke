@@ -529,3 +529,40 @@ func TestAggregatePathsAndRoundTrip(t *testing.T) {
 		t.Fatalf("encounters=%#v err=%v", encounters, err)
 	}
 }
+
+func TestPreloadDatasetWarmsLearnsets(t *testing.T) {
+	root := t.TempDir()
+	store := cache.NewStore(root, nil)
+	id := "preload-ds"
+	if err := store.EnsureDatasetDir(id); err != nil {
+		t.Fatal(err)
+	}
+	b := dataset.NewBuilder()
+	b.Pokemon[25] = dataset.PokemonFromDomain(domain.Pokemon{ID: 25, Slug: "pikachu", DisplayName: "Pikachu", SpeciesID: 25})
+	b.Species[25] = dataset.SpeciesFromDomain(domain.Species{ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25})
+	b.Learnsets[25] = []dataset.DatasetLearn{{PokemonID: 25, LevelLearnedAt: 1, MoveID: 84, LearnMethod: "level-up", VersionGroupID: 1}}
+	b.Moves[84] = dataset.DatasetMove{ID: 84, Slug: "thunder-shock", DisplayName: "Thunder Shock", PP: 30}
+	b.Evolutions[1] = dataset.EvolutionFromDomain(domain.EvolutionTree{Root: domain.EvolutionNode{SpeciesID: 25}})
+	b.Encounters[25] = dataset.EncountersFromDomain([]domain.Encounter{{Area: "forest"}})
+	if err := store.StoreAggregateBuilder(id, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StoreBrowse(id, []domain.BrowseEntry{{ID: 25, Slug: "pikachu", Name: "Pikachu"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteDatasetManifest(cache.DatasetManifest{
+		SchemaVersion: cache.DatasetSchemaVersion, DatasetVersion: id, Complete: true, PokemonCount: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ActivateDataset(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PreloadDataset(); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := store.LevelUpMoves(25)
+	if err != nil || len(rows) != 1 || rows[0].Move.Slug != "thunder-shock" {
+		t.Fatalf("rows=%v err=%v", rows, err)
+	}
+}

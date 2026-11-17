@@ -34,9 +34,9 @@ const (
 //
 // Defaults match typical Windows Terminal / Cascadia geometry (10×20). App
 // startup measures the real cell size via XTWINOPS (CSI 16 t) and overrides
-// through SetCellPixelSize before the engine or any warmer starts — encoding
-// with a guessed cell height taller than reality paints sixel past the art
-// box (the browse overpaint bug). Cache identity includes the resulting pixel
+// through SetCellPixelSize before any encode/warmer starts — encoding with a
+// guessed cell height taller than reality paints sixel past the art box (the
+// browse overpaint bug). Cache identity includes the resulting pixel
 // dimensions, so changed cell sizes key distinct artefacts without migration.
 var (
 	SixelCellPxW = 10

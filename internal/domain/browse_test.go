@@ -50,3 +50,19 @@ func TestBrowseEntryWithoutAbilities(t *testing.T) {
 		t.Fatal("old browse.json without abilities must not claim HasAbilities")
 	}
 }
+
+func TestPokemonSpeciesFromBrowse(t *testing.T) {
+	e := domain.BrowseEntry{
+		ID: 4, Slug: "charmander", Name: "Charmander", Types: []string{"fire"},
+		HP: 39, Speed: 65, HeightDecimeter: 6, WeightHectogram: 85,
+		Genus: "Lizard Pokémon", Abilities: []domain.AbilitySlot{{Name: "blaze"}},
+	}
+	p := domain.PokemonFromBrowse(e)
+	if p.ID != 4 || p.DisplayName != "Charmander" || p.Stats.HP != 39 || len(p.Types) != 1 || p.Types[0].Name != "fire" {
+		t.Fatalf("pokemon=%+v", p)
+	}
+	s := domain.SpeciesFromBrowse(e)
+	if s.ID != 4 || s.Genus != "Lizard Pokémon" || s.DefaultPokemonID != 4 {
+		t.Fatalf("species=%+v", s)
+	}
+}

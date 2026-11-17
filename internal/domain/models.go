@@ -138,6 +138,29 @@ func applyStatsToBrowse(b *BrowseEntry, s Stats) {
 	b.SpAttack, b.SpDefence, b.Speed = s.SpecialAttack, s.SpecialDefense, s.Speed
 }
 
+// PokemonFromBrowse builds a Pokemon stub for instant dossier Overview/Stats
+// before dossier core arrives.
+func PokemonFromBrowse(e BrowseEntry) Pokemon {
+	types := make([]TypeSlot, len(e.Types))
+	for i, name := range e.Types {
+		types[i] = TypeSlot{Slot: i + 1, Name: name}
+	}
+	return Pokemon{
+		ID: e.ID, SpeciesID: e.ID, Slug: e.Slug, DisplayName: e.Name,
+		HeightDecimeter: e.HeightDecimeter, WeightHectogram: e.WeightHectogram,
+		BaseExperience: e.BaseExperience, Types: types, Abilities: append([]AbilitySlot(nil), e.Abilities...),
+		Stats: e.Stats(),
+	}
+}
+
+// SpeciesFromBrowse builds a Species stub (genus + identity) for Overview paint.
+func SpeciesFromBrowse(e BrowseEntry) Species {
+	return Species{
+		ID: e.ID, Slug: e.Slug, DisplayName: e.Name, Genus: e.Genus,
+		DefaultPokemonID: e.ID,
+	}
+}
+
 type Species struct {
 	ID                int
 	Slug              string

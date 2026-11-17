@@ -58,6 +58,43 @@ func (s stubCatalog) AbilityBySlug(string) (domain.Ability, bool) {
 	return domain.Ability{}, false
 }
 
+// panicMovesCatalog fails if learnsets are touched — Overview Enter must not.
+type panicMovesCatalog struct{ stubCatalog }
+
+func (panicMovesCatalog) MovesForGroup(int, int) ([]domain.LevelUpMove, error) {
+	panic("MovesForGroup")
+}
+func (panicMovesCatalog) LevelUpMovesForGroup(int, int) ([]domain.LevelUpMove, error) {
+	panic("LevelUpMovesForGroup")
+}
+
+func TestEnsureMoveMethodSkipsLearnsetsOnOverview(t *testing.T) {
+	cat := panicMovesCatalog{stubCatalog{
+		versions: []domain.Version{{ID: 1, Slug: "red", DisplayName: "Red"}},
+		vg:       map[int]int{1: 1},
+		pokemon:  map[int]domain.Pokemon{25: {ID: 25, DisplayName: "Pikachu"}},
+	}}
+	m := NewModel(Options{Catalog: cat, Context: context.Background()})
+	m.dialogSection = DialogOverview
+	m.dialogSpeciesID = 25
+	m.dialogPokemon = domain.Pokemon{ID: 25}
+	m.dialogGameID = 0
+	m.resources[25] = &resourceCache{
+		HasCore: true,
+		Pokemon: domain.Pokemon{ID: 25},
+		Species: domain.Species{ID: 25},
+	}
+	m.filtered = []domain.SpeciesSummary{{ID: 25}}
+	m.cursor = 0
+	m.initDialogContext(25, domain.Dossier{
+		Pokemon: domain.Pokemon{ID: 25, DisplayName: "Pikachu"},
+		Species: domain.Species{ID: 25},
+	})
+	if m.dialogMoveMethod != "level-up" {
+		t.Fatalf("method=%q", m.dialogMoveMethod)
+	}
+}
+
 func TestDialogContextLines(t *testing.T) {
 	m := NewModel(Options{})
 	m.dialogForms = []domain.SelectableForm{

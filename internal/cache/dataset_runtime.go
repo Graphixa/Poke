@@ -89,12 +89,20 @@ func (s *Store) openSnapshotWithID(id string, idErr error) (*loadedSnapshot, err
 
 func (d *loadedSnapshot) ensurePokemon() error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.pokemon != nil || d.pokemonErr != nil {
-		return d.pokemonErr
+		err := d.pokemonErr
+		d.mu.Unlock()
+		return err
 	}
+	d.mu.Unlock()
+
 	pokemonFile, err := d.store.LoadAggregatePokemon(d.id)
 	if err != nil {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.pokemon != nil || d.pokemonErr != nil {
+			return d.pokemonErr
+		}
 		d.pokemonErr = err
 		return err
 	}
@@ -102,18 +110,32 @@ func (d *loadedSnapshot) ensurePokemon() error {
 	for pokemonID, compact := range pokemonFile {
 		pokemon[pokemonID] = dataset.PokemonToDomain(compact, nil)
 	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pokemon != nil || d.pokemonErr != nil {
+		return d.pokemonErr
+	}
 	d.pokemon = pokemon
 	return nil
 }
 
 func (d *loadedSnapshot) ensureSpecies() error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.species != nil || d.speciesErr != nil {
-		return d.speciesErr
+		err := d.speciesErr
+		d.mu.Unlock()
+		return err
 	}
+	d.mu.Unlock()
+
 	speciesFile, err := d.store.LoadAggregateSpecies(d.id)
 	if err != nil {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.species != nil || d.speciesErr != nil {
+			return d.speciesErr
+		}
 		d.speciesErr = err
 		return err
 	}
@@ -121,13 +143,32 @@ func (d *loadedSnapshot) ensureSpecies() error {
 	for speciesID, compact := range speciesFile {
 		species[speciesID] = dataset.SpeciesToDomain(compact)
 	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.species != nil || d.speciesErr != nil {
+		return d.speciesErr
+	}
 	d.species = species
 	return nil
 }
 
-func (d *loadedSnapshot) loadMovesLocked() error {
+func (d *loadedSnapshot) ensureMoves() error {
+	d.mu.Lock()
+	if d.moves != nil || d.movesErr != nil {
+		err := d.movesErr
+		d.mu.Unlock()
+		return err
+	}
+	d.mu.Unlock()
+
 	movesFile, err := d.store.LoadAggregateMoves(d.id)
 	if err != nil {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.moves != nil || d.movesErr != nil {
+			return d.movesErr
+		}
 		d.movesErr = err
 		return err
 	}
@@ -135,27 +176,32 @@ func (d *loadedSnapshot) loadMovesLocked() error {
 	for moveID, compact := range movesFile {
 		moves[moveID] = dataset.MoveToDomain(compact)
 	}
-	d.moves = moves
-	return nil
-}
 
-func (d *loadedSnapshot) ensureMoves() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.moves != nil || d.movesErr != nil {
 		return d.movesErr
 	}
-	return d.loadMovesLocked()
+	d.moves = moves
+	return nil
 }
 
 func (d *loadedSnapshot) ensureEvolutions() error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.evolutions != nil || d.evolutionsErr != nil {
-		return d.evolutionsErr
+		err := d.evolutionsErr
+		d.mu.Unlock()
+		return err
 	}
+	d.mu.Unlock()
+
 	evolutions, err := d.store.LoadAggregateEvolutions(d.id)
 	if err != nil {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.evolutions != nil || d.evolutionsErr != nil {
+			return d.evolutionsErr
+		}
 		d.evolutionsErr = err
 		return err
 	}
@@ -163,18 +209,32 @@ func (d *loadedSnapshot) ensureEvolutions() error {
 	for chainID, compact := range evolutions {
 		evoTrees[chainID] = dataset.EvolutionToDomain(compact)
 	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.evolutions != nil || d.evolutionsErr != nil {
+		return d.evolutionsErr
+	}
 	d.evolutions = evoTrees
 	return nil
 }
 
 func (d *loadedSnapshot) ensureEncounters() error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.encounters != nil || d.encountersErr != nil {
-		return d.encountersErr
+		err := d.encountersErr
+		d.mu.Unlock()
+		return err
 	}
+	d.mu.Unlock()
+
 	encounters, err := d.store.LoadAggregateEncounters(d.id)
 	if err != nil {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.encounters != nil || d.encountersErr != nil {
+			return d.encountersErr
+		}
 		d.encountersErr = err
 		return err
 	}
@@ -182,18 +242,39 @@ func (d *loadedSnapshot) ensureEncounters() error {
 	for pokemonID, rows := range encounters {
 		enc[pokemonID] = dataset.EncountersToDomain(rows)
 	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.encounters != nil || d.encountersErr != nil {
+		return d.encountersErr
+	}
 	d.encounters = enc
 	return nil
 }
 
 func (d *loadedSnapshot) ensureLearnsets() error {
 	d.mu.Lock()
+	if d.learnsets != nil || d.learnsetsErr != nil {
+		err := d.learnsetsErr
+		d.mu.Unlock()
+		return err
+	}
+	d.mu.Unlock()
+
+	// ponytail: parse off-lock so Enter/Overview isn't stalled behind ~60MB JSON
+	learnsets, err := d.store.LoadAggregateLearnsets(d.id)
+
+	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.learnsets != nil || d.learnsetsErr != nil {
 		return d.learnsetsErr
 	}
-	d.learnsets, d.learnsetsErr = d.store.LoadAggregateLearnsets(d.id)
-	return d.learnsetsErr
+	if err != nil {
+		d.learnsetsErr = err
+		return err
+	}
+	d.learnsets = learnsets
+	return nil
 }
 
 func (s *Store) activeSnapshot() (*loadedSnapshot, error) {
@@ -435,23 +516,28 @@ func (s *Store) ReadDatasetNotice() (DatasetNotice, error) {
 	return n, nil
 }
 
-// PreloadDataset loads core aggregate files into memory (optional warm path).
+// PreloadDataset warms dataset aggregates into memory so the first dossier
+// Enter does not pay a cold JSON parse on the UI thread.
 func (s *Store) PreloadDataset() error {
 	ds, err := s.activeSnapshot()
 	if err != nil || ds == nil {
 		return err
 	}
-	if err := ds.ensurePokemon(); err != nil {
-		return err
-	}
-	if err := ds.ensureSpecies(); err != nil {
-		return err
-	}
-	if err := ds.ensureEvolutions(); err != nil {
-		return err
-	}
-	if err := ds.ensureEncounters(); err != nil {
-		return err
+	for _, step := range []func() error{
+		ds.ensurePokemon,
+		ds.ensureSpecies,
+		ds.ensureForms,
+		ds.ensureVersions,
+		ds.ensureTypes,
+		ds.ensureAbilities,
+		ds.ensureMoves,
+		ds.ensureEvolutions,
+		ds.ensureEncounters,
+		ds.ensureLearnsets,
+	} {
+		if err := step(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

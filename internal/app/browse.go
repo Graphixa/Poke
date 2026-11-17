@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Graphixa/Poke/internal/cache"
 	"github.com/Graphixa/Poke/internal/config"
 	"github.com/Graphixa/Poke/internal/debuglog"
 	"github.com/Graphixa/Poke/internal/domain"
@@ -57,6 +58,63 @@ func (t tuiSprites) PersistFrame(ctx context.Context, cacheKey, frame string) er
 		return nil
 	}
 	return t.Engine.PersistFrame(ctx, cacheKey, frame)
+}
+
+// gatedNativeWarmer delays sixel/Kitty cache workers until dataset aggregates
+// finish preloading (avoids fighting the learnsets/encounters JSON parse).
+type gatedNativeWarmer struct {
+	inner *prewarm.Service
+	ready <-chan struct{}
+}
+
+func (g gatedNativeWarmer) EnsureStarted(ctx context.Context, cells int) {
+	if g.inner == nil {
+		return
+	}
+	go func() {
+		select {
+		case <-g.ready:
+		case <-ctx.Done():
+			return
+		}
+		g.inner.EnsureStarted(ctx, cells)
+	}()
+}
+func (g gatedNativeWarmer) Prioritize(id int) {
+	if g.inner != nil {
+		g.inner.Prioritize(id)
+	}
+}
+func (g gatedNativeWarmer) SetNeighborsFromList(list []domain.SpeciesSummary, cursor, radius int) {
+	if g.inner != nil {
+		g.inner.SetNeighborsFromList(list, cursor, radius)
+	}
+}
+func (g gatedNativeWarmer) SetBuckets(buckets []int) {
+	if g.inner != nil {
+		g.inner.SetBuckets(buckets)
+	}
+}
+func (g gatedNativeWarmer) SetCells(cells int) {
+	if g.inner != nil {
+		g.inner.SetCells(cells)
+	}
+}
+func (g gatedNativeWarmer) Snapshot() (done, total int) {
+	if g.inner == nil {
+		return 0, 0
+	}
+	return g.inner.Snapshot()
+}
+func (g gatedNativeWarmer) NoteActivity() {
+	if g.inner != nil {
+		g.inner.NoteActivity()
+	}
+}
+func (g gatedNativeWarmer) SetForegroundBusy(busy bool) {
+	if g.inner != nil {
+		g.inner.SetForegroundBusy(busy)
+	}
 }
 
 // sendWarmProgress is non-blocking for in-progress ticks so warmers cannot
@@ -115,15 +173,41 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	}
 	svc.Config = cfg
 
-	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
-	if err != nil {
-		return err
+	// Caps + cell-size probe first so the XTWINOPS wait overlaps index/wiring.
+	img := spriteimage.New()
+	caps := sprite.DetectCapabilities(img.Available())
+	var cellCh <-chan cellSizeResult
+	if caps.NativeImage {
+		cellCh = startQueryCellPixelSize()
+	}
+
+	var (
+		index      []domain.SpeciesSummary
+		browseByID map[int]domain.BrowseEntry
+	)
+	if svc.Cache.HasActiveDataset() {
+		// One browse.json read → summaries + glance map (was EnsureIndex + LoadBrowse).
+		entries, loadErr := svc.Cache.LoadBrowse()
+		if loadErr != nil {
+			return loadErr
+		}
+		if len(entries) == 0 {
+			return cache.ErrEmpty
+		}
+		index = cache.BrowseSummaries(entries)
+		browseByID = cache.BrowseByID(entries)
+	} else {
+		var ensureErr error
+		index, _, ensureErr = svc.Cache.EnsureIndex(ctx, nil)
+		if ensureErr != nil {
+			return ensureErr
+		}
 	}
 	debuglog.StartupMark("startup.index_ready")
 	debuglog.StartupMark("startup.dataset_ready")
 
+	idx := search.Build(index)
 	if req.Selected == nil && req.Prefill == "" && req.Target != "" {
-		idx := search.Build(index)
 		if sum, ok := idx.Resolve(req.Target); ok {
 			req.Selected = &sum
 		} else {
@@ -137,15 +221,6 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 	progressCh := make(chan tui.WarmProgress, 128)
 	var useProgress bool
 
-	img := spriteimage.New()
-	caps := sprite.DetectCapabilities(img.Available())
-	if caps.NativeImage {
-		// Measure real cell pixels before the engine/warmers exist so every
-		// sixel encode fits the art box (overpaint fix). Fallback: 10×20.
-		if pxW, pxH, ok := queryCellPixelSize(); ok {
-			sprite.SetCellPixelSize(pxW, pxH)
-		}
-	}
 	debuglog.StartupMark("startup.capabilities_ready")
 	debuglog.Renderf("render.backend.selected native=%v protocol=%q term_program=%q wt_session=%v",
 		caps.NativeImage, img.ProtocolName(), os.Getenv("TERM_PROGRAM"), os.Getenv("WT_SESSION") != "")
@@ -196,7 +271,7 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 
 	details := NewDetailService(svc.Cache)
 	opts := tui.Options{
-		Index:         search.Build(index),
+		Index:         idx,
 		Details:       details,
 		Pokemon:       details,
 		Catalog:       details,
@@ -205,6 +280,7 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		Prefill:       req.Prefill,
 		Context:       runCtx,
 		DisableSprite: svc.Config.EffectiveSpriteMode() == "off",
+		BrowseEntries: browseByID,
 	}
 	favouriteStore := favourites.Store{Path: filepath.Join(filepath.Dir(svc.Paths.ConfigFile), "favourites.json")}
 	if ids, err := favouriteStore.Load(); err != nil {
@@ -218,13 +294,6 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.SavedGameVersionID = vid
 	}
 	opts.SaveGameVersion = gameStore.Save
-	if entries, err := svc.Cache.LoadBrowse(); err == nil && len(entries) > 0 {
-		byID := make(map[int]domain.BrowseEntry, len(entries))
-		for _, e := range entries {
-			byID[e.ID] = e
-		}
-		opts.BrowseEntries = byID
-	}
 
 	warmLoader := warmPokemonLoader{details}
 	forward := func(stage tui.WarmStage) func(prewarm.Progress) {
@@ -256,11 +325,14 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.Warmer = spriteWarmer
 	}
 
+	// Aggregates ready before sixel/chafa warm so first dossier Enter is cheap.
+	aggregatesReady := make(chan struct{})
+
 	if caps.NativeImage && !opts.DisableSprite {
 		useProgress = true
 		nativeWarmer := prewarm.NewNative(index, warmLoader, engine, forward(tui.WarmStageNative))
 		defer nativeWarmer.Stop()
-		opts.NativeWarmer = nativeWarmer
+		opts.NativeWarmer = gatedNativeWarmer{inner: nativeWarmer, ready: aggregatesReady}
 	}
 
 	wantArtworkBG := startBgArtwork ||
@@ -289,8 +361,21 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		opts.WarmEvents = progressCh
 	}
 	opts.OnUIReady = func() {
-		for _, fn := range onUIReady {
-			fn()
+		go func() {
+			debuglog.StartupMark("startup.aggregates_preload_begin")
+			_ = svc.Cache.PreloadDataset()
+			debuglog.StartupMark("startup.aggregates_preload_done")
+			close(aggregatesReady)
+			for _, fn := range onUIReady {
+				fn()
+			}
+		}()
+	}
+
+	// Probe overlapped wiring; receive before tea owns stdin (≤50ms from start).
+	if cellCh != nil {
+		if r := <-cellCh; r.ok {
+			sprite.SetCellPixelSize(r.pxW, r.pxH)
 		}
 	}
 

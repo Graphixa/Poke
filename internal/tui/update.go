@@ -549,6 +549,12 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 	m.dialogNotice = ""
 	if r := m.resources[sel.ID]; r != nil && r.HasCore {
 		m.initDialogContext(sel.ID, domain.Dossier{Pokemon: r.Pokemon, Species: r.Species})
+	} else if e, ok := m.browseEntries[sel.ID]; ok {
+		// Paint Overview immediately from browse.json; core+extras load in background.
+		m.dialogForms = nil
+		m.dialogFormIdx = 0
+		m.dialogPokemon = domain.PokemonFromBrowse(e)
+		m.dialogSpeciesID = sel.ID
 	} else {
 		m.dialogForms = nil
 		m.dialogFormIdx = 0

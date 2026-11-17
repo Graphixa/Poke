@@ -223,6 +223,11 @@ func (s *Store) LoadBrowseSummaries() ([]domain.SpeciesSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	return BrowseSummaries(entries), nil
+}
+
+// BrowseSummaries maps browse rows to search/index summaries (one pass).
+func BrowseSummaries(entries []domain.BrowseEntry) []domain.SpeciesSummary {
 	out := make([]domain.SpeciesSummary, len(entries))
 	for i, e := range entries {
 		out[i] = e.Summary()
@@ -230,7 +235,16 @@ func (s *Store) LoadBrowseSummaries() ([]domain.SpeciesSummary, error) {
 			out[i].SpritePath = SpriteRelPath(e.ID, e.Slug)
 		}
 	}
-	return out, nil
+	return out
+}
+
+// BrowseByID indexes browse rows by species ID.
+func BrowseByID(entries []domain.BrowseEntry) map[int]domain.BrowseEntry {
+	byID := make(map[int]domain.BrowseEntry, len(entries))
+	for _, e := range entries {
+		byID[e.ID] = e
+	}
+	return byID
 }
 
 // EnsureDatasetDir creates the snapshot directory.

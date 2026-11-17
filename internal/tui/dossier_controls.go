@@ -462,6 +462,14 @@ func (m *Model) availableMoveMethods() []string {
 }
 
 func (m *Model) ensureMoveMethod() {
+	if m.dialogMoveMethod == "" {
+		m.dialogMoveMethod = "level-up"
+	}
+	// Overview Enter must not parse learnsets.json — that aggregate is shared and
+	// cold-loads once (~1s). Resolve real methods only when Moves is in play.
+	if m.dialogSection != DialogMoves && !m.methodPickerOpen {
+		return
+	}
 	methods := m.availableMoveMethods()
 	if len(methods) == 0 {
 		m.dialogMoveMethod = "level-up"
