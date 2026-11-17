@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/tui/components"
 )
 
 func TestEvolutionStylesNamesOnly(t *testing.T) {

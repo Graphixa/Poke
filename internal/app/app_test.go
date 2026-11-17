@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/config"
+	"github.com/Graphixa/Poke/internal/config"
 )
 
 func testRuntime(t *testing.T, args ...string) (Runtime, *bytes.Buffer, *bytes.Buffer) {

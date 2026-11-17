@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 func TestWorldScalePreservesBurstShape(t *testing.T) {

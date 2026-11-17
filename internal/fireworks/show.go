@@ -7,12 +7,12 @@ import (
 	"math/rand/v2"
 	"time"
 
-	fw "github.com/Graphixa/Pokedex/internal/fireworks/firework"
-	"github.com/Graphixa/Pokedex/internal/fireworks/launcher"
-	"github.com/Graphixa/Pokedex/internal/fireworks/particle"
-	"github.com/Graphixa/Pokedex/internal/fireworks/shells"
-	"github.com/Graphixa/Pokedex/internal/fireworks/sym"
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	fw "github.com/Graphixa/Poke/internal/fireworks/firework"
+	"github.com/Graphixa/Poke/internal/fireworks/launcher"
+	"github.com/Graphixa/Poke/internal/fireworks/particle"
+	"github.com/Graphixa/Poke/internal/fireworks/shells"
+	"github.com/Graphixa/Poke/internal/fireworks/sym"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 const (

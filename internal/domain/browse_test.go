@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func TestBrowseEntryUnmarshalsAbilities(t *testing.T) {

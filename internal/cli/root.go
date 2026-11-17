@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/pkg/version"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/pkg/version"
 	"github.com/spf13/cobra"
 )
 

@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/tui/views"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/tui/views"
 )
 
 // Default responsive breakpoints. Browse sprite visibility uses glance/hero

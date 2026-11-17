@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/tui/views"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/tui/views"
 )
 
 func TestGlanceBucketMatchesStatsHeight(t *testing.T) {

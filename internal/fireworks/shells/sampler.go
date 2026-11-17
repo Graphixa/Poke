@@ -7,7 +7,7 @@ import (
 	"math"
 	"math/rand/v2"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 func AllUniformDisk(ρ float64, n int) iter.Seq[vec.Vec] {

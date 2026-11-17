@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/output"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/output"
 )
 
 var update = flag.Bool("update", false, "update golden files")

@@ -9,12 +9,12 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/Graphixa/Pokedex/internal/output"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/textwidth"
-	"github.com/Graphixa/Pokedex/internal/tui/components"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
-	"github.com/Graphixa/Pokedex/internal/tui/views"
+	"github.com/Graphixa/Poke/internal/output"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/textwidth"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/views"
 )
 
 func featureBinding(keys, label, action string) key.Binding {

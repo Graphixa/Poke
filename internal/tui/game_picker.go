@@ -5,8 +5,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/textwidth"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/textwidth"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 // gamePickerLines renders the game list body for the centered picker popup.

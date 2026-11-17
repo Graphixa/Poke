@@ -7,11 +7,11 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/output"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/textwidth"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/output"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/textwidth"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 func mutedSty() lipgloss.Style {

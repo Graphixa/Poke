@@ -9,9 +9,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/search"
-	"github.com/Graphixa/Pokedex/internal/tui"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/search"
+	"github.com/Graphixa/Poke/internal/tui"
 )
 
 func fixtureIndex() *search.Index {
@@ -261,33 +261,22 @@ func TestSelectionViewsDialogHelp(t *testing.T) {
 	if details.coreCalls.Load() != 1 {
 		t.Fatalf("core loads = %d want 1", details.coreCalls.Load())
 	}
-	// Tab toggles sidebar ↔ content focus; section stays Overview.
-	m = apply(t, m, key("tab"))
-	if m.ActiveDialogSection() != tui.DialogOverview {
-		t.Fatalf("tab must not change section, got %v", m.ActiveDialogSection())
-	}
-	m = apply(t, m, key("tab")) // back to sidebar
+	// ←/→ change section; ↑/↓ scroll content (Overview has little to scroll).
 	m = apply(t, m, key("right"))
 	if m.ActiveDialogSection() != tui.DialogStats {
 		t.Fatalf("right section = %v want Stats", m.ActiveDialogSection())
 	}
-	m = apply(t, m, key("down"))
+	m = apply(t, m, key("right"))
 	if m.ActiveDialogSection() != tui.DialogEvolution {
-		t.Fatalf("down section = %v want Evolution", m.ActiveDialogSection())
+		t.Fatalf("right section = %v want Evolution", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("left"))
 	if m.ActiveDialogSection() != tui.DialogStats {
 		t.Fatalf("left section = %v want Stats", m.ActiveDialogSection())
 	}
-
-	// Wide rail: ↑/↓ move the section list while sidebar-focused.
-	m = apply(t, m, tea.WindowSizeMsg{Width: 120, Height: 40}, key("up"))
+	m = apply(t, m, key("left"))
 	if m.ActiveDialogSection() != tui.DialogOverview {
-		t.Fatalf("rail up section = %v want Overview", m.ActiveDialogSection())
-	}
-	m = apply(t, m, key("down"))
-	if m.ActiveDialogSection() != tui.DialogStats {
-		t.Fatalf("rail down section = %v want Stats", m.ActiveDialogSection())
+		t.Fatalf("left section = %v want Overview", m.ActiveDialogSection())
 	}
 	m = apply(t, m, key("esc"))
 	if m.DialogVisible() {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	spriteimage "github.com/Graphixa/Poke/internal/render/sprite/image"
 )
 
 func TestEncodeFromCellsSnapsHeightToSixelBands(t *testing.T) {

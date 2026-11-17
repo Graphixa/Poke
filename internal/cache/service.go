@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache/typeseed"
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/cache/typeseed"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 const interactiveReserve = 2

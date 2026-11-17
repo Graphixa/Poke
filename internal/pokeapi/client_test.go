@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/pokeapi"
+	"github.com/Graphixa/Poke/internal/pokeapi"
 )
 
 func TestClientUserAgentAndMapping(t *testing.T) {

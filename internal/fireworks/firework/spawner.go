@@ -7,8 +7,8 @@ import (
 	"iter"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/particle"
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	"github.com/Graphixa/Poke/internal/fireworks/particle"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 type Spawner interface {

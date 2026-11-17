@@ -7,10 +7,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
-	"github.com/Graphixa/Pokedex/internal/tui/views"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/views"
 )
 
 // Native graphics (Sixel/Kitty/iTerm) cannot live in Bubble Tea's cell View —

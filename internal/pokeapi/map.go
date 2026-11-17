@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func idFromURL(raw string) (int, error) {

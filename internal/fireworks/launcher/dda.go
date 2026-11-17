@@ -6,7 +6,7 @@ import (
 	"iter"
 	"math"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 type cell struct {

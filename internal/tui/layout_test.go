@@ -6,11 +6,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/tui"
-	"github.com/Graphixa/Pokedex/internal/tui/components"
-	"github.com/Graphixa/Pokedex/internal/tui/views"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/tui"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/tui/views"
 )
 
 func TestLayoutBreakpoints(t *testing.T) {
@@ -252,10 +252,10 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		DialogSection: 0,
 		DialogLabels:  labels,
 		DialogLines:   []string{"Fire · Lizard Pokémon", "Height    0.6 m"},
-		FooterHint:    "↑/↓ section • PgUp/PgDn scroll • esc close",
+		FooterHint:    "←/→ section • ↑/↓ scroll • PgUp/PgDn scroll • esc close",
 	})
 	plain := stripANSI(out)
-	for _, want := range []string{"Charmander", "#004", "● Overview", "Height", "↑/↓ section", "esc close"} {
+	for _, want := range []string{"Charmander", "#004", "[ Overview ]", "Height", "←/→ section", "esc close"} {
 		if !strings.Contains(out, want) && !strings.Contains(plain, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -266,8 +266,8 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 	if strings.Count(plain, "esc close") != 1 {
 		t.Fatalf("dialog must render one command footer:\n%s", out)
 	}
-	if strings.Contains(plain, "[ Overview ]") {
-		t.Fatal("dialog must use the vertical rail, not the horizontal switcher")
+	if strings.Contains(plain, "● Overview") {
+		t.Fatal("dialog must use horizontal section header, not vertical rail")
 	}
 }
 
@@ -306,7 +306,7 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 		0,
 		120,
 		40,
-		" ↑/↓ section • esc close",
+		" ←/→ section • esc close",
 	))
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
@@ -315,8 +315,8 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "╭─") || !strings.Contains(lines[0], "Charmander") {
 		t.Fatalf("expected full-frame title border:\n%s", lines[0])
 	}
-	if !strings.Contains(out, "● Overview") || !strings.Contains(out, "  Stats") {
-		t.Fatalf("expected vertical section rail:\n%s", out)
+	if !strings.Contains(out, "[ Overview ]") {
+		t.Fatalf("expected horizontal section header:\n%s", out)
 	}
 	// No dimmed browse peek: first content row should start at the card edge.
 	if strings.Contains(lines[0], "bbbb") {
@@ -328,7 +328,7 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 	}
 }
 
-func TestDialogNarrowUsesStackedPager(t *testing.T) {
+func TestDialogNarrowUsesCompactPager(t *testing.T) {
 	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
 	out := stripANSI(components.DossierFrame(
 		"Charmander #004",
@@ -341,10 +341,10 @@ func TestDialogNarrowUsesStackedPager(t *testing.T) {
 		"",
 	))
 	if !strings.Contains(out, "‹  4/7  Moves  ›") {
-		t.Fatalf("expected stacked pager at narrow width:\n%s", out)
+		t.Fatalf("expected compact pager when full switcher does not fit:\n%s", out)
 	}
-	if strings.Contains(out, "> Moves") {
-		t.Fatalf("narrow dialog must not render the rail:\n%s", out)
+	if strings.Contains(out, "● Overview") {
+		t.Fatalf("must not render the vertical rail:\n%s", out)
 	}
 }
 

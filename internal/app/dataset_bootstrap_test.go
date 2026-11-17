@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/tui/bootstrap"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/tui/bootstrap"
 )
 
 func TestThrottledCLIProgress(t *testing.T) {

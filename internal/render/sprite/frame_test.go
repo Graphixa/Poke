@@ -3,7 +3,7 @@ package sprite_test
 import (
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 func TestFrameStepsBuckets(t *testing.T) {

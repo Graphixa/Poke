@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 var namedAssetMetaCalls atomic.Int64

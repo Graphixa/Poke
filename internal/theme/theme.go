@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 //go:embed themes/*.yaml

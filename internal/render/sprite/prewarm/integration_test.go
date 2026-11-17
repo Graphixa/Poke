@@ -13,13 +13,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/prewarm"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	spritechafa "github.com/Graphixa/Poke/internal/render/sprite/chafa"
+	"github.com/Graphixa/Poke/internal/render/sprite/placeholder"
+	"github.com/Graphixa/Poke/internal/render/sprite/prewarm"
 )
 
 // countingNative is a fake native (sixel) image renderer for the real Engine.

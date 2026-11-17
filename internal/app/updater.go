@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/update"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/update"
 )
 
 // releaseUpdater adapts internal/update to cli.Updater.

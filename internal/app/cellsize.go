@@ -14,7 +14,7 @@ import (
 	"github.com/muesli/cancelreader"
 	"golang.org/x/term"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/debuglog"
 )
 
 const cellSizeQueryTimeout = 200 * time.Millisecond

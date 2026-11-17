@@ -3,8 +3,8 @@ package tui
 import (
 	"context"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 // DetailSource loads dossier data for the Enter/detail overlay and browse glance About.

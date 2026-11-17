@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 var nativeDirectoryScanCount atomic.Int64

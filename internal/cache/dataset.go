@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/dataset"
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/dataset"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // DatasetSchemaVersion is the current snapshot layout version.

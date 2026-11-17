@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/pkg/version"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/pkg/version"
 )
 
 const (

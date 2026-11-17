@@ -7,8 +7,8 @@ import (
 	"iter"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/ring"
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	"github.com/Graphixa/Poke/internal/fireworks/ring"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 // WorldScale shrinks burst speed/gravity for single-width terminal cells.

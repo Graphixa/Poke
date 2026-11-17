@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 type updateStubAPI struct {

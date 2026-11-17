@@ -3,7 +3,7 @@ package dataset
 import (
 	"sort"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // LearnsetFromPokemon persists every learning row for the Pokémon.

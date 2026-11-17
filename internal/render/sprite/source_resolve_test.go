@@ -9,8 +9,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 type memNamedStore struct {

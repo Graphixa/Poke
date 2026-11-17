@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/tui/bootstrap"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/tui/bootstrap"
 )
 
 // runDatasetBootstrap shows a progress TUI when stderr is a terminal, otherwise

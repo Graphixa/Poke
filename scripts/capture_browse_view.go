@@ -14,15 +14,15 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Graphixa/Pokedex/internal/app"
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
-	"github.com/Graphixa/Pokedex/internal/search"
-	"github.com/Graphixa/Pokedex/internal/tui"
+	"github.com/Graphixa/Poke/internal/app"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	spritechafa "github.com/Graphixa/Poke/internal/render/sprite/chafa"
+	spriteimage "github.com/Graphixa/Poke/internal/render/sprite/image"
+	"github.com/Graphixa/Poke/internal/render/sprite/placeholder"
+	"github.com/Graphixa/Poke/internal/search"
+	"github.com/Graphixa/Poke/internal/tui"
 )
 
 func main() {

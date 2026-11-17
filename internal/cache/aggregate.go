@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Graphixa/Pokedex/internal/dataset"
+	"github.com/Graphixa/Poke/internal/dataset"
 )
 
 func (s *Store) aggregatePath(datasetID, filename string) string {

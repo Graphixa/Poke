@@ -3,8 +3,8 @@ package typeseed_test
 import (
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/cache/typeseed"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/cache/typeseed"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func TestSeedLoadsAndLookup(t *testing.T) {

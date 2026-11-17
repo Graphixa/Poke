@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/update"
+	"github.com/Graphixa/Poke/internal/update"
 	"golang.org/x/mod/semver"
 )
 
@@ -38,7 +38,7 @@ func runUpdateCommand(ctx context.Context, options Options, checkOnly, autoYes b
 
 	fmt.Fprintf(out, "Installed: v%s\n", displayVersion(current))
 	fmt.Fprintf(out, "Available: v%s\n", displayVersion(latest))
-	fmt.Fprintf(out, "\nChangelog: https://github.com/Graphixa/Pokedex/releases/tag/v%s\n", displayVersion(latest))
+	fmt.Fprintf(out, "\nChangelog: https://github.com/Graphixa/Poke/releases/tag/v%s\n", displayVersion(latest))
 
 	if checkOnly {
 		return nil

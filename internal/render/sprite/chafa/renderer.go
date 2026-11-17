@@ -7,7 +7,7 @@ import (
 	"image"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 	chafago "github.com/ploMP4/chafa-go"
 )
 

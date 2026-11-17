@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/prewarm"
-	"github.com/Graphixa/Pokedex/internal/tui/setup"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	spriteimage "github.com/Graphixa/Poke/internal/render/sprite/image"
+	"github.com/Graphixa/Poke/internal/render/sprite/prewarm"
+	"github.com/Graphixa/Poke/internal/tui/setup"
 )
 
 // runSetupIfNeeded launches the first-run wizard when setup.completed is false.

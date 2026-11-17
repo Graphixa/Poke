@@ -4,9 +4,9 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/Graphixa/Pokedex/internal/dataset"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/pokeapi"
+	"github.com/Graphixa/Poke/internal/dataset"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/pokeapi"
 )
 
 type versionCatalogAPI interface {

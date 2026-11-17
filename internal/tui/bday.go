@@ -8,9 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks"
-	"github.com/Graphixa/Pokedex/internal/fireworks/shells"
-	"github.com/Graphixa/Pokedex/internal/fireworks/sym"
+	"github.com/Graphixa/Poke/internal/fireworks"
+	"github.com/Graphixa/Poke/internal/fireworks/shells"
+	"github.com/Graphixa/Poke/internal/fireworks/sym"
 )
 
 const birthdayTrigger = "declan"

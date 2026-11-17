@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // Stats writes the six base stats and total.

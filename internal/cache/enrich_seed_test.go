@@ -3,8 +3,8 @@ package cache_test
 import (
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func TestNeedsTypeEnrichmentFalseWhenSeeded(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/tui/components"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 func formatWarmFooterRight(stage WarmStage, done, total int) string {

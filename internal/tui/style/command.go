@@ -6,7 +6,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/textwidth"
+	"github.com/Graphixa/Poke/internal/textwidth"
 )
 
 // FontGet-style key chip: fixed ANSI grey bg (dark 236) for consistent terminals.

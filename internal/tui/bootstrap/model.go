@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 // Stage is a bootstrap progress-screen phase.

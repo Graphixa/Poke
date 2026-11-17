@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	spriteimage "github.com/Graphixa/Poke/internal/render/sprite/image"
 )
 
 func clearNativeEnv(t *testing.T) {

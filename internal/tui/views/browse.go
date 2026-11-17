@@ -6,12 +6,12 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/output"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/textwidth"
-	"github.com/Graphixa/Pokedex/internal/tui/components"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/output"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/textwidth"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 // FrameRenderer is injected to avoid an import cycle with package tui.
@@ -109,7 +109,6 @@ type BrowseData struct {
 	DialogContext  []string // notice above body
 	DialogSticky   []string // fixed rows above scroll (move header)
 	DialogPosition string   // "Rows a–b of n" below scroll
-	DialogSidebar  bool     // true when sidebar owns keyboard focus
 	DialogTopRight string   // dossier top-border chips (M/G)
 
 	SpriteANSI   string
@@ -153,7 +152,6 @@ func Browse(d BrowseData) string {
 			ContextLines: d.DialogContext,
 			StickyLines:  d.DialogSticky,
 			PositionHint: d.DialogPosition,
-			SidebarFocus: d.DialogSidebar,
 			TopRight:     d.DialogTopRight,
 		})
 	}

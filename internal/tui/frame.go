@@ -5,7 +5,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 // PanelLayout is the FontGet-style split used by browse and theme TUIs.

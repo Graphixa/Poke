@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
+	spritechafa "github.com/Graphixa/Poke/internal/render/sprite/chafa"
 )
 
 func TestFromImageAndGenerateANSIBlockOpts(t *testing.T) {

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/prewarm"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite/prewarm"
 )
 
 type fakeKey struct{ id, cells int }

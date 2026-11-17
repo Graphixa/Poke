@@ -1,4 +1,4 @@
-module github.com/Graphixa/Pokedex
+module github.com/Graphixa/Poke
 
 go 1.26.0
 

@@ -6,11 +6,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	"github.com/Graphixa/Pokedex/internal/tui/components"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
-	"github.com/Graphixa/Pokedex/internal/tui/views"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/views"
 )
 
 func init() {
@@ -113,7 +113,6 @@ func (m Model) browseData() views.BrowseData {
 		DialogLines:   m.dialogContentLines(),
 		DialogOff:     m.dialogVP.YOffset(),
 		DialogContext: m.dialogContextLines(m.dialogGeom().BodyW),
-		DialogSidebar: !m.dialogContentFocus,
 	}
 	if m.showDialog {
 		geom := m.dialogGeom()
@@ -125,10 +124,9 @@ func (m Model) browseData() views.BrowseData {
 			hintW = m.width
 		}
 		helps := m.keys.DialogShortHelp(DialogHelpOpts{
-			ContentFocus: m.dialogContentFocus,
-			Moves:        m.dialogSection == DialogMoves,
-			MoveDetail:   m.moveDetailOpen,
-			Picker:       m.dialogOverlayOpen(),
+			Moves:      m.dialogSection == DialogMoves,
+			MoveDetail: m.moveDetailOpen,
+			Picker:     m.dialogOverlayOpen(),
 		})
 		data.FooterHint = style.RenderCommandHelp(helps, max(1, hintW-1))
 		// M then G, right-aligned: G stays put when Method chip vanishes off Moves.

@@ -8,9 +8,9 @@ import (
 
 	gosixel "github.com/mattn/go-sixel"
 
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 // MaxColors is the sixel palette cap (DECSIXEL â‰¤256).

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/output"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/output"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 // PokemonDetail is the aggregated pokemon + species pair for info/stats.

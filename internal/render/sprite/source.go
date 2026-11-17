@@ -11,7 +11,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // AssetTier selects which sprite URL family to prefer.

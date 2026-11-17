@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func (m *Model) dialogHasForms() bool {
@@ -12,13 +12,6 @@ func (m *Model) dialogHasForms() bool {
 
 func (m *Model) dialogOverlayOpen() bool {
 	return m.gamePickerOpen || m.formPickerOpen || m.methodPickerOpen
-}
-
-func (m *Model) toggleDialogFocus() {
-	m.dialogContentFocus = !m.dialogContentFocus
-	if !m.dialogContentFocus {
-		m.moveDetailOpen = false
-	}
 }
 
 // dialogContextLines builds notice rows for the chrome.
@@ -66,7 +59,6 @@ func (m *Model) changeDialogSection(next DialogSection) {
 
 func (m *Model) initDialogContext(speciesID int, core domain.Dossier) {
 	m.moveDetailOpen = false
-	m.dialogContentFocus = false // sidebar
 	m.dialogNotice = ""
 	m.dialogFormIdx = 0
 	m.dialogForms = nil

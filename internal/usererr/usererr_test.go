@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/app"
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/pokeapi"
-	"github.com/Graphixa/Pokedex/internal/usererr"
+	"github.com/Graphixa/Poke/internal/app"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/pokeapi"
+	"github.com/Graphixa/Poke/internal/usererr"
 )
 
 func TestFormatRemediation(t *testing.T) {

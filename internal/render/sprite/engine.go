@@ -8,8 +8,8 @@ import (
 	"image/color"
 	"sync"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // ArtefactCache stores derived ANSI and native graphics frames.

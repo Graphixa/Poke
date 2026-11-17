@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // Stage E regression coverage for dossier presentation paths (no live TUI).

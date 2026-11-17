@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 type stubCatalog struct {
@@ -88,7 +90,6 @@ func TestEnsureMoveFocusVisible(t *testing.T) {
 	m.height = 24
 	m.showDialog = true
 	m.dialogSection = DialogMoves
-	m.dialogContentFocus = true
 	m.dialogGameID = 12
 	m.dialogGameLabel = "Pearl"
 	m.dialogMoveMethod = "level-up"
@@ -128,18 +129,26 @@ func TestEnsureMoveFocusVisible(t *testing.T) {
 	}
 }
 
-func TestToggleDialogFocus(t *testing.T) {
+func TestDialogHorizontalSectionKeys(t *testing.T) {
 	m := NewModel(Options{})
-	if m.dialogContentFocus {
-		t.Fatal("start sidebar")
+	m.width = 100
+	m.height = 24
+	m.showDialog = true
+	m.dialogSection = DialogOverview
+	m.filtered = []domain.SpeciesSummary{{ID: 1, DisplayName: "Bulbasaur"}}
+	m.cursor = 0
+	m.resources = map[int]*resourceCache{
+		1: {HasCore: true, Pokemon: domain.Pokemon{ID: 1}, Species: domain.Species{ID: 1}},
 	}
-	m.toggleDialogFocus()
-	if !m.dialogContentFocus {
-		t.Fatal("tab to content")
+	next, _ := m.handleDialogKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	m = next.(Model)
+	if m.dialogSection != DialogStats {
+		t.Fatalf("right → Stats, got %v", m.dialogSection)
 	}
-	m.toggleDialogFocus()
-	if m.dialogContentFocus {
-		t.Fatal("tab back to sidebar")
+	next, _ = m.handleDialogKey(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m = next.(Model)
+	if m.dialogSection != DialogOverview {
+		t.Fatalf("left → Overview, got %v", m.dialogSection)
 	}
 }
 

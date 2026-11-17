@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 //go:embed types.json

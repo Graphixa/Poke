@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // VersionGroupIDForVersion maps a version id to its group using the catalog.

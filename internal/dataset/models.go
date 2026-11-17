@@ -1,6 +1,6 @@
 package dataset
 
-import "github.com/Graphixa/Pokedex/internal/domain"
+import "github.com/Graphixa/Poke/internal/domain"
 
 // Builder accumulates in-memory dataset records during bootstrap (written once at end).
 type Builder struct {

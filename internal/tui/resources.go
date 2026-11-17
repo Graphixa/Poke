@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // resourceCache holds loaded detail for one species (dossier filled on Enter).

@@ -7,11 +7,11 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/output"
-	"github.com/Graphixa/Pokedex/internal/tui/components"
-	tuistyle "github.com/Graphixa/Pokedex/internal/tui/style"
-	"github.com/Graphixa/Pokedex/internal/usererr"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/output"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	tuistyle "github.com/Graphixa/Poke/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/usererr"
 )
 
 func primaryText(s string) string {
@@ -87,7 +87,7 @@ func (m Model) dialogContentLines() []string {
 			return formatMoveDetailLines(moves, m.moveFocusIdx, bodyW)
 		}
 		// Scrollable rows only; sticky header/position come from dialogMoveChrome.
-		return formatMoveDataRowsFocused(moves, bodyW, m.dialogContentFocus, m.moveFocusIdx)
+		return formatMoveDataRowsFocused(moves, bodyW, true, m.moveFocusIdx)
 	case DialogEncounters:
 		if !r.HasEncounters && r.loadingExtras {
 			return []string{"Loading…"}
@@ -147,8 +147,8 @@ func (m Model) dialogMoveChrome(bodyW, scrollH, scrollOff int) (sticky []string,
 	if start > end {
 		start = end
 	}
-	// When content-focused, prefer selection window around focus.
-	if m.dialogContentFocus && m.moveFocusIdx >= 0 {
+	// Prefer selection window around the focused move row.
+	if m.moveFocusIdx >= 0 {
 		start = m.moveFocusIdx + 1
 		if start > len(rows) {
 			start = len(rows)

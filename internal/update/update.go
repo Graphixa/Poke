@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/pkg/version"
+	"github.com/Graphixa/Poke/pkg/version"
 	"golang.org/x/mod/semver"
 )
 

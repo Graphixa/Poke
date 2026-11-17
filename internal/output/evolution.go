@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 // Evolution writes a branched evolution tree with trigger details.

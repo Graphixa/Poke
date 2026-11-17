@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func TestDossierCoreHitUnder200ms(t *testing.T) {

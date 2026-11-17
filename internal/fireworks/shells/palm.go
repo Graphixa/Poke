@@ -9,10 +9,10 @@ import (
 	"math/rand/v2"
 	"time"
 
-	fw "github.com/Graphixa/Pokedex/internal/fireworks/firework"
-	"github.com/Graphixa/Pokedex/internal/fireworks/helper"
-	"github.com/Graphixa/Pokedex/internal/fireworks/particle"
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	fw "github.com/Graphixa/Poke/internal/fireworks/firework"
+	"github.com/Graphixa/Poke/internal/fireworks/helper"
+	"github.com/Graphixa/Poke/internal/fireworks/particle"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 const (

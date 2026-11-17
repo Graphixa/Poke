@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	spritechafa "github.com/Graphixa/Poke/internal/render/sprite/chafa"
 )
 
 func TestChafaRenderer(t *testing.T) {

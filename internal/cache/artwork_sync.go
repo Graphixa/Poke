@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 // ArtworkSyncResult summarizes a selective artwork sync pass.

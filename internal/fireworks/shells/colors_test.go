@@ -3,7 +3,7 @@ package shells
 import (
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 func TestThemeLutUsesAccentShades(t *testing.T) {

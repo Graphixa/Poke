@@ -1,6 +1,6 @@
 # Pokedex Go codebase
 
-Repository architecture for module `github.com/Graphixa/Pokedex` (Go 1.26). Not a copy of `plans/pokedex-backend-refactor-plan.md`.
+Repository architecture for module `github.com/Graphixa/Poke` (Go 1.26). Not a copy of `plans/pokedex-backend-refactor-plan.md`.
 
 **Public binary:** `poke` (`cmd/poke`). Alias name `pokedex` is the same program.
 

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/debuglog"
 )
 
 // nativePersistQueueCap bounds async gzip writes: at most one active plus one

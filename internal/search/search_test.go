@@ -3,8 +3,8 @@ package search_test
 import (
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/search"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/search"
 )
 
 func TestNormalizeMrMimeVariants(t *testing.T) {

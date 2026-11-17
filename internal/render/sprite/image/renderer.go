@@ -15,7 +15,7 @@ import (
 
 	termimg "github.com/blacktop/go-termimg"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 // protocol is an internal native graphics backend identity.

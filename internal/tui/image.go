@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 // ImageState is the sprite pane visual state machine.

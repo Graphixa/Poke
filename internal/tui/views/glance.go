@@ -1,6 +1,6 @@
 package views
 
-import "github.com/Graphixa/Pokedex/internal/render/sprite"
+import "github.com/Graphixa/Poke/internal/render/sprite"
 
 // Browse glance (View 1) uses a stats-matched sprite bucket. View 2 (hero art)
 // uses MaxFrameSize. Leftover vertical space stays empty under the tile.

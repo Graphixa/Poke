@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/config"
+	"github.com/Graphixa/Poke/internal/config"
 )
 
 func TestNeedsSetupAndArtworkConsent(t *testing.T) {

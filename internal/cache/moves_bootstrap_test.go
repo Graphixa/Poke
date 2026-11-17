@@ -3,7 +3,7 @@ package cache
 import (
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func TestReferencedMoveIDsIncludesMachine(t *testing.T) {

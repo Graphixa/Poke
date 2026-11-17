@@ -6,7 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 func TestRenderKeyWithDescriptionChip(t *testing.T) {

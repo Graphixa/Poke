@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Graphixa/Pokedex/pkg/version"
+	"github.com/Graphixa/Poke/pkg/version"
 )
 
 // UpdateDeclinedGracePeriodHours is used when UpdateCheckInterval is 0/missing.

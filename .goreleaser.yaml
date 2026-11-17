@@ -28,9 +28,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/Graphixa/Pokedex/pkg/version.Version={{.Version}}
-        -X github.com/Graphixa/Pokedex/pkg/version.Commit={{.Commit}}
-        -X github.com/Graphixa/Pokedex/pkg/version.Date={{.Date}}
+        -X github.com/Graphixa/Poke/pkg/version.Version={{.Version}}
+        -X github.com/Graphixa/Poke/pkg/version.Commit={{.Commit}}
+        -X github.com/Graphixa/Poke/pkg/version.Date={{.Date}}
 
   # Second Windows executable and Unix alias binary (same package as poke).
   # Archives ship both names; Homebrew cask installs poke and pokedex.
@@ -54,9 +54,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/Graphixa/Pokedex/pkg/version.Version={{.Version}}
-        -X github.com/Graphixa/Pokedex/pkg/version.Commit={{.Commit}}
-        -X github.com/Graphixa/Pokedex/pkg/version.Date={{.Date}}
+        -X github.com/Graphixa/Poke/pkg/version.Version={{.Version}}
+        -X github.com/Graphixa/Poke/pkg/version.Commit={{.Commit}}
+        -X github.com/Graphixa/Poke/pkg/version.Date={{.Date}}
 
 archives:
   - id: default
@@ -116,7 +116,7 @@ homebrew_casks:
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://github.com/Graphixa/Pokedex"
+    homepage: "https://github.com/Graphixa/Poke"
     description: "Cross-platform terminal Pokédex powered by PokeAPI"
     license: "GPL-3.0"
     ids:
@@ -143,17 +143,17 @@ winget:
     goamd64: v1
     package_identifier: Graphixa.Poke
     commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
-    url_template: "https://github.com/Graphixa/Pokedex/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    url_template: "https://github.com/Graphixa/Poke/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     path: manifests/g/Graphixa/Poke/{{.Version}}
-    homepage: "https://github.com/Graphixa/Pokedex"
+    homepage: "https://github.com/Graphixa/Poke"
     description: "Cross-platform terminal Pokédex powered by PokeAPI. Browse with a keyboard-first TUI, or look up stats and evolution chains from the command line."
-    license_url: "https://github.com/Graphixa/Pokedex/blob/main/LICENSE"
+    license_url: "https://github.com/Graphixa/Poke/blob/main/LICENSE"
     publisher_url: "https://github.com/Graphixa"
-    publisher_support_url: "https://github.com/Graphixa/Pokedex/issues"
+    publisher_support_url: "https://github.com/Graphixa/Poke/issues"
     release_notes: "{{.Changelog}}"
-    release_notes_url: "https://github.com/Graphixa/Pokedex/releases/tag/v{{.Version}}"
+    release_notes_url: "https://github.com/Graphixa/Poke/releases/tag/v{{.Version}}"
     copyright: "Copyright (c) Graphixa"
-    copyright_url: "https://github.com/Graphixa/Pokedex/blob/main/LICENSE"
+    copyright_url: "https://github.com/Graphixa/Poke/blob/main/LICENSE"
     installation_notes: "poke and pokedex will be available on PATH. Run 'poke --help' to get started."
     tags:
       - pokemon

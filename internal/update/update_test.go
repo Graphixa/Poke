@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/pkg/version"
+	"github.com/Graphixa/Poke/pkg/version"
 )
 
 func TestShouldCheckForUpdates(t *testing.T) {
@@ -54,7 +54,7 @@ func TestCheckAndApplyLatest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/latest"):
-			w.Header().Set("Location", "/Graphixa/Pokedex/releases/tag/v"+latest)
+			w.Header().Set("Location", "/Graphixa/Poke/releases/tag/v"+latest)
 			w.WriteHeader(http.StatusFound)
 		case strings.Contains(r.URL.Path, "/download/v"+latest+"/checksums.txt"):
 			_, _ = w.Write([]byte(checksums))
@@ -77,7 +77,7 @@ func TestCheckAndApplyLatest(t *testing.T) {
 		version.Version = prevVer
 	})
 
-	releaseBaseURL = srv.URL + "/Graphixa/Pokedex/releases"
+	releaseBaseURL = srv.URL + "/Graphixa/Poke/releases"
 	currentGOOS, currentGOARCH = "linux", "amd64"
 	version.Version = "1.0.0"
 

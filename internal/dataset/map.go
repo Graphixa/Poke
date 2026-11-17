@@ -1,6 +1,6 @@
 package dataset
 
-import "github.com/Graphixa/Pokedex/internal/domain"
+import "github.com/Graphixa/Poke/internal/domain"
 
 // PokemonFromDomain maps a domain Pokémon into the compact persisted form.
 func PokemonFromDomain(p domain.Pokemon) DatasetPokemon {

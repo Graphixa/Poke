@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $version = $env:ChocolateyPackageVersion
 $tag = "v$version"
 $zipName = "poke_${version}_windows_amd64.zip"
-$zipUrl = "https://github.com/Graphixa/Pokedex/releases/download/$tag/$zipName"
+$zipUrl = "https://github.com/Graphixa/Poke/releases/download/$tag/$zipName"
 $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $unzipLocation = Join-Path $env:TEMP "poke-choco-$version"
 if (Test-Path $unzipLocation) { Remove-Item $unzipLocation -Recurse -Force }

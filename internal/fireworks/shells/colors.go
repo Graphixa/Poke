@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/helper"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/fireworks/helper"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 // UseThemeColors forces particle LUTs from style.CurrentPalette().

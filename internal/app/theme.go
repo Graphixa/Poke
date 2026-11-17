@@ -4,9 +4,9 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/theme"
-	"github.com/Graphixa/Pokedex/internal/tui"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/theme"
+	"github.com/Graphixa/Poke/internal/tui"
 )
 
 // Theme launches the interactive theme selector (FontGet-style).

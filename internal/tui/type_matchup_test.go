@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 func TestTypeMatchupsFire(t *testing.T) {

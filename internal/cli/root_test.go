@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/config"
+	"github.com/Graphixa/Poke/internal/config"
 )
 
 type recordingHandler struct {

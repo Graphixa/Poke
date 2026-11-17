@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/Graphixa/Pokedex/internal/app"
+	"github.com/Graphixa/Poke/internal/app"
 )
 
 func main() {

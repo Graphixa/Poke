@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/cache"
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/pokeapi"
+	"github.com/Graphixa/Poke/internal/cache"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/pokeapi"
 )
 
 // Services holds runtime dependencies constructed from config and paths.

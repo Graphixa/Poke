@@ -8,8 +8,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/sym"
-	"github.com/Graphixa/Pokedex/internal/fireworks/vec"
+	"github.com/Graphixa/Poke/internal/fireworks/sym"
+	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
 // Paint rasterizes active particles into screen (clears first).

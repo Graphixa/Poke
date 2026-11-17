@@ -4,7 +4,7 @@
 # Installs poke (+ pokedex alias) on Linux and macOS
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --dry-run
 #   POKE_VERSION=1.0.0 curl -fsSL .../install.sh | sh
 #
@@ -29,7 +29,7 @@ for _arg in "$@"; do
             cat <<'EOF'
 poke install.sh
 
-  curl -fsSL https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.sh | sh
   curl -fsSL .../install.sh | sh -s -- --dry-run
 
 Flags:
@@ -62,7 +62,7 @@ else
     NC=''
 fi
 
-REPO="Graphixa/Pokedex"
+REPO="Graphixa/Poke"
 REPO_URL="https://github.com/${REPO}"
 
 # Detect OS

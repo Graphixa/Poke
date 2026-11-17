@@ -3,16 +3,16 @@
   <metadata>
     <id>poke</id>
     <version>0.0.0</version>
-    <packageSourceUrl>https://github.com/Graphixa/Pokedex</packageSourceUrl>
+    <packageSourceUrl>https://github.com/Graphixa/Poke</packageSourceUrl>
     <owners>Graphixa</owners>
     <title>poke</title>
     <authors>Graphixa</authors>
-    <projectUrl>https://github.com/Graphixa/Pokedex</projectUrl>
-    <licenseUrl>https://github.com/Graphixa/Pokedex/blob/main/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/Graphixa/Poke</projectUrl>
+    <licenseUrl>https://github.com/Graphixa/Poke/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <docsUrl>https://github.com/Graphixa/Pokedex/blob/main/README.md</docsUrl>
-    <bugTrackerUrl>https://github.com/Graphixa/Pokedex/issues</bugTrackerUrl>
-    <releaseNotes>https://github.com/Graphixa/Pokedex/releases</releaseNotes>
+    <docsUrl>https://github.com/Graphixa/Poke/blob/main/README.md</docsUrl>
+    <bugTrackerUrl>https://github.com/Graphixa/Poke/issues</bugTrackerUrl>
+    <releaseNotes>https://github.com/Graphixa/Poke/releases</releaseNotes>
     <summary>Cross-platform terminal Pokédex powered by PokeAPI.</summary>
     <description><![CDATA[poke is a cross-platform terminal Pokédex powered by PokeAPI. Browse with a keyboard-first TUI, or look up stats and evolution chains from the command line. The pokedex command is an equivalent alias.]]></description>
     <tags>pokemon pokedex pokeapi cli tui terminal</tags>

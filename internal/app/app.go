@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/Graphixa/Pokedex/internal/cli"
-	"github.com/Graphixa/Pokedex/internal/config"
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/theme"
-	"github.com/Graphixa/Pokedex/internal/usererr"
+	"github.com/Graphixa/Poke/internal/cli"
+	"github.com/Graphixa/Poke/internal/config"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/theme"
+	"github.com/Graphixa/Poke/internal/usererr"
 )
 
 type Runtime struct {

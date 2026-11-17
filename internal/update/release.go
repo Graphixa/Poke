@@ -15,13 +15,13 @@ import (
 )
 
 const (
-	defaultReleaseBaseURL = "https://github.com/Graphixa/Pokedex/releases"
+	defaultReleaseBaseURL = "https://github.com/Graphixa/Poke/releases"
 
 	releaseRequestTimeout  = 30 * time.Second
 	archiveDownloadTimeout = 5 * time.Minute
 	maxChecksumsBytes      = 1 << 20   // 1 MiB
 	maxReleaseAssetBytes   = 200 << 20 // 200 MiB
-	updateUserAgent        = "poke-cli (https://github.com/Graphixa/Pokedex)"
+	updateUserAgent        = "poke-cli (https://github.com/Graphixa/Poke)"
 )
 
 var (
@@ -204,7 +204,7 @@ func validateReleaseBaseURL(base *url.URL) error {
 		return fmt.Errorf("release base URL has invalid path")
 	}
 	if !isLoopbackHost(base.Hostname()) && base.String() != defaultReleaseBaseURL {
-		return fmt.Errorf("release base URL must target Graphixa/Pokedex on GitHub")
+		return fmt.Errorf("release base URL must target Graphixa/Poke on GitHub")
 	}
 	return nil
 }

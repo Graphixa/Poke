@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 func TestCropAndPrepareCompositesBackground(t *testing.T) {

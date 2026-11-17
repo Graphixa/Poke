@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
 )
 
 var errAssetMissing = errors.New("sprite: asset missing")

@@ -2,9 +2,9 @@
 # Installs poke (+ pokedex alias) on Windows (PowerShell)
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.ps1 | iex
 #   # Or with a specific version:
-#   $env:POKE_VERSION="1.0.0"; irm https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.ps1 | iex
+#   $env:POKE_VERSION="1.0.0"; irm https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.ps1 | iex
 #
 # Environment:
 #   POKE_VERSION          Version or latest (default: latest)
@@ -29,7 +29,7 @@ function Write-InstallOsLine {
     Write-Host $ArchName
 }
 
-$Repo = "Graphixa/Pokedex"
+$Repo = "Graphixa/Poke"
 $RepoUrl = "https://github.com/$Repo"
 
 # Detect architecture (Windows arm64 builds are not published yet)

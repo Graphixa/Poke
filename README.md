@@ -10,12 +10,12 @@ The canonical command is **`poke`**. **`pokedex`** is an equivalent alias (same 
 
 ```bash
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.ps1 | iex
 ```
 
 Pin a version with `POKE_VERSION=1.0.0` (shell) or `$env:POKE_VERSION="1.0.0"` (PowerShell). Scripts download the GitHub Release archive, verify `checksums.txt`, and install both `poke` and `pokedex`.
@@ -39,7 +39,7 @@ Coming soon (`choco install poke`). Package scaffolding is in-repo; publish foll
 
 ### From a GitHub Release
 
-Download the archive for your OS/architecture from the [Releases](https://github.com/Graphixa/Pokedex/releases) page, extract it, and put the binaries on your `PATH`.
+Download the archive for your OS/architecture from the [Releases](https://github.com/Graphixa/Poke/releases) page, extract it, and put the binaries on your `PATH`.
 
 Each archive includes both names (`poke` / `pokedex`, or `.exe` on Windows). Verify with `checksums.txt` from the same release.
 
@@ -48,8 +48,8 @@ Each archive includes both names (`poke` / `pokedex`, or `.exe` on Windows). Ver
 Requires Go 1.26+.
 
 ```bash
-git clone https://github.com/Graphixa/Pokedex.git
-cd Pokedex
+git clone https://github.com/Graphixa/Poke.git
+cd Poke
 go build -o poke ./cmd/poke
 cp poke pokedex   # or: ln -s poke pokedex
 ```

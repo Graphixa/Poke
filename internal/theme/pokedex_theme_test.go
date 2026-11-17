@@ -1,7 +1,7 @@
 package theme_test
 
 import (
-	"github.com/Graphixa/Pokedex/internal/theme"
+	"github.com/Graphixa/Poke/internal/theme"
 	"testing"
 )
 

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Graphixa/Pokedex/internal/cache/typeseed"
-	"github.com/Graphixa/Pokedex/internal/dataset"
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/pokeapi"
+	"github.com/Graphixa/Poke/internal/cache/typeseed"
+	"github.com/Graphixa/Poke/internal/dataset"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/pokeapi"
 )
 
 const datasetWorkerDefault = 8

@@ -6,8 +6,8 @@ package launcher
 import (
 	"slices"
 
-	"github.com/Graphixa/Pokedex/internal/fireworks/helper"
-	"github.com/Graphixa/Pokedex/internal/fireworks/particle"
+	"github.com/Graphixa/Poke/internal/fireworks/helper"
+	"github.com/Graphixa/Poke/internal/fireworks/particle"
 )
 
 type runset struct {

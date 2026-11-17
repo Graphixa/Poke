@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 type slowNativeStore struct {

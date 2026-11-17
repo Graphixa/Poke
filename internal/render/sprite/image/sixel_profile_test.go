@@ -13,9 +13,9 @@ import (
 
 	"github.com/mattn/go-sixel"
 
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	spriteimage "github.com/Graphixa/Pokedex/internal/render/sprite/image"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	spritechafa "github.com/Graphixa/Poke/internal/render/sprite/chafa"
+	spriteimage "github.com/Graphixa/Poke/internal/render/sprite/image"
 )
 
 const (

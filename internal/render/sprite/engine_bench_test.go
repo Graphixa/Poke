@@ -5,10 +5,10 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
-	spritechafa "github.com/Graphixa/Pokedex/internal/render/sprite/chafa"
-	"github.com/Graphixa/Pokedex/internal/render/sprite/placeholder"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
+	spritechafa "github.com/Graphixa/Poke/internal/render/sprite/chafa"
+	"github.com/Graphixa/Poke/internal/render/sprite/placeholder"
 )
 
 func benchEngine(store *namedMemStore, mode sprite.RenderMode, extra sprite.Renderer) *sprite.Engine {

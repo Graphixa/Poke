@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/prefs"
+	"github.com/Graphixa/Poke/internal/prefs"
 )
 
 func TestGameStoreRoundTrip(t *testing.T) {

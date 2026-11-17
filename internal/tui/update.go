@@ -7,9 +7,9 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/render/sprite"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/render/sprite"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -381,15 +381,6 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if key.Matches(msg, m.keys.TabNext) || key.Matches(msg, m.keys.TabPrev) {
-		m.toggleDialogFocus()
-		m.syncDialogViewport()
-		if m.dialogContentFocus && m.dialogSection == DialogMoves {
-			m.ensureMoveFocusVisible()
-		}
-		return m, nil
-	}
-
 	letter := msg.Text
 	if letter == "" {
 		letter = msg.String()
@@ -410,43 +401,18 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if !m.dialogContentFocus {
-		// Sidebar focus: ↑/↓ change section (←/→ also).
-		if key.Matches(msg, m.keys.Down) || key.Matches(msg, m.keys.Right) {
-			m.dialogNotice = ""
-			m.changeDialogSection(m.dialogSection.Next())
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.Up) || key.Matches(msg, m.keys.Left) {
-			m.dialogNotice = ""
-			m.changeDialogSection(m.dialogSection.Prev())
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.Home) {
-			m.changeDialogSection(DialogOverview)
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.End) {
-			m.changeDialogSection(DialogBiology)
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.PageUp) {
-			m.scrollDialog(-m.dialogPageSize())
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.PageDown) {
-			m.scrollDialog(m.dialogPageSize())
-			return m, nil
-		}
-		if key.Matches(msg, m.keys.Enter) && m.dialogSection == DialogMoves {
-			m.dialogContentFocus = true
-			m.syncDialogViewport()
-			return m, nil
-		}
+	// ←/→ change section; ↑/↓ / PgUp/PgDn navigate content (Moves: row select).
+	if key.Matches(msg, m.keys.Right) {
+		m.dialogNotice = ""
+		m.changeDialogSection(m.dialogSection.Next())
+		return m, nil
+	}
+	if key.Matches(msg, m.keys.Left) {
+		m.dialogNotice = ""
+		m.changeDialogSection(m.dialogSection.Prev())
 		return m, nil
 	}
 
-	// Content focus.
 	if m.dialogSection == DialogMoves {
 		if key.Matches(msg, m.keys.Up) {
 			m.nudgeMoveFocus(-1)
@@ -467,6 +433,18 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if key.Matches(msg, m.keys.PageUp) {
+			m.nudgeMoveFocus(-m.dialogPageSize())
+			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.PageDown) {
+			m.nudgeMoveFocus(m.dialogPageSize())
+			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
+			return m, nil
+		}
 		if key.Matches(msg, m.keys.Home) {
 			m.moveFocusIdx = 0
 			m.syncDialogViewport()
@@ -481,6 +459,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.ensureMoveFocusVisible()
 			return m, nil
 		}
+		return m, nil
 	}
 
 	if key.Matches(msg, m.keys.Up) {
@@ -522,7 +501,6 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 	m.dialogSection = DialogOverview
 	m.dialogScroll = map[DialogSection]int{}
 	m.moveDetailOpen = false
-	m.dialogContentFocus = false
 	m.gamePickerOpen = false
 	m.formPickerOpen = false
 	m.methodPickerOpen = false

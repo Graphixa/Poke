@@ -9,13 +9,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Graphixa/Pokedex/internal/debuglog"
-	"github.com/Graphixa/Pokedex/internal/domain"
-	"github.com/Graphixa/Pokedex/internal/fireworks"
-	"github.com/Graphixa/Pokedex/internal/search"
-	"github.com/Graphixa/Pokedex/internal/textwidth"
-	"github.com/Graphixa/Pokedex/internal/tui/components"
-	"github.com/Graphixa/Pokedex/internal/tui/style"
+	"github.com/Graphixa/Poke/internal/debuglog"
+	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/fireworks"
+	"github.com/Graphixa/Poke/internal/search"
+	"github.com/Graphixa/Poke/internal/textwidth"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
 // Options configures a browse session.
@@ -173,8 +173,7 @@ type Model struct {
 	dialogGameSlug     string
 	dialogMoveMethod   string
 	dialogNotice       string
-	dialogContentFocus bool // false = sidebar, true = content
-	dialogScroll       map[DialogSection]int
+	dialogScroll map[DialogSection]int
 	gamePickerOpen     bool
 	gamePickerFilter   string
 	gamePickerCursor   int

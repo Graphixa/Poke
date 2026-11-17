@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/cli"
-	"github.com/Graphixa/Pokedex/internal/config"
+	"github.com/Graphixa/Poke/internal/cli"
+	"github.com/Graphixa/Poke/internal/config"
 )
 
 type searchRandomStub struct {

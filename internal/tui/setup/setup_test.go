@@ -3,7 +3,7 @@ package setup_test
 import (
 	"testing"
 
-	"github.com/Graphixa/Pokedex/internal/tui/setup"
+	"github.com/Graphixa/Poke/internal/tui/setup"
 )
 
 func TestWizardStepsAreArtworkOnly(t *testing.T) {
