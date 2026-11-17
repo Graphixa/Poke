@@ -17,5 +17,6 @@ sixel-smoke.*
 tui-layout-concept.md
 poke-test.exe
 .cursor
+.tools/
 docs/compare-preview.txt
 docs/filter-preview.txt

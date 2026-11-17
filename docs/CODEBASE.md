@@ -93,7 +93,7 @@ Target import rules. `app` is allowed to assemble services and translate progres
 
 Two production paths:
 
-- **CLI / update:** `Service.SyncArtwork` walks the index, compares CDN URL + SHA, downloads official-artwork PNGs, and invalidates native frames when bytes change. It emits `ArtworkSyncProgress`; app owns the composite dataset-refresh → artwork-sync presentation.
+- **CLI / refresh:** `Service.SyncArtwork` walks the index, compares CDN URL + SHA, downloads official-artwork PNGs, and invalidates native frames when bytes change. It emits `ArtworkSyncProgress`; app owns the composite dataset-refresh → artwork-sync presentation. (`poke update` is binary self-update via `internal/update`, not artwork.)
 - **Browse / setup:** `prewarm.NewArtwork` (selected / neighbors / background scan). Resolves via `sprite.SourceResolver` (store then HTTP). Stage `"artwork"`. Started on `OnUIReady` or blocking (`Wait`) in setup wizard.
 
 Consent: `config.Setup.ArtworkMode` (`off|blocking|background`). Browse starts the warmer when mode is `background` (or setup asked for background).
@@ -278,7 +278,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `root.go`
 
-- **Responsibility:** cobra tree: root, version, config, cache, update, search, random, theme, reset; `--debug`; `InlineMode` typed enum.
+- **Responsibility:** cobra tree: root, version, config, cache (`path`/`clear`), refresh (dataset+artwork), update (GitHub Releases self-update), search, random, theme; `--debug`; `InlineMode` typed enum.
 - **Types / funcs:** `InlineMode`, `RootRequest`, `RootHandler`, `Options`, `CacheCommands`, `NewRoot`, `InvocationName`.
 - **Tests:** `root_test.go`, `cache_test.go`, `search_random_test.go`.
 

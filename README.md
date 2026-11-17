@@ -1,8 +1,23 @@
-# Pokedex (`poke`)
+<p align="center">
+  <img src="assets/poke-banner.png" alt="poke" width="720"/>
+</p>
 
-Cross-platform terminal Pokédex powered by [PokeAPI](https://pokeapi.co/). Browse with a keyboard-first TUI, or look up stats and evolution chains from the command line.
+<p align="center">
+  <a href="https://github.com/Graphixa/Poke/actions/workflows/ci.yml"><img src="https://github.com/Graphixa/Poke/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/Graphixa/Poke/releases/latest"><img src="https://img.shields.io/github/v/release/Graphixa/Poke?label=release" alt="Release"/></a>
+  <a href="https://github.com/Graphixa/Poke/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License: GPL-3.0"/></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26+-00ADD8.svg" alt="Go 1.26+"/></a>
+</p>
 
-The canonical command is **`poke`**. **`pokedex`** is an equivalent alias (same flags and subcommands).
+<p align="center">
+  <strong>A terminal Pokédex.</strong> Browse the National Dex with a keyboard-first TUI, peek at stats from the CLI, and keep everything offline after the first refresh.
+</p>
+
+<p align="center">
+  <img src="docs/assets/browse.gif" alt="poke browse demo" width="800"/>
+</p>
+
+The canonical command is **`poke`**. **`pokedex`** is the same binary under another name.
 
 ## Install
 
@@ -55,17 +70,19 @@ cp poke pokedex   # or: ln -s poke pokedex
 ```
 
 Scoop is not supported (out of scope for v1).
+
 ## Quick start
 
 ```bash
-# First run: setup wizard, then metadata bootstrap completes before browse opens
+# First run: setup wizard, then metadata bootstrap before browse opens
 poke
 
-# Or bootstrap metadata + artwork explicitly first
+# Or bootstrap metadata + artwork explicitly
 poke refresh
 
 # Update the poke binary from GitHub Releases
 poke update
+poke update --check
 
 # Open browse with a selection / search prefill
 poke pikachu
@@ -90,45 +107,63 @@ poke theme
 
 All of the above work with `pokedex` instead of `poke`.
 
-Default theme is **Dracula**. Bundled themes include Pokédex, Nord, Catppuccin, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can be placed next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
+<p align="center">
+  <img src="docs/assets/cli.gif" alt="poke CLI demo" width="720"/>
+</p>
 
-## Prototype branch
+**`poke refresh`** rebuilds the local species dataset and syncs official artwork.  
+**`poke update`** installs a newer `poke` binary from GitHub Releases (checksum-verified). Use `--check` to inspect only, `-y` to skip confirmation, or `--version 1.2.3` for a specific release.
 
-This branch adds **F2 view options**, **F3 comparison**, and **F4 favourites**. See [the prototype walkthrough](docs/PROTOTYPE.md) for a short test flow, rendered screen examples and current limits.
+Default theme is **Dracula**. Bundled themes include Pokédex, Nord, Catppuccin, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can live next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
+
+## Features
+
+- **Keyboard browse** — type-to-filter list, glance pane, and sprite art in one screen
+- **F2 / F3 / F4** — filters & sort, side-by-side compare, favourites
+- **Dossier** — overview, stats, evolution, moves, encounters, descriptions, biology
+- **Offline-first** — after `poke refresh`, browse and inline lookups work from a local snapshot
+- **Sprite smarts** — Kitty / iTerm2 / Sixel when the terminal can; otherwise half-block cell art
+- **Self-update** — `poke update` pulls the latest GitHub Release
 
 ## Browse keyboard reference
 
-Typing always filters the list (including the letter `q`). Press `?` in browse mode for the in-app help card.
+Typing always filters the list (including letters like `q` and `?`). There is no separate help overlay — the footer shows the live bindings.
 
 | Key | Action |
 | --- | --- |
-| Type | Search the list within the active view options |
-| `F2` | Filter by type or favourites; change sorting |
-| `F3` | Pin selected Pokémon, then compare another; same Pokémon unpins |
-| `F4` | Add/remove selected Pokémon from favourites |
-| Backspace | Delete from search |
-| Esc | Clear search (or close help) |
+| Type | Filter the list within the active view options |
+| Backspace | Delete from the search query |
 | ↑ / ↓ | Move selection |
-| Tab / Shift+Tab | Cycle detail dialog sections (Enter/i) |
-| PgUp / PgDn | Scroll the detail panel |
-| Home / End | Jump in the detail panel |
-| Enter / i | Open Pokémon details dialog |
-| q | Quit **only when search is empty** |
+| Enter | Open the Pokémon dossier |
+| Tab | Cycle browse view |
+| F2 | Filter by collection / type; change sorting |
+| F3 | Pin selected Pokémon, then compare another (same Pokémon unpins) |
+| F4 | Add/remove selected Pokémon from favourites |
+| Esc | Clear search/filters, or quit when the query is empty |
 | Ctrl+C | Always quit |
-| ? | Toggle help |
 
-Sprites need roughly **110×40** terminal cells for the fixed 24×24 sprite frame; smaller terminals hide the sprite and keep browse usable. Below about **40×12**, the UI shows a “terminal too small” message. Capable terminals (Kitty / iTerm2 / Sixel, including Windows Terminal) may show the PNG natively; others use coloured half-block cell art.
+### In the dossier
+
+| Key | Action |
+| --- | --- |
+| ← / → | Change section |
+| ↑ / ↓ | Scroll (or move in lists) |
+| PgUp / PgDn | Page scroll |
+| Home / End | Jump |
+| Enter | Open move detail (on Moves) |
+| Esc | Close dossier (or back / cancel a picker) |
+| g | Game picker (where offered) |
+
+Sprites need roughly **110×40** terminal cells for the fixed sprite frame; smaller terminals hide the sprite and keep browse usable. Below about **40×12**, the UI shows a “terminal too small” message.
 
 ## Config and cache paths
 
-Resolved via the OS user config/cache directories (Go `os.UserConfigDir` / `os.UserCacheDir`), under an application folder named `pokedex`:
+Resolved via the OS user config/cache directories (`os.UserConfigDir` / `os.UserCacheDir`), under an application folder named `pokedex`:
 
 | | Typical location |
 | --- | --- |
 | Config file | `$XDG_CONFIG_HOME/pokedex/config.yaml` on Linux; `~/Library/Application Support/pokedex/config.yaml` on macOS; `%AppData%\pokedex\config.yaml` on Windows |
 | Cache directory | `$XDG_CACHE_HOME/pokedex` on Linux; `~/Library/Caches/pokedex` on macOS; `%LocalAppData%\pokedex` on Windows |
-
-Print the resolved paths:
 
 ```bash
 poke config path
@@ -139,29 +174,21 @@ poke cache path
 
 ## Offline behaviour
 
-After a successful first-run **metadata bootstrap**, browse and inline commands work from a local dataset snapshot. Ordinary navigation does not refresh metadata over the network.
+After a successful first-run **metadata bootstrap**, browse and inline commands work from a local dataset snapshot. Ordinary navigation does not hit the network for metadata.
 
 Official artwork downloads in the background after the TUI opens (and can resume on later launches). Derived sixel/chafa/halfblock frames are generated once per render size and cached.
 
 | Situation | Behaviour |
 | --- | --- |
 | Dataset present | TUI starts immediately; no metadata network required |
-| Empty cache + online | First run / `poke refresh` builds a complete local dataset (blocking), then activates it atomically before browse |
+| Empty cache + online | First run / `poke refresh` builds a complete local dataset, then activates it atomically |
 | Empty cache + offline | Hard failure with a clear remediation (`poke refresh` while online) |
-| Failed update | Previous snapshot stays active |
+| Failed refresh | Previous snapshot stays active |
 | Artwork still downloading | List and text stay usable; selected missing art is prioritised |
 
-`poke refresh` rebuilds a new dataset snapshot beside the active one, switches `active.json` only if the snapshot is complete, and syncs official artwork. `poke update` installs a newer poke binary from GitHub Releases (checksum-verified).
+`poke refresh` rebuilds a new dataset snapshot beside the active one, switches `active.json` only if the snapshot is complete, and syncs official artwork.
 
-### Renderer fallback
-
-```
-Kitty / iTerm2 native → Sixel → Chafa (optional binary, else in-process) → half-block → placeholder
-```
-
-Sixel and chafa output are cached. A warm sixel/chafa paint reads the derived artefact without decoding the original PNG.
-
-Braille and ASCII modes are no longer in the production path; old config values map to the text/half-block fallback.
+Renderer fallback: Kitty / iTerm2 native → Sixel → Chafa (optional binary, else in-process) → half-block → placeholder.
 
 ## Troubleshooting
 
@@ -172,33 +199,36 @@ Braille and ASCII modes are no longer in the production path; old config values 
 | Corrupt cache entry | App quarantines bad files under `corrupt/` and rebuilds; clear cache if needed |
 | Rate limited (HTTP 429) | Wait and retry; client backs off automatically |
 | Not found (inline flags) | Check spelling/slug/number; inline mode exits non-zero |
-| No sprite | Expected while the image pane is blank during scroll debounce, when sprites are disabled, the terminal is small, or the image failed — browse still works |
+| No sprite | Expected while art is still downloading, sprites are disabled, the terminal is small, or the image failed — browse still works |
 | Terminal too small | Resize to at least 40×12 |
+| Binary update failed | `poke update --check`; retry `poke update -y`; or reinstall via the install script / Winget |
 | Debug diagnostics | `poke --debug` (optional path) writes a log file; path is printed on stderr, not into the TUI |
 
-## Screenshots
-
-Representative browse screenshots are not checked into the repository yet. Until they are added, use `tui-example.md` for the canonical wireframe of browse mode, or run `poke` locally after `poke refresh`.
-
 ## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup. Short version:
 
 ```bash
 make check          # fmt-check, vet, staticcheck, gosec, race, cross-build
 make release-check  # goreleaser check + snapshot + archive name verification
 ```
 
-On Windows without `bash` on `PATH`, archive verification can use:
+On Windows without `bash` on `PATH`:
 
 ```powershell
 pwsh -File scripts/verify-release-archives.ps1
 ```
 
-CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser (tests + check first), publishes GitHub Release assets with checksums, updates the Homebrew tap, and opens a Winget PR. Chocolatey packs from a separate Windows workflow after the release.
+CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser, publishes GitHub Release assets with checksums, updates the Homebrew tap, and opens a Winget PR. Chocolatey packs from a separate Windows workflow after the release.
 
-Licensed under [GPL-3.0](LICENSE).
+Release notes are grouped from conventional commit subjects (`feat`, `fix`, `docs`, …).
 
 ## Credits
 
+Powered by [PokeAPI](https://pokeapi.co/). Official artwork is downloaded into your local cache on demand — it is not redistributed inside the `poke` binary.
+
+Pokémon and Pokédex are trademarks of Nintendo / Creatures Inc. / GAME FREAK. This project is unofficial and not affiliated with them.
+
 Terminal fireworks animation adapted from [erik-adelbert/firework](https://github.com/erik-adelbert/firework) (MIT). See [`internal/fireworks/LICENSE.MIT`](internal/fireworks/LICENSE.MIT).
 
-Release notes are grouped from conventional commit subjects (`feat`, `fix`, `docs`, …).
+Licensed under [GPL-3.0](LICENSE).
