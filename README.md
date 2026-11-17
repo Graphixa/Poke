@@ -13,10 +13,6 @@
   <strong>A terminal Pokédex.</strong> Browse the National Dex with a keyboard-first TUI, peek at stats from the CLI, and keep everything offline after the first refresh.
 </p>
 
-<p align="center">
-  <img src="docs/assets/browse.gif" alt="poke browse demo" width="800"/>
-</p>
-
 The canonical command is **`poke`**. **`pokedex`** is the same binary under another name.
 
 ## Install
@@ -106,10 +102,6 @@ poke theme
 ```
 
 All of the above work with `pokedex` instead of `poke`.
-
-<p align="center">
-  <img src="docs/assets/cli.gif" alt="poke CLI demo" width="720"/>
-</p>
 
 **`poke refresh`** rebuilds the local species dataset and syncs official artwork.  
 **`poke update`** installs a newer `poke` binary from GitHub Releases (checksum-verified). Use `--check` to inspect only, `-y` to skip confirmation, or `--version 1.2.3` for a specific release.
