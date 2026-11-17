@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/output"
 )
 
 func idFromURL(raw string) (int, error) {
@@ -311,7 +312,7 @@ func mapVersion(dto versionDTO) domain.Version {
 	return domain.Version{
 		ID:             dto.ID,
 		Slug:           dto.Name,
-		DisplayName:    englishName(dto.Names, dto.Name),
+		DisplayName:    output.GameLabel(dto.Name, englishName(dto.Names, dto.Name)),
 		VersionGroupID: vgID,
 		Order:          dto.ID, // refined when joined to version-group.order in bootstrap
 	}

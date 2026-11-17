@@ -128,8 +128,9 @@ const (
 
 // drainPendingStdin discards console input still sitting in the OS buffer.
 // Browse search is always focused; leftover keys from setup ([Y]/N), theme
-// picker teardown, or a split cell-size/DECRPM reply otherwise type into the
-// filter on first paint (e.g. "027;3$y" from mode 2027).
+// picker teardown, a split cell-size/DECRPM reply, or Bubble Tea's Kitty
+// keyboard query (CSI ? flags u) otherwise leak into the shell / first paint
+// (e.g. "[?1u", "027;3$y" from mode 2027).
 func drainPendingStdin() {
 	in := os.Stdin
 	if !term.IsTerminal(int(in.Fd())) {

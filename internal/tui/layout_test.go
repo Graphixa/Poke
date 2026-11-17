@@ -253,7 +253,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		DialogSection: 0,
 		DialogLabels:  labels,
 		DialogLines:   []string{"Fire · Lizard Pokémon", "Height    0.6 m"},
-		FooterHint:    "←/→ section • ↑/↓ scroll • PgUp/PgDn scroll • esc close",
+		FooterHint:    "←/→ section • ↑/↓ scroll • esc close",
 	})
 	plain := stripANSI(out)
 	for _, want := range []string{"Charmander", "#004", "Overview", "Height", "←/→ section", "esc close"} {

@@ -173,7 +173,7 @@ type Model struct {
 	dialogGameSlug     string
 	dialogMoveMethod   string
 	dialogNotice       string
-	dialogScroll map[DialogSection]int
+	dialogScroll       map[DialogSection]int
 	gamePickerOpen     bool
 	gamePickerFilter   string
 	gamePickerCursor   int
@@ -191,6 +191,7 @@ type Model struct {
 	moveDetailOpen     bool
 	moveFocusIdx       int
 	lastMoveFocusIdx   int
+	encounterFocusIdx  int
 
 	selectionGen int
 	trackedID    int
@@ -592,7 +593,7 @@ func (m *Model) dialogPageSize() int {
 	if ctx > 0 {
 		h -= ctx + 1
 	}
-	sticky, hint := m.dialogMoveChrome(geom.BodyW, max(1, h), 0)
+	sticky, hint := m.dialogChrome(geom.BodyW, max(1, h), 0)
 	h -= len(sticky)
 	if hint != "" {
 		h--

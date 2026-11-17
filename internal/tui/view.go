@@ -116,7 +116,7 @@ func (m Model) browseData() views.BrowseData {
 	}
 	if m.showDialog {
 		geom := m.dialogGeom()
-		sticky, hint := m.dialogMoveChrome(geom.BodyW, m.dialogPageSize(), m.dialogVP.YOffset())
+		sticky, hint := m.dialogChrome(geom.BodyW, m.dialogPageSize(), m.dialogVP.YOffset())
 		data.DialogSticky = sticky
 		data.DialogPosition = hint
 		hintW := m.width
@@ -125,6 +125,7 @@ func (m Model) browseData() views.BrowseData {
 		}
 		helps := m.keys.DialogShortHelp(DialogHelpOpts{
 			Moves:      m.dialogSection == DialogMoves,
+			Encounters: m.dialogSection == DialogEncounters,
 			MoveDetail: m.moveDetailOpen,
 			Picker:     m.dialogOverlayOpen(),
 		})

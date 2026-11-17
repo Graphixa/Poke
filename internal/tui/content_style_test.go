@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/textwidth"
 	"github.com/Graphixa/Poke/internal/tui/components"
 )
 
@@ -65,9 +66,10 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 			Accuracy:    &accuracy,
 			PP:          25,
 		},
-	}}, 80, "")
+	}}, 80)
 
-	wantHeader := primaryText("Lvl   Move             Type       Cat        Pow   Acc   PP")
+	moveW := moveNameWidth(80, true, true)
+	wantHeader := tableHeaderBand(moveTableHeader("level-up", moveW, true, true), 80)
 	var header, dataRow string
 	for _, line := range lines {
 		plain := stripANSIForFocus(line)
@@ -79,9 +81,12 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 		}
 	}
 	if header != wantHeader {
-		t.Fatalf("header not styled with primary:\n got %q\nwant %q", header, wantHeader)
+		t.Fatalf("header not bold accent:\n got %q\nwant %q", header, wantHeader)
 	}
 	requireANSI(t, header)
+	if strings.Contains(header, "\x1b[48") || strings.Contains(header, "48;") {
+		t.Fatalf("header must not use background: %q", header)
+	}
 	if strings.Contains(dataRow, "\x1b[") {
 		t.Fatalf("move row should remain plain: %q", dataRow)
 	}
@@ -113,11 +118,11 @@ func TestMoveColumnsDropAccThenPPWhenNarrow(t *testing.T) {
 		}
 		return ""
 	}
-	mid := findHeader(formatMoveLines(row, 55, ""))
+	mid := findHeader(formatMoveLines(row, 55))
 	if strings.Contains(mid, "Acc") || !strings.Contains(mid, "PP") {
 		t.Fatalf("mid width should drop Acc keep PP: %q", mid)
 	}
-	narrow := findHeader(formatMoveLines(row, 40, ""))
+	narrow := findHeader(formatMoveLines(row, 40))
 	if strings.Contains(narrow, "Acc") || strings.Contains(narrow, "PP") {
 		t.Fatalf("narrow width should drop Acc and PP: %q", narrow)
 	}
@@ -153,27 +158,27 @@ func TestOverviewAndBiologyLabels(t *testing.T) {
 			Text: "Prefers hot places.",
 		}},
 	}
-	overview := prependGeneralRef(formatOverviewLines(p, s, 60, nil))
+	overview := formatOverviewLines(p, s, 60, nil, 0, "")
 	joined := strings.Join(overview, "\n")
-	if !strings.Contains(joined, "General reference") {
-		t.Fatalf("overview should label general reference:\n%s", joined)
+	if strings.Contains(joined, "General reference") || strings.Contains(joined, "Source:") {
+		t.Fatalf("overview must not show disclaimer labels:\n%s", joined)
 	}
-	if !strings.Contains(joined, "Prefers hot places.") {
-		t.Fatalf("blurb should appear in Overview:\n%s", joined)
+	if !strings.Contains(joined, boldPrimary("About           ")) || !strings.Contains(joined, "Prefers hot places.") {
+		t.Fatalf("About blurb missing:\n%s", joined)
 	}
-	if !strings.Contains(joined, "Source:") || !strings.Contains(joined, "Red") {
-		t.Fatalf("overview should label reference source:\n%s", joined)
+	if !strings.Contains(joined, boldPrimary("Height          ")) || !strings.Contains(joined, boldPrimary("Weight          ")) {
+		t.Fatalf("Height and Weight should be separate lines:\n%s", joined)
 	}
-	if !strings.Contains(joined, primaryText("Type      ")) || !strings.Contains(joined, "Lizard Pokémon") {
+	if !strings.Contains(joined, boldPrimary("Type            ")) || !strings.Contains(joined, "Lizard Pokémon") {
 		t.Fatalf("overview missing Type/Category:\n%s", joined)
 	}
-	if !strings.Contains(joined, "Blaze") || !strings.Contains(joined, "Hidden") {
+	if !strings.Contains(joined, "Blaze") || !strings.Contains(joined, "(Hidden)") {
 		t.Fatalf("overview should list abilities:\n%s", joined)
 	}
-	if strings.Contains(joined, "Catch") || strings.Contains(joined, "Capture") {
+	if strings.Contains(joined, "Catch rate") || strings.Contains(joined, "Capture") {
 		t.Fatalf("overview must not list capture:\n%s", joined)
 	}
-	if !strings.Contains(joined, primaryText("Generation")) || !strings.Contains(joined, "IV") {
+	if !strings.Contains(joined, boldPrimary("Generation      ")) || !strings.Contains(joined, " IV") {
 		t.Fatalf("overview Generation should be labelled Roman IV:\n%s", joined)
 	}
 	if strings.Contains(joined, "Iv") && !strings.Contains(joined, "IV") {
@@ -182,9 +187,14 @@ func TestOverviewAndBiologyLabels(t *testing.T) {
 
 	bio := formatBiologyLines(p, s)
 	bioJoined := strings.Join(bio, "\n")
-	for _, want := range []string{"Physical", "Breeding", "Growth", "Habitat", "Egg", "Monster", "Forms", "(default)"} {
+	for _, want := range []string{"Habitat", "Egg groups", "Egg cycles", "Monster", "Base friendship", "Catch rate"} {
 		if !strings.Contains(bioJoined, want) {
 			t.Fatalf("biology missing %q:\n%s", want, bioJoined)
+		}
+	}
+	for _, ban := range []string{"Physical", "Breeding", "Forms", "(default)", "Classification"} {
+		if strings.Contains(bioJoined, ban) {
+			t.Fatalf("biology must not show %q:\n%s", ban, bioJoined)
 		}
 	}
 }
@@ -244,8 +254,8 @@ func TestFlavourStylesVersionOnly(t *testing.T) {
 	}
 }
 
-func TestLocationsStyleVersionOnly(t *testing.T) {
-	lines := formatEncounterLines([]domain.Encounter{{
+func TestLocationsTableAllGames(t *testing.T) {
+	lines := formatEncounterLinesForGame([]domain.Encounter{{
 		Version:      "omega-ruby",
 		Area:         "route-101",
 		Method:       "walk",
@@ -253,25 +263,39 @@ func TestLocationsStyleVersionOnly(t *testing.T) {
 		MaximumLevel: 3,
 		Chance:       20,
 		Conditions:   []string{"time-morning"},
-	}})
+	}}, 0, "", 80)
 
-	if lines[0] != primaryText("Omega Ruby") {
-		t.Fatalf("location version heading not styled: %q", lines[0])
+	if !strings.Contains(lines[0], "Omega Ruby") || !strings.Contains(lines[0], "Route 101") {
+		t.Fatalf("All-games table should include game + area: %q", lines[0])
 	}
-	if strings.Contains(lines[1], "\x1b[") {
-		t.Fatalf("location data should remain plain: %q", lines[1])
+	if strings.Contains(lines[0], "\x1b[") {
+		t.Fatalf("location data should remain plain: %q", lines[0])
 	}
-	if len(lines) < 3 || !strings.Contains(lines[2], "Morning") {
-		t.Fatalf("conditions should indent on next line: %v", lines)
+	if len(lines) < 2 || !strings.Contains(lines[1], "↳") || !strings.Contains(lines[1], "Morning") {
+		t.Fatalf("conditions should use ↳: %v", lines)
+	}
+	if textwidth.Width(lines[0]) > 80 {
+		t.Fatalf("row wider than body (%d): %q", textwidth.Width(lines[0]), lines[0])
+	}
+	header := encounterTableHeader(80)
+	if !strings.Contains(header, "Game") || !strings.Contains(header, "Area") {
+		t.Fatalf("header missing Game/Area: %q", header)
+	}
+	filtered := formatEncounterLinesForGame([]domain.Encounter{{
+		Version: "omega-ruby", Area: "route-101", Method: "walk",
+		MinimumLevel: 2, MaximumLevel: 3, Chance: 20,
+	}}, 1, "omega-ruby", 80)
+	if !strings.Contains(filtered[0], "Omega Ruby") {
+		t.Fatalf("filtered table still shows Game column: %q", filtered[0])
 	}
 }
 
 func TestStatsStyleLabelsOnly(t *testing.T) {
 	lines := formatStatsBars(domain.Pokemon{Stats: domain.Stats{HP: 58, Attack: 64, Defense: 58, SpecialAttack: 80, SpecialDefense: 65, Speed: 90}})
-	if len(lines) < 2 || !strings.Contains(stripANSIForFocus(lines[0]), "Base stats") {
-		t.Fatalf("stats should note base-stat reference: %q", lines[0])
+	if len(lines) < 1 || strings.Contains(stripANSIForFocus(lines[0]), "Base stats") {
+		t.Fatalf("stats must not show base-stats disclaimer: %q", lines[0])
 	}
-	hp := lines[1]
+	hp := lines[0]
 	if !strings.HasPrefix(hp, primaryText("HP      ")) {
 		t.Fatalf("stat label not styled: %q", hp)
 	}
@@ -281,6 +305,29 @@ func TestStatsStyleLabelsOnly(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "Total") || !strings.Contains(joined, "415") {
 		t.Fatalf("stats should include Total sum:\n%s", joined)
+	}
+}
+
+func TestAbilityLayout(t *testing.T) {
+	lines := formatAbilityLines([]domain.AbilitySlot{
+		{Slot: 1, Name: "static"},
+		{Slot: 3, Name: "lightning-rod", IsHidden: true},
+	}, nil, 60)
+	joined := strings.Join(lines, "\n")
+	if !strings.HasPrefix(lines[0], boldPrimary("Abilities       ")) {
+		t.Fatalf("first ability should share Abilities label line: %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "Static") {
+		t.Fatalf("Static should sit on Abilities line: %q", lines[0])
+	}
+	if !strings.Contains(joined, "Lightning Rod") || !strings.Contains(joined, "(Hidden)") {
+		t.Fatalf("hidden ability should be Name (Hidden):\n%s", joined)
+	}
+	if strings.Contains(joined, "draws in Electric") {
+		t.Fatalf("matchup notes removed:\n%s", joined)
+	}
+	if !strings.Contains(joined, "\n\n") {
+		t.Fatalf("abilities should be separated by a blank line:\n%s", joined)
 	}
 }
 

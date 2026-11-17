@@ -9,6 +9,7 @@ import (
 
 	"github.com/Graphixa/Poke/internal/domain"
 	"github.com/Graphixa/Poke/internal/output"
+	"github.com/Graphixa/Poke/internal/textwidth"
 	"github.com/Graphixa/Poke/internal/tui/components"
 	tuistyle "github.com/Graphixa/Poke/internal/tui/style"
 	"github.com/Graphixa/Poke/internal/usererr"
@@ -28,9 +29,7 @@ func (m Model) browseViewLines() []string {
 }
 
 func formatStatsBars(p domain.Pokemon) []string {
-	lines := components.StatsBars(p.Stats)
-	lines = append([]string{tuistyle.StatusMuted("Base stats (not battle-calculated)")}, lines...)
-	return lines
+	return components.StatsBars(p.Stats)
 }
 
 func formatHeight(dm int) string {
@@ -64,9 +63,9 @@ func (m Model) dialogContentLines() []string {
 	}
 	switch m.dialogSection {
 	case DialogOverview:
-		return prependGeneralRef(m.formatOverviewLines(poke, r.Species, bodyW))
+		return m.formatOverviewLines(poke, r.Species, bodyW)
 	case DialogStats:
-		return prependGeneralRef(formatStatsBars(poke))
+		return formatStatsBars(poke)
 	case DialogEvolution:
 		if !r.HasEvolution && r.loadingExtras {
 			return []string{"Loading…"}
@@ -74,7 +73,7 @@ func (m Model) dialogContentLines() []string {
 		if r.EvolutionErr != nil {
 			return sectionErrorLines(r.EvolutionErr)
 		}
-		return prependGeneralRef(formatEvolutionLines(r.Evolution, r.Species.Slug, r.Pokemon.DisplayName))
+		return formatEvolutionLines(r.Evolution, r.Species.Slug, r.Pokemon.DisplayName)
 	case DialogMoves:
 		if !r.HasMoves && r.loadingExtras {
 			return []string{"Loading…"}
@@ -86,7 +85,7 @@ func (m Model) dialogContentLines() []string {
 		if m.moveDetailOpen {
 			return formatMoveDetailLines(moves, m.moveFocusIdx, bodyW)
 		}
-		// Scrollable rows only; sticky header/position come from dialogMoveChrome.
+		// Scrollable rows only; sticky header/position come from dialogChrome.
 		return formatMoveDataRowsFocused(moves, bodyW, true, m.moveFocusIdx)
 	case DialogEncounters:
 		if !r.HasEncounters && r.loadingExtras {
@@ -95,19 +94,15 @@ func (m Model) dialogContentLines() []string {
 		if r.EncountersErr != nil {
 			return sectionErrorLines(r.EncountersErr)
 		}
-		return formatEncounterLinesForGame(r.Encounters, m.dialogGameID, m.dialogGameSlug)
+		rows := m.dialogEncounterRows()
+		return formatEncounterTableRowsFocused(rows, bodyW, m.encounterFocusIdx)
 	case DialogDescriptions:
 		return formatFlavourLinesForGame(r.Species, m.dialogGameID, m.dialogGameSlug)
 	case DialogBiology:
-		return prependGeneralRef(formatBiologyLines(poke, r.Species))
+		return formatBiologyLines(poke, r.Species)
 	default:
 		return nil
 	}
-}
-
-func prependGeneralRef(lines []string) []string {
-	out := []string{tuistyle.StatusMuted("General reference"), ""}
-	return append(out, lines...)
 }
 
 func sectionErrorLines(err error) []string {
@@ -118,57 +113,112 @@ func sectionErrorLines(err error) []string {
 	}
 }
 
-// dialogMoveChrome returns sticky learnset banner + table header, and a position hint.
-func (m Model) dialogMoveChrome(bodyW, scrollH, scrollOff int) (sticky []string, hint string) {
-	if m.dialogSection != DialogMoves || m.moveDetailOpen || m.dialogOverlayOpen() {
+// dialogChrome returns sticky table headers and the pinned status/position line.
+func (m Model) dialogChrome(bodyW, scrollH, scrollOff int) (sticky []string, hint string) {
+	if m.dialogOverlayOpen() {
 		return nil, ""
 	}
-	rows := m.dialogMoveRows()
-	if len(rows) == 0 {
-		return nil, ""
-	}
-	gameLabel := m.dialogGameLabel
-	if m.dialogGameID < 1 {
-		gameLabel = "All"
-	}
-	sticky = moveStickyLines(rows, bodyW, gameLabel, m.dialogMoveMethod)
-	vis := scrollH
-	if vis < 1 {
-		vis = 1
-	}
-	start := scrollOff + 1
-	if start < 1 {
-		start = 1
-	}
-	end := scrollOff + vis
-	if end > len(rows) {
-		end = len(rows)
-	}
-	if start > end {
-		start = end
-	}
-	// Prefer selection window around the focused move row.
-	if m.moveFocusIdx >= 0 {
-		start = m.moveFocusIdx + 1
-		if start > len(rows) {
-			start = len(rows)
+	switch m.dialogSection {
+	case DialogMoves:
+		if m.moveDetailOpen {
+			return nil, ""
 		}
-		hint = fmt.Sprintf("Row %d of %d", start, len(rows))
+		rows := m.dialogMoveRows()
+		if len(rows) == 0 {
+			return nil, ""
+		}
+		sticky = moveStickyLines(rows, bodyW, m.dialogMoveMethod)
+		left := "Learnset: All"
+		if m.dialogGameID >= 1 {
+			left = "Learnset: " + m.dialogGameLabel
+			if m.dialogGameLabel == "" {
+				left = "Learnset: " + output.GameLabel(m.dialogGameSlug, "")
+			}
+		}
+		vis := scrollH
+		if vis < 1 {
+			vis = 1
+		}
+		start := scrollOff + 1
+		if start < 1 {
+			start = 1
+		}
+		end := scrollOff + vis
+		if end > len(rows) {
+			end = len(rows)
+		}
+		if start > end {
+			start = end
+		}
+		right := ""
+		if m.moveFocusIdx >= 0 {
+			start = m.moveFocusIdx + 1
+			if start > len(rows) {
+				start = len(rows)
+			}
+			right = fmt.Sprintf("Row %d of %d", start, len(rows))
+		} else if len(rows) > vis {
+			right = fmt.Sprintf("Rows %d–%d of %d", start, end, len(rows))
+		} else if len(rows) > 0 {
+			right = fmt.Sprintf("Rows 1–%d of %d", len(rows), len(rows))
+		}
+		hint = statusLine(left, right, bodyW)
 		return sticky, hint
+	case DialogEncounters:
+		rows := m.dialogEncounterRows()
+		if len(rows) == 0 {
+			return nil, ""
+		}
+		sticky = []string{tableHeaderBand(encounterTableHeader(bodyW), bodyW)}
+		left := "All"
+		if m.dialogGameID >= 1 {
+			left = m.dialogGameLabel
+			if left == "" {
+				left = output.GameLabel(m.dialogGameSlug, "")
+			}
+		}
+		right := ""
+		if m.encounterFocusIdx >= 0 && m.encounterFocusIdx < len(rows) {
+			right = fmt.Sprintf("Row %d of %d", m.encounterFocusIdx+1, len(rows))
+		} else if len(rows) > 0 {
+			right = fmt.Sprintf("Row 1 of %d", len(rows))
+		}
+		hint = statusLine(left, right, bodyW)
+		return sticky, hint
+	case DialogDescriptions:
+		if m.dialogGameID < 1 {
+			return nil, ""
+		}
+		label := m.dialogGameLabel
+		if label == "" {
+			label = output.GameLabel(m.dialogGameSlug, "")
+		}
+		hint = statusLine(label, "", bodyW)
+		return nil, hint
+	default:
+		return nil, ""
 	}
-	if len(rows) > vis {
-		hint = fmt.Sprintf("Rows %d–%d of %d", start, end, len(rows))
-	} else if len(rows) > 0 {
-		hint = fmt.Sprintf("Rows 1–%d of %d", len(rows), len(rows))
+}
+
+func statusLine(left, right string, bodyW int) string {
+	if bodyW < 1 {
+		bodyW = 1
 	}
-	return sticky, hint
+	if right == "" {
+		return left
+	}
+	gap := bodyW - textwidth.Width(left) - textwidth.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func (m Model) formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int) []string {
-	return formatOverviewLines(p, s, bodyW, m.catalog)
+	return formatOverviewLines(p, s, bodyW, m.catalog, m.dialogGameID, m.dialogGameSlug)
 }
 
-func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int, cat CatalogSource) []string {
+func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int, cat CatalogSource, gameID int, gameSlug string) []string {
 	if bodyW < 24 {
 		bodyW = 24
 	}
@@ -178,12 +228,16 @@ func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int, cat Cata
 	}
 
 	var lines []string
-	if text, ver := referenceSummary(s); text != "" {
-		lines = append(lines, wrapWords(text, wrapW)...)
-		if ver != "" {
-			lines = append(lines, tuistyle.StatusMuted("Source: "+output.TitleFromSlug(ver)+" (reference)"))
+	if text := overviewBlurb(s, gameID, gameSlug); text != "" {
+		about := wrapWords(text, wrapW-factValueCol)
+		if len(about) > 0 {
+			lines = append(lines, boldPrimary(fmt.Sprintf("%-16s", "About"))+" "+about[0])
+			indent := strings.Repeat(" ", factValueCol)
+			for _, w := range about[1:] {
+				lines = append(lines, indent+w)
+			}
+			lines = append(lines, "")
 		}
-		lines = append(lines, "")
 	}
 
 	types := tuistyle.TypeSummary(p.TypeNames())
@@ -194,21 +248,15 @@ func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int, cat Cata
 	lines = append(lines,
 		factLine("Type", types),
 		factLine("Category", genus),
+		factLine("Height", formatHeight(p.HeightDecimeter)),
+		factLine("Weight", formatWeight(p.WeightHectogram)),
 	)
-	if bodyW >= 52 {
-		lines = append(lines, factPair("Height", formatHeight(p.HeightDecimeter), "Weight", formatWeight(p.WeightHectogram)))
-	} else {
-		lines = append(lines,
-			factLine("Height", formatHeight(p.HeightDecimeter)),
-			factLine("Weight", formatWeight(p.WeightHectogram)),
-		)
-	}
 	gen := dash(output.GenerationNumeral(s.Generation))
 	lines = append(lines, factLine("Generation", gen))
 
 	if chart, err := catalogTypeChart(cat); err == nil && len(chart) > 0 {
 		weak, resist, immune := typeMatchups(p.TypeNames(), chart)
-		lines = append(lines, "", tuistyle.StatusMuted("Type matchups (type-only)"))
+		lines = append(lines, "")
 		lines = append(lines, factLine("Weak to", joinOrDash(weak)))
 		lines = append(lines, factLine("Resists", joinOrDash(resist)))
 		if len(immune) > 0 {
@@ -217,7 +265,7 @@ func formatOverviewLines(p domain.Pokemon, s domain.Species, bodyW int, cat Cata
 	}
 
 	if len(p.Abilities) > 0 {
-		lines = append(lines, "", primaryText("Abilities"))
+		lines = append(lines, "")
 		lines = append(lines, formatAbilityLines(p.Abilities, cat, wrapW)...)
 	}
 	return lines
@@ -230,22 +278,41 @@ func catalogTypeChart(cat CatalogSource) (map[string]domain.TypeInfo, error) {
 	return cat.TypeChart()
 }
 
+// factValueCol is where factLine values begin (16-char label + space).
+const factValueCol = 17
+
 func formatAbilityLines(slots []domain.AbilitySlot, cat CatalogSource, wrapW int) []string {
+	indent := strings.Repeat(" ", factValueCol)
+	effectW := wrapW - factValueCol
+	if effectW < 24 {
+		effectW = 24
+	}
 	var lines []string
-	for _, slot := range slots {
-		name := output.TitleFromSlug(slot.Name)
-		label := fmt.Sprintf("Slot %d", slot.Slot)
-		if slot.IsHidden || slot.Slot >= 3 {
-			label = "Hidden"
+	for i, slot := range slots {
+		if i > 0 {
+			lines = append(lines, "")
 		}
-		lines = append(lines, primaryText(label)+"  "+name)
+		title := abilityTitle(slot)
+		if i == 0 {
+			lines = append(lines, boldPrimary(fmt.Sprintf("%-16s", "Abilities"))+" "+title)
+		} else {
+			lines = append(lines, indent+title)
+		}
 		if effect := abilityEffect(slot, cat); effect != "" {
-			for _, w := range wrapWords(effect, wrapW) {
-				lines = append(lines, "  "+w)
+			for _, w := range wrapWords(effect, effectW) {
+				lines = append(lines, indent+w)
 			}
 		}
 	}
 	return lines
+}
+
+func abilityTitle(slot domain.AbilitySlot) string {
+	name := output.TitleFromSlug(slot.Name)
+	if slot.IsHidden || slot.Slot >= 3 {
+		return primaryText(name) + tuistyle.StatusMuted(" (Hidden)")
+	}
+	return primaryText(name)
 }
 
 func abilityEffect(slot domain.AbilitySlot, cat CatalogSource) string {
@@ -325,49 +392,37 @@ func joinOrDash(parts []string) string {
 }
 
 func factLine(label, value string) string {
-	return primaryText(fmt.Sprintf("%-10s", label)) + " " + value
-}
-
-func factPair(l1, v1, l2, v2 string) string {
-	left := primaryText(fmt.Sprintf("%-10s", l1)) + " " + fmt.Sprintf("%-14s", v1)
-	right := primaryText(fmt.Sprintf("%-10s", l2)) + " " + v2
-	return left + "  " + right
+	return boldPrimary(fmt.Sprintf("%-16s", label)) + " " + value
 }
 
 func formatBiologyLines(p domain.Pokemon, s domain.Species) []string {
 	var lines []string
-	lines = append(lines, primaryText("Physical"))
 	lines = append(lines,
 		factLine("Height", formatHeight(p.HeightDecimeter)),
 		factLine("Weight", formatWeight(p.WeightHectogram)),
 		factLine("Colour", dash(output.TitleFromSlug(s.Color))),
 		factLine("Shape", dash(output.TitleFromSlug(s.Shape))),
+		factLine("Habitat", dash(output.TitleFromSlug(s.Habitat))),
+		factLine("Gender", formatGenderRate(s.GenderRate)),
 	)
-	lines = append(lines, "", primaryText("Habitat"))
-	lines = append(lines, factLine("Habitat", dash(output.TitleFromSlug(s.Habitat))))
-
-	lines = append(lines, "", primaryText("Breeding"))
-	lines = append(lines, factLine("Gender", formatGenderRate(s.GenderRate)))
 	if len(s.EggGroups) == 0 {
-		lines = append(lines, factLine("Egg", "—"))
+		lines = append(lines, factLine("Egg groups", "—"))
 	} else {
 		eggs := make([]string, len(s.EggGroups))
 		for i, g := range s.EggGroups {
 			eggs[i] = output.TitleFromSlug(g)
 		}
-		lines = append(lines, factLine("Egg", strings.Join(eggs, ", ")))
+		lines = append(lines, factLine("Egg groups", strings.Join(eggs, ", ")))
 	}
 	if s.HatchCounter > 0 {
-		lines = append(lines, factLine("Hatch", fmt.Sprintf("%d cycles", s.HatchCounter)))
+		lines = append(lines, factLine("Egg cycles", fmt.Sprintf("%d", s.HatchCounter)))
 	} else {
-		lines = append(lines, factLine("Hatch", "—"))
+		lines = append(lines, factLine("Egg cycles", "—"))
 	}
-
-	lines = append(lines, "", primaryText("Growth"))
 	lines = append(lines,
 		factLine("Growth", dash(output.TitleFromSlug(s.GrowthRate))),
-		factLine("Happiness", fmt.Sprintf("%d", s.BaseHappiness)),
-		factLine("Capture", fmt.Sprintf("%d", s.CaptureRate)),
+		factLine("Base friendship", fmt.Sprintf("%d", s.BaseHappiness)),
+		factLine("Catch rate", fmt.Sprintf("%d", s.CaptureRate)),
 	)
 
 	var class []string
@@ -381,20 +436,7 @@ func formatBiologyLines(p domain.Pokemon, s domain.Species) []string {
 		class = append(class, "Mythical")
 	}
 	if len(class) > 0 {
-		lines = append(lines, "", primaryText("Classification"))
-		lines = append(lines, "  "+strings.Join(class, ", "))
-	}
-
-	if len(s.Varieties) > 0 {
-		lines = append(lines, "", primaryText("Forms"))
-		for _, v := range s.Varieties {
-			name := output.TitleFromSlug(v.Slug)
-			if v.IsDefault {
-				lines = append(lines, "  "+name+"  (default)")
-			} else {
-				lines = append(lines, "  "+name)
-			}
-		}
+		lines = append(lines, "", strings.Join(class, ", "))
 	}
 	return lines
 }
@@ -532,67 +574,111 @@ func triggerLabel(trigger string) string {
 	}
 }
 
-func formatEncounterLines(rows []domain.Encounter) []string {
-	if len(rows) == 0 {
-		return []string{"No wild encounters recorded."}
-	}
-	grouped := map[string][]domain.Encounter{}
-	var versions []string
-	for _, e := range rows {
-		v := e.Version
-		if v == "" {
-			v = "unknown"
-		}
-		if _, ok := grouped[v]; !ok {
-			versions = append(versions, v)
-		}
-		grouped[v] = append(grouped[v], e)
-	}
-	sort.Strings(versions)
-	var lines []string
-	for _, v := range versions {
-		lines = append(lines, primaryText(output.TitleFromSlug(v)))
-		for _, e := range grouped[v] {
-			level := fmt.Sprintf("Lv %d", e.MinimumLevel)
-			if e.MaximumLevel != e.MinimumLevel {
-				level = fmt.Sprintf("Lv %d–%d", e.MinimumLevel, e.MaximumLevel)
-			}
-			lines = append(lines, fmt.Sprintf("  %s · %s · %s · %d%%",
-				output.TitleFromSlug(e.Area),
-				output.TitleFromSlug(e.Method),
-				level,
-				e.Chance,
-			))
-			if len(e.Conditions) > 0 {
-				conds := make([]string, 0, len(e.Conditions))
-				for _, c := range e.Conditions {
-					conds = append(conds, output.TitleFromSlug(c))
-				}
-				lines = append(lines, "    "+strings.Join(conds, ", "))
-			}
-		}
-		lines = append(lines, "")
-	}
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return lines
-}
-
-func formatEncounterLinesForGame(rows []domain.Encounter, gameID int, gameSlug string) []string {
-	if gameID < 1 {
-		return formatEncounterLines(rows)
-	}
+func formatEncounterLinesForGame(rows []domain.Encounter, gameID int, gameSlug string, bodyW int) []string {
 	var filtered []domain.Encounter
-	for _, e := range rows {
-		if e.VersionID == gameID || (gameSlug != "" && e.Version == gameSlug) {
-			filtered = append(filtered, e)
+	if gameID < 1 {
+		filtered = rows
+	} else {
+		for _, e := range rows {
+			if e.VersionID == gameID || (gameSlug != "" && e.Version == gameSlug) {
+				filtered = append(filtered, e)
+			}
 		}
 	}
 	if len(filtered) == 0 {
+		if gameID < 1 {
+			return []string{"No wild encounters recorded."}
+		}
 		return []string{"No records available for this selection."}
 	}
-	return formatEncounterLines(filtered)
+	return formatEncounterTableRows(filtered, bodyW)
+}
+
+func encounterColumnFlags(bodyW int) (showChance bool) {
+	// Area(flex) + Method + Level + Game + spaces; Chance optional (" %5d%%" = 7).
+	const fixedNoChance, chanceCol = 39, 7
+	showChance = true
+	if bodyW > 0 && bodyW < fixedNoChance+chanceCol {
+		showChance = false
+	}
+	return showChance
+}
+
+func encounterAreaWidth(bodyW int, showChance bool) int {
+	// "%-*s %-12s %-10s" + optional " %5d%%" + " %-14s"
+	fixed := 1 + 12 + 1 + 10 + 1 + 14
+	if showChance {
+		fixed += 7 // " %5d%%"
+	}
+	areaW := bodyW - fixed
+	if areaW < 12 {
+		areaW = 12
+	}
+	return areaW
+}
+
+func encounterTableHeader(bodyW int) string {
+	showChance := encounterColumnFlags(bodyW)
+	areaW := encounterAreaWidth(bodyW, showChance)
+	header := fmt.Sprintf("%-*s %-12s %-10s", areaW, "Area", "Method", "Level")
+	if showChance {
+		header += fmt.Sprintf(" %6s", "Chance")
+	}
+	header += fmt.Sprintf(" %-14s", "Game")
+	return header
+}
+
+func formatEncounterTableRows(rows []domain.Encounter, bodyW int) []string {
+	lines, _ := formatEncounterTableRowsMapped(rows, bodyW)
+	return lines
+}
+
+// formatEncounterTableRowsMapped returns display lines and mainLine[i] = line index for encounter i.
+func formatEncounterTableRowsMapped(rows []domain.Encounter, bodyW int) (lines []string, mainLine []int) {
+	showChance := encounterColumnFlags(bodyW)
+	areaW := encounterAreaWidth(bodyW, showChance)
+	mainLine = make([]int, len(rows))
+	for i, e := range rows {
+		mainLine[i] = len(lines)
+		level := fmt.Sprintf("Lv %d", e.MinimumLevel)
+		if e.MaximumLevel != e.MinimumLevel {
+			level = fmt.Sprintf("Lv %d–%d", e.MinimumLevel, e.MaximumLevel)
+		}
+		game := output.GameLabel(e.Version, "")
+		if game == "" {
+			game = "—"
+		}
+		line := fmt.Sprintf("%-*s %-12s %-10s",
+			areaW, truncate(output.TitleFromSlug(e.Area), areaW),
+			truncate(output.TitleFromSlug(e.Method), 12),
+			truncate(level, 10),
+		)
+		if showChance {
+			line += fmt.Sprintf(" %5d%%", e.Chance)
+		}
+		line += fmt.Sprintf(" %-14s", truncate(game, 14))
+		lines = append(lines, line)
+		if len(e.Conditions) > 0 {
+			conds := make([]string, 0, len(e.Conditions))
+			for _, c := range e.Conditions {
+				conds = append(conds, output.TitleFromSlug(c))
+			}
+			lines = append(lines, "  ↳ "+strings.Join(conds, ", "))
+		}
+	}
+	return lines, mainLine
+}
+
+func formatEncounterTableRowsFocused(rows []domain.Encounter, bodyW int, focusIdx int) []string {
+	lines, mainLine := formatEncounterTableRowsMapped(rows, bodyW)
+	if focusIdx < 0 || focusIdx >= len(mainLine) {
+		return lines
+	}
+	li := mainLine[focusIdx]
+	if li >= 0 && li < len(lines) {
+		lines[li] = tableFocusBand(stripANSIForFocus(lines[li]), bodyW)
+	}
+	return lines
 }
 
 func formatFlavourLinesForGame(s domain.Species, gameID int, gameSlug string) []string {
@@ -654,7 +740,7 @@ func formatFlavourLinesAll(s domain.Species) []string {
 	}
 	var lines []string
 	for _, v := range versions {
-		lines = append(lines, primaryText(output.TitleFromSlug(v)))
+		lines = append(lines, primaryText(output.GameLabel(v, "")))
 		for _, text := range grouped[v] {
 			lines = append(lines, wrapWords(text, 56)...)
 			lines = append(lines, "")
@@ -671,8 +757,23 @@ func formatMoveDataRowsFocused(rows []domain.LevelUpMove, bodyW int, focus bool,
 	if !focus || len(rows) == 0 || focusIdx < 0 || focusIdx >= len(lines) {
 		return lines
 	}
-	lines[focusIdx] = boldPrimary(stripANSIForFocus(lines[focusIdx]))
+	lines[focusIdx] = tableFocusBand(stripANSIForFocus(lines[focusIdx]), bodyW)
 	return lines
+}
+
+func tableHeaderBand(plain string, bodyW int) string {
+	_ = bodyW
+	return boldPrimary(stripANSIForFocus(plain))
+}
+
+func tableFocusBand(plain string, bodyW int) string {
+	padded := textwidth.PadRight(stripANSIForFocus(plain), max(1, bodyW))
+	// White selection band — keeps primary accent for labels/headers only.
+	return lipgloss.NewStyle().
+		Foreground(tuistyle.BaseColor()).
+		Background(lipgloss.Color("#ffffff")).
+		Bold(true).
+		Render(padded)
 }
 
 func formatMoveDetailLines(rows []domain.LevelUpMove, idx, bodyW int) []string {
@@ -701,8 +802,6 @@ func formatMoveDetailLines(rows []domain.LevelUpMove, idx, bodyW int) []string {
 		boldPrimary(name),
 		fmt.Sprintf("%s · %s · Pow %s · Acc %s · PP %d",
 			output.TitleFromSlug(mv.Type), output.TitleFromSlug(mv.DamageClass), pow, acc, mv.PP),
-		"",
-		tuistyle.StatusMuted("Move data: current reference"),
 		"",
 	}
 	if mv.Effect != "" {
@@ -748,23 +847,34 @@ func moveColumnFlags(bodyW int) (showAcc, showPP bool) {
 	return showAcc, showPP
 }
 
-func moveStickyLines(rows []domain.LevelUpMove, bodyW int, gameLabel, method string) []string {
+// moveNameWidth gives leftover body width to the Move column.
+func moveNameWidth(bodyW int, showAcc, showPP bool) int {
+	// Lvl(5)+sp + Type(10)+sp + Cat(8)+sp + Pow(5) = 32
+	fixed := 5 + 1 + 10 + 1 + 8 + 1 + 5
+	if showAcc {
+		fixed += 1 + 5
+	}
+	if showPP {
+		fixed += 1 + 4
+	}
+	w := bodyW - fixed
+	if w < 12 {
+		w = 12
+	}
+	return w
+}
+
+func moveStickyLines(rows []domain.LevelUpMove, bodyW int, method string) []string {
 	if method == "" {
 		method = "level-up"
 	}
 	showAcc, showPP := moveColumnFlags(bodyW)
-	banner := "Move attributes: current."
-	if gameLabel != "" {
-		banner = fmt.Sprintf("Learnset: %s · Move attributes: current.", gameLabel)
-	}
-	return []string{
-		tuistyle.StatusMuted(banner),
-		primaryText(moveTableHeader(method, showAcc, showPP)),
-	}
+	moveW := moveNameWidth(bodyW, showAcc, showPP)
+	return []string{tableHeaderBand(moveTableHeader(method, moveW, showAcc, showPP), bodyW)}
 }
 
 // formatMoveLines builds a full moves view (sticky + rows) for tests.
-func formatMoveLines(rows []domain.LevelUpMove, bodyW int, gameLabel string) []string {
+func formatMoveLines(rows []domain.LevelUpMove, bodyW int) []string {
 	if len(rows) == 0 {
 		return []string{"No records available for this selection."}
 	}
@@ -772,7 +882,7 @@ func formatMoveLines(rows []domain.LevelUpMove, bodyW int, gameLabel string) []s
 	if method == "" {
 		method = "level-up"
 	}
-	out := moveStickyLines(rows, bodyW, gameLabel, method)
+	out := moveStickyLines(rows, bodyW, method)
 	out = append(out, formatMoveDataRows(rows, bodyW)...)
 	return out
 }
@@ -782,6 +892,7 @@ func formatMoveDataRows(rows []domain.LevelUpMove, bodyW int) []string {
 		return []string{"No records available for this selection."}
 	}
 	showAcc, showPP := moveColumnFlags(bodyW)
+	moveW := moveNameWidth(bodyW, showAcc, showPP)
 	method := rows[0].Method
 	if method == "" {
 		method = "level-up"
@@ -792,7 +903,7 @@ func formatMoveDataRows(rows []domain.LevelUpMove, bodyW int) []string {
 		if rm == "" {
 			rm = method
 		}
-		lines = append(lines, formatMoveTableRow(row, rm, showAcc, showPP))
+		lines = append(lines, formatMoveTableRow(row, rm, moveW, showAcc, showPP))
 	}
 	return lines
 }
@@ -812,12 +923,15 @@ func methodHeading(method string) string {
 	}
 }
 
-func moveTableHeader(method string, showAcc, showPP bool) string {
+func moveTableHeader(method string, moveW int, showAcc, showPP bool) string {
+	if moveW < 4 {
+		moveW = 4
+	}
 	var header string
 	if method == "level-up" {
-		header = fmt.Sprintf("%-5s %-16s %-10s %-8s %5s", "Lvl", "Move", "Type", "Cat", "Pow")
+		header = fmt.Sprintf("%-5s %-*s %-10s %-8s %5s", "Lvl", moveW, "Move", "Type", "Cat", "Pow")
 	} else {
-		header = fmt.Sprintf("%-5s %-16s %-10s %-8s %5s", "", "Move", "Type", "Cat", "Pow")
+		header = fmt.Sprintf("%-5s %-*s %-10s %-8s %5s", "", moveW, "Move", "Type", "Cat", "Pow")
 	}
 	if showAcc {
 		header += fmt.Sprintf(" %5s", "Acc")
@@ -828,7 +942,10 @@ func moveTableHeader(method string, showAcc, showPP bool) string {
 	return header
 }
 
-func formatMoveTableRow(row domain.LevelUpMove, method string, showAcc, showPP bool) string {
+func formatMoveTableRow(row domain.LevelUpMove, method string, moveW int, showAcc, showPP bool) string {
+	if moveW < 4 {
+		moveW = 4
+	}
 	pow := "—"
 	if row.Move.Power != nil {
 		pow = fmt.Sprintf("%d", *row.Move.Power)
@@ -841,9 +958,9 @@ func formatMoveTableRow(row domain.LevelUpMove, method string, showAcc, showPP b
 	if method == "level-up" {
 		lvl = fmt.Sprintf("%d", row.Level)
 	}
-	line := fmt.Sprintf("%-5s %-16s %-10s %-8s %5s",
+	line := fmt.Sprintf("%-5s %-*s %-10s %-8s %5s",
 		lvl,
-		truncate(name, 16),
+		moveW, truncate(name, moveW),
 		truncate(output.TitleFromSlug(row.Move.Type), 10),
 		truncate(output.TitleFromSlug(row.Move.DamageClass), 8),
 		pow,
@@ -953,10 +1070,21 @@ func wrapWords(text string, width int) []string {
 	return lines
 }
 
-// referenceSummary picks a stable English flavour entry for Overview (not the
-// selected game). Prefer highest VersionOrder; return its version slug for labelling.
-func referenceSummary(s domain.Species) (text, version string) {
+// overviewBlurb picks English flavour for Overview. With a game selected, use
+// that game's entry; otherwise the chronologically newest English entry.
+func overviewBlurb(s domain.Species, gameID int, gameSlug string) string {
+	if gameID > 0 || gameSlug != "" {
+		for _, f := range s.FlavorTextEntries {
+			if f.Language != "" && f.Language != "en" {
+				continue
+			}
+			if (gameID > 0 && f.VersionID == gameID) || (gameSlug != "" && f.Version == gameSlug) {
+				return output.CleanFlavor(f.Text)
+			}
+		}
+	}
 	bestOrder := -1
+	text := ""
 	for _, f := range s.FlavorTextEntries {
 		if f.Language != "" && f.Language != "en" {
 			continue
@@ -964,8 +1092,7 @@ func referenceSummary(s domain.Species) (text, version string) {
 		if f.VersionOrder >= bestOrder {
 			bestOrder = f.VersionOrder
 			text = f.Text
-			version = f.Version
 		}
 	}
-	return output.CleanFlavor(text), version
+	return output.CleanFlavor(text)
 }

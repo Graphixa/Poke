@@ -300,6 +300,10 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 
 	debuglog.StartupMark("startup.tui_enter")
 	err = tui.Run(runCtx, opts)
+	// Bubble Tea's Kitty keyboard query (CSI ? u → CSI ? flags u) can still be
+	// sitting in the console buffer when Ctrl+C / Quit races the input reader —
+	// without a drain the shell sees leftover "[?1u".
+	drainPendingStdin()
 	if lines := debuglog.StartupReport(); len(lines) > 0 && h.Stderr != nil {
 		for _, line := range lines {
 			_, _ = fmt.Fprintln(h.Stderr, "startup:", line)

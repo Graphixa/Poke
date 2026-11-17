@@ -24,6 +24,24 @@ func containsSoftHyphen(s string) bool {
 	return false
 }
 
+func TestGameLabelJapan(t *testing.T) {
+	cases := []struct {
+		slug, english, want string
+	}{
+		{"red-japan", "Red", "Red (Japan)"},
+		{"blue-japan", "", "Blue (Japan)"},
+		{"green-japan", "", "Green (Japan)"},
+		{"red", "Red", "Red"},
+		{"omega-ruby", "", "Omega Ruby"},
+		{"red-japan", "Red (Japan)", "Red (Japan)"},
+	}
+	for _, tc := range cases {
+		if got := GameLabel(tc.slug, tc.english); got != tc.want {
+			t.Fatalf("GameLabel(%q, %q)=%q want %q", tc.slug, tc.english, got, tc.want)
+		}
+	}
+}
+
 func TestFormatGenerationRoman(t *testing.T) {
 	cases := map[string]string{
 		"generation-i":  "Generation I",

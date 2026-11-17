@@ -401,13 +401,13 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ←/→ change section; ↑/↓ / PgUp/PgDn navigate content (Moves: row select).
-	if key.Matches(msg, m.keys.Right) {
+	// ←/→ and Tab/S-Tab change section; ↑/↓ / PgUp/PgDn navigate content (Moves: row select).
+	if key.Matches(msg, m.keys.Right) || key.Matches(msg, m.keys.TabNext) {
 		m.dialogNotice = ""
 		m.changeDialogSection(m.dialogSection.Next())
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.Left) {
+	if key.Matches(msg, m.keys.Left) || key.Matches(msg, m.keys.TabPrev) {
 		m.dialogNotice = ""
 		m.changeDialogSection(m.dialogSection.Prev())
 		return m, nil
@@ -457,6 +457,48 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.syncDialogViewport()
 			m.ensureMoveFocusVisible()
+			return m, nil
+		}
+		return m, nil
+	}
+
+	if m.dialogSection == DialogEncounters {
+		if key.Matches(msg, m.keys.Up) {
+			m.nudgeEncounterFocus(-1)
+			m.syncDialogViewport()
+			m.ensureEncounterFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Down) {
+			m.nudgeEncounterFocus(1)
+			m.syncDialogViewport()
+			m.ensureEncounterFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.PageUp) {
+			m.nudgeEncounterFocus(-m.dialogPageSize())
+			m.syncDialogViewport()
+			m.ensureEncounterFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.PageDown) {
+			m.nudgeEncounterFocus(m.dialogPageSize())
+			m.syncDialogViewport()
+			m.ensureEncounterFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Home) {
+			m.encounterFocusIdx = 0
+			m.syncDialogViewport()
+			m.ensureEncounterFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.End) {
+			if n := len(m.dialogEncounterRows()); n > 0 {
+				m.encounterFocusIdx = n - 1
+			}
+			m.syncDialogViewport()
+			m.ensureEncounterFocusVisible()
 			return m, nil
 		}
 		return m, nil
@@ -536,9 +578,16 @@ func (m Model) setBrowseView(v BrowseView) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if isTerminalJunkKey(msg) {
+		return m, nil
+	}
 	prev := m.search.Value()
 	var cmd tea.Cmd
 	m.search, cmd = m.search.Update(msg)
+	if cleaned := scrubTerminalJunk(m.search.Value()); cleaned != m.search.Value() {
+		m.search.SetValue(cleaned)
+		m.search.CursorEnd()
+	}
 	if m.search.Value() != prev {
 		if !isBirthdayQuery(m.search.Value()) {
 			m.declanEnterCount = 0

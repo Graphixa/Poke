@@ -86,6 +86,7 @@ func (m *Model) initDialogContext(speciesID int, core domain.Dossier) {
 		m.dialogGameSlug = ""
 	}
 	m.ensureMoveMethod()
+	m.encounterFocusIdx = 0
 }
 
 func (m *Model) dialogGameValid() bool {
@@ -286,6 +287,8 @@ func (m *Model) closeGamePicker(confirm bool) {
 			_ = m.saveGameVersion(v.ID)
 		}
 		m.applyResolvedContext(true)
+		m.encounterFocusIdx = 0
+		m.moveFocusIdx = 0
 	}
 	m.gamePickerOpen = false
 	m.gamePickerFilter = ""
@@ -511,6 +514,66 @@ func (m *Model) ensureMoveFocusVisible() {
 	}
 	if m.moveFocusIdx >= off+vis {
 		m.dialogVP.SetYOffset(m.moveFocusIdx - vis + 1)
+	}
+}
+
+func (m Model) dialogEncounterRows() []domain.Encounter {
+	sel, ok := m.selected()
+	if !ok {
+		return nil
+	}
+	r := m.resources[sel.ID]
+	if r == nil {
+		return nil
+	}
+	rows := r.Encounters
+	if m.dialogGameID < 1 {
+		return rows
+	}
+	var filtered []domain.Encounter
+	for _, e := range rows {
+		if e.VersionID == m.dialogGameID || (m.dialogGameSlug != "" && e.Version == m.dialogGameSlug) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+func (m *Model) nudgeEncounterFocus(delta int) {
+	rows := m.dialogEncounterRows()
+	if len(rows) == 0 {
+		return
+	}
+	m.encounterFocusIdx += delta
+	if m.encounterFocusIdx < 0 {
+		m.encounterFocusIdx = 0
+	}
+	if m.encounterFocusIdx >= len(rows) {
+		m.encounterFocusIdx = len(rows) - 1
+	}
+}
+
+func (m *Model) ensureEncounterFocusVisible() {
+	rows := m.dialogEncounterRows()
+	if len(rows) == 0 || m.encounterFocusIdx < 0 {
+		return
+	}
+	_, mainLine := formatEncounterTableRowsMapped(rows, m.dialogGeom().BodyW)
+	if m.encounterFocusIdx >= len(mainLine) {
+		return
+	}
+	line := mainLine[m.encounterFocusIdx]
+	vis := m.dialogPageSize()
+	if vis <= 0 {
+		return
+	}
+	off := m.dialogVP.YOffset()
+	if line < off {
+		m.dialogVP.SetYOffset(line)
+		return
+	}
+	if line >= off+vis {
+		m.dialogVP.SetYOffset(line - vis + 1)
 	}
 }
 

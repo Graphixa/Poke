@@ -23,6 +23,28 @@ func TitleFromSlug(slug string) string {
 	return strings.Join(parts, " ")
 }
 
+// GameLabel disambiguates Japan cartridges whose English names collide
+// with the international Red/Blue releases (PokeAPI: red-japan, blue-japan).
+// english is the API English name when known; empty falls back to the slug.
+func GameLabel(slug, english string) string {
+	japan := strings.HasSuffix(slug, "-japan")
+	base := strings.TrimSpace(english)
+	if base == "" {
+		s := slug
+		if japan {
+			s = strings.TrimSuffix(s, "-japan")
+		}
+		base = TitleFromSlug(s)
+	}
+	if base == "" {
+		return ""
+	}
+	if japan && !strings.Contains(strings.ToLower(base), "japan") {
+		return base + " (Japan)"
+	}
+	return base
+}
+
 // FormatDex renders a national dex number like #025.
 func FormatDex(id int) string {
 	return fmt.Sprintf("#%03d", id)
