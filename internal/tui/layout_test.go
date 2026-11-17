@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/Graphixa/Poke/internal/domain"
 	"github.com/Graphixa/Poke/internal/render/sprite"
@@ -255,7 +256,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		FooterHint:    "←/→ section • ↑/↓ scroll • PgUp/PgDn scroll • esc close",
 	})
 	plain := stripANSI(out)
-	for _, want := range []string{"Charmander", "#004", "[ Overview ]", "Height", "←/→ section", "esc close"} {
+	for _, want := range []string{"Charmander", "#004", "Overview", "Height", "←/→ section", "esc close"} {
 		if !strings.Contains(out, want) && !strings.Contains(plain, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -266,8 +267,8 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 	if strings.Count(plain, "esc close") != 1 {
 		t.Fatalf("dialog must render one command footer:\n%s", out)
 	}
-	if strings.Contains(plain, "● Overview") {
-		t.Fatal("dialog must use horizontal section header, not vertical rail")
+	if strings.Contains(plain, "[ Overview ]") || strings.Contains(plain, "● Overview") {
+		t.Fatal("dialog must use padded chips, not brackets/rail")
 	}
 }
 
@@ -315,8 +316,8 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "╭─") || !strings.Contains(lines[0], "Charmander") {
 		t.Fatalf("expected full-frame title border:\n%s", lines[0])
 	}
-	if !strings.Contains(out, "[ Overview ]") {
-		t.Fatalf("expected horizontal section header:\n%s", out)
+	if !strings.Contains(out, "Overview") || strings.Contains(out, "[ Overview ]") {
+		t.Fatalf("expected padded chip header (no brackets):\n%s", out)
 	}
 	// No dimmed browse peek: first content row should start at the card edge.
 	if strings.Contains(lines[0], "bbbb") {
@@ -345,6 +346,18 @@ func TestDialogNarrowUsesCompactPager(t *testing.T) {
 	}
 	if strings.Contains(out, "● Overview") {
 		t.Fatalf("must not render the vertical rail:\n%s", out)
+	}
+}
+
+func TestSwitcherChipStableWidth(t *testing.T) {
+	labels := []string{"Overview", "Stats", "Moves"}
+	a := components.ViewSwitcher(0, labels, 0)
+	b := components.ViewSwitcher(1, labels, 0)
+	if wa, wb := lipgloss.Width(a), lipgloss.Width(b); wa != wb {
+		t.Fatalf("selection jumped width: active0=%d %q active1=%d %q", wa, stripANSI(a), wb, stripANSI(b))
+	}
+	if strings.Contains(stripANSI(a), "[") {
+		t.Fatalf("brackets must not appear: %q", stripANSI(a))
 	}
 }
 

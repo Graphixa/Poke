@@ -11,21 +11,30 @@ import (
 	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
-// ViewSwitcher renders `[ Sprite ] · Summary · Stats · Evolution` centre-aligned.
+// ViewSwitcher renders a centre-aligned · switcher with equal-width chips.
 func ViewSwitcher(active int, labels []string, width int) string {
 	return centreSwitcher(active, labels, width)
+}
+
+// switcherChip keeps active/inactive the same width (pad both sides; bg only when active).
+func switcherChip(label string, active bool) string {
+	if active {
+		return lipgloss.NewStyle().
+			Foreground(style.BaseColor()).
+			Background(style.ComponentsColor()).
+			Bold(true).
+			Padding(0, 1).
+			Render(label)
+	}
+	return mutedSty().Render(" " + label + " ")
 }
 
 func centreSwitcher(active int, labels []string, width int) string {
 	parts := make([]string, 0, len(labels))
 	for i, label := range labels {
-		if i == active {
-			parts = append(parts, boldSty().Render("[ "+label+" ]"))
-		} else {
-			parts = append(parts, mutedSty().Render(label))
-		}
+		parts = append(parts, switcherChip(label, i == active))
 	}
-	line := strings.Join(parts, mutedSty().Render(" · "))
+	line := strings.Join(parts, mutedSty().Render("·"))
 	if width <= 0 {
 		return line
 	}
@@ -180,13 +189,9 @@ func dialogSectionHeader(active int, labels []string, width int) string {
 	}
 	parts := make([]string, 0, len(labels))
 	for i, label := range labels {
-		if i == active {
-			parts = append(parts, boldSty().Render("[ "+label+" ]"))
-		} else {
-			parts = append(parts, mutedSty().Render(label))
-		}
+		parts = append(parts, switcherChip(label, i == active))
 	}
-	full := strings.Join(parts, mutedSty().Render(" · "))
+	full := strings.Join(parts, mutedSty().Render("·"))
 	if lipgloss.Width(full) <= width {
 		return lipgloss.PlaceHorizontal(width, lipgloss.Center, full)
 	}

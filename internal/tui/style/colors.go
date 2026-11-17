@@ -229,6 +229,13 @@ func BaseColor() color.Color {
 	return fg(active.Base)
 }
 
+// ComponentsColor is the main UI text / chip fill (light on dark themes).
+func ComponentsColor() color.Color {
+	mu.RLock()
+	defer mu.RUnlock()
+	return fg(active.Components)
+}
+
 // BaseRGBA returns the theme base colour as an opaque RGBA for sprite letterboxing.
 func BaseRGBA() color.RGBA {
 	mu.RLock()
