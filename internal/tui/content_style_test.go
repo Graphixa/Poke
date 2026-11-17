@@ -380,8 +380,25 @@ func TestMoveDetailFactLayoutAndSideList(t *testing.T) {
 	if !strings.Contains(joined, "Move List") {
 		t.Fatalf("side list needs Move List header:\n%s", joined)
 	}
-	if !strings.Contains(joined, "│") {
+	plain0 := stripANSIForFocus(lines[0])
+	sep := strings.Index(plain0, "│")
+	if sep < 0 {
 		t.Fatalf("detail/list need vertical divider:\n%s", joined)
+	}
+	after := sep + len("│")
+	if sep < 1 || plain0[sep-1] != ' ' || after >= len(plain0) || plain0[after] != ' ' {
+		t.Fatalf("divider needs space on both sides: %q", plain0)
+	}
+	if !strings.Contains(plain0[:sep], "Move List") {
+		t.Fatalf("Move List should be left of divider: %q", plain0)
+	}
+	if !strings.Contains(plain0[sep:], "Tackle") {
+		t.Fatalf("detail name should be right of divider: %q", plain0)
+	}
+	plain1 := stripANSIForFocus(lines[1])
+	left1 := plain1[:strings.Index(plain1, "│")]
+	if !strings.Contains(left1, "  Tackle") {
+		t.Fatalf("move names should be indented under Move List: %q", left1)
 	}
 	requireANSI(t, joined) // type colour on Type value
 }

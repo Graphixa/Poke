@@ -872,14 +872,14 @@ func formatMoveDetailLines(rows []domain.LevelUpMove, idx, bodyW int) []string {
 
 	listW := 0
 	if bodyW >= 48 {
-		listW = 16
+		listW = 24
 	}
 	detailW := bodyW
 	if listW > 0 {
-		detailW = bodyW - listW - 1
+		detailW = bodyW - listW - moveDetailSepW
 		if detailW < 28 {
 			detailW = 28
-			listW = bodyW - detailW - 1
+			listW = bodyW - detailW - moveDetailSepW
 		}
 	}
 
@@ -900,7 +900,7 @@ func formatMoveDetailLines(rows []domain.LevelUpMove, idx, bodyW int) []string {
 	if listW < 8 {
 		return detail
 	}
-	return joinMoveDetailColumns(detail, moveDetailSideList(rows, idx, listW), bodyW, listW)
+	return joinMoveDetailColumns(moveDetailSideList(rows, idx, listW), detail, bodyW, detailW)
 }
 
 func moveDetailSideList(rows []domain.LevelUpMove, idx, width int) []string {
@@ -923,14 +923,18 @@ func moveDetailSideList(rows []domain.LevelUpMove, idx, width int) []string {
 	out := make([]string, 0, end-start+3)
 	out = append(out, boldPrimary(truncate("Move List", width)))
 	if start > 0 {
-		out = append(out, tuistyle.StatusMuted("…"))
+		out = append(out, tuistyle.StatusMuted("  …"))
+	}
+	nameW := width - 2
+	if nameW < 1 {
+		nameW = 1
 	}
 	for i := start; i < end; i++ {
 		name := rows[i].Move.DisplayName
 		if name == "" {
 			name = output.TitleFromSlug(rows[i].Move.Slug)
 		}
-		label := truncate(name, width)
+		label := "  " + truncate(name, nameW)
 		if i == idx {
 			out = append(out, tableFocusBand(label, width))
 		} else {
@@ -938,14 +942,18 @@ func moveDetailSideList(rows []domain.LevelUpMove, idx, width int) []string {
 		}
 	}
 	if end < len(rows) {
-		out = append(out, tuistyle.StatusMuted("…"))
+		out = append(out, tuistyle.StatusMuted("  …"))
 	}
 	return out
 }
 
+// moveDetailSepW is display width of " │ " (gap + rule + gap).
+const moveDetailSepW = 3
+
 func joinMoveDetailColumns(left, right []string, bodyW, rightW int) []string {
-	// Same vertical rule as browse combined frame / compare columns.
-	sep := lipgloss.NewStyle().Foreground(tuistyle.BorderColor()).Render("│")
+	// Same vertical rule as browse combined frame / compare columns, with gaps.
+	rule := lipgloss.NewStyle().Foreground(tuistyle.BorderColor()).Render("│")
+	sep := " " + rule + " "
 	leftW := bodyW - rightW - textwidth.Width(sep)
 	if leftW < 12 {
 		leftW = 12
@@ -963,7 +971,7 @@ func joinMoveDetailColumns(left, right []string, bodyW, rightW int) []string {
 		if i < len(right) {
 			r = right[i]
 		}
-		out = append(out, textwidth.PadRight(l, leftW)+sep+r)
+		out = append(out, textwidth.PadRight(textwidth.Truncate(l, leftW), leftW)+sep+r)
 	}
 	return out
 }

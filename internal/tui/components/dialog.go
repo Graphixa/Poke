@@ -54,6 +54,13 @@ func SpriteSizeCue(width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, mutedSty().Render(msg))
 }
 
+// dossierContentPad is the card inset for the section chip row (chip box edge).
+const dossierContentPad = 2
+
+// switcherChipHPad matches switcherChip horizontal pad (Padding(0,1) / " "+label).
+// Body/sticky/hint use dossierContentPad+switcherChipHPad so text shares the label column.
+const switcherChipHPad = 1
+
 // DialogGeom is the dossier frame geometry used by both render and key handling.
 type DialogGeom struct {
 	BodyH  int
@@ -75,9 +82,13 @@ func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 	if frameH < 8 {
 		frameH = termH
 	}
-	innerW := termW - 4
+	innerW := termW - 2 - 2*dossierContentPad // borders + chip-row inset
 	if innerW < 20 {
 		innerW = 20
+	}
+	bodyW := innerW - switcherChipHPad // body text under chip labels, not chip box
+	if bodyW < 1 {
+		bodyW = 1
 	}
 	// border(2) + top pad(1) + section header + divider; no bottom pad so
 	// PositionHint can sit flush on the inner bottom edge.
@@ -85,7 +96,7 @@ func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 	if h < 1 {
 		h = 1
 	}
-	return DialogGeom{BodyH: h, BodyW: innerW, InnerW: innerW}
+	return DialogGeom{BodyH: h, BodyW: bodyW, InnerW: innerW}
 }
 
 // DossierChrome is stationary chrome around the scroll body (not in the border title).
@@ -135,8 +146,14 @@ func DossierFrameEx(title string, section int, sectionLabels, bodyLines []string
 func renderDossierInner(section int, labels, bodyLines []string, bodyOff int, geom DialogGeom, frameH int, chrome DossierChrome) string {
 	_ = frameH
 	innerW := geom.InnerW
-	wrapRow := func(row string) string {
-		return " " + textwidth.PadRight(textwidth.Truncate(row, innerW), innerW) + " "
+	bodyW := geom.BodyW
+	chipPad := strings.Repeat(" ", dossierContentPad)
+	bodyPad := strings.Repeat(" ", dossierContentPad+switcherChipHPad)
+	wrapChip := func(row string) string {
+		return chipPad + textwidth.PadRight(textwidth.Truncate(row, innerW), innerW) + chipPad
+	}
+	wrapBody := func(row string) string {
+		return bodyPad + textwidth.PadRight(textwidth.Truncate(row, bodyW), bodyW) + chipPad
 	}
 	reserve := chromeBodyReserve(chrome)
 	sec := lipgloss.NewStyle().Foreground(style.SecondaryColor())
@@ -149,22 +166,22 @@ func renderDossierInner(section int, labels, bodyLines []string, bodyOff int, ge
 	divider := lipgloss.NewStyle().
 		Foreground(style.BorderColor()).
 		Render(strings.Repeat("─", maxInt(1, innerW)))
-	lines := []string{wrapRow(header), wrapRow(divider)}
+	lines := []string{wrapChip(header), wrapChip(divider)}
 	for _, row := range chrome.ContextLines {
-		lines = append(lines, wrapRow(sec.Render(row)))
+		lines = append(lines, wrapBody(sec.Render(row)))
 	}
 	if len(chrome.ContextLines) > 0 {
-		lines = append(lines, wrapRow(""))
+		lines = append(lines, wrapBody(""))
 	}
 	for _, row := range chrome.StickyLines {
-		lines = append(lines, wrapRow(row))
+		lines = append(lines, wrapBody(row))
 	}
-	body := clipLines(bodyLines, bodyOff, scrollH, innerW)
+	body := clipLines(bodyLines, bodyOff, scrollH, bodyW)
 	for _, line := range strings.Split(body, "\n") {
-		lines = append(lines, wrapRow(line))
+		lines = append(lines, wrapBody(line))
 	}
 	if chrome.PositionHint != "" {
-		lines = append(lines, wrapRow(muted.Render(chrome.PositionHint)))
+		lines = append(lines, wrapBody(muted.Render(chrome.PositionHint)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -182,6 +199,7 @@ func chromeBodyReserve(chrome DossierChrome) int {
 }
 
 // dialogSectionHeader is a full · switcher when it fits, else compact ‹ n/N Label ›.
+// Left-aligned so body content shares the same column as the first chip.
 func dialogSectionHeader(active int, labels []string, width int) string {
 	if len(labels) == 0 {
 		return strings.Repeat(" ", width)
@@ -195,11 +213,11 @@ func dialogSectionHeader(active int, labels []string, width int) string {
 	}
 	full := strings.Join(parts, mutedSty().Render("·"))
 	if lipgloss.Width(full) <= width {
-		return lipgloss.PlaceHorizontal(width, lipgloss.Center, full)
+		return lipgloss.PlaceHorizontal(width, lipgloss.Left, full)
 	}
 	pager := fmt.Sprintf("‹  %d/%d  %s  ›", active+1, len(labels), labels[active])
 	pager = textwidth.Truncate(pager, width)
-	return lipgloss.PlaceHorizontal(width, lipgloss.Center, boldSty().Render(pager))
+	return lipgloss.PlaceHorizontal(width, lipgloss.Left, boldSty().Render(pager))
 }
 
 func stampDialogTitle(card, title string, width int, topRight string) string {

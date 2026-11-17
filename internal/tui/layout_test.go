@@ -329,6 +329,41 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 	}
 }
 
+func TestDossierBodySharesSectionInset(t *testing.T) {
+	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
+	out := stripANSI(components.DossierFrame(
+		"Venusaur #003",
+		3,
+		labels,
+		[]string{"Move List"},
+		0,
+		120,
+		40,
+		"",
+	))
+	var chipLine, bodyLine string
+	for _, line := range strings.Split(out, "\n") {
+		if chipLine == "" && strings.Contains(line, "Overview") && strings.Contains(line, "Moves") {
+			chipLine = line
+		}
+		if bodyLine == "" && strings.Contains(line, "Move List") {
+			bodyLine = line
+		}
+	}
+	if chipLine == "" || bodyLine == "" {
+		t.Fatalf("missing chip/body lines:\n%s", out)
+	}
+	chipCol := strings.Index(chipLine, "Overview")
+	bodyCol := strings.Index(bodyLine, "Move List")
+	// Body shares the chip *label* column (inside chip H-pad), not the chip box edge.
+	if bodyCol < 3 {
+		t.Fatalf("body should use chip-label inset, Move List at col %d in %q", bodyCol, bodyLine)
+	}
+	if chipCol != bodyCol {
+		t.Fatalf("body should line up under chip labels: Overview@%d Move List@%d\nchip: %q\nbody: %q", chipCol, bodyCol, chipLine, bodyLine)
+	}
+}
+
 func TestDialogNarrowUsesCompactPager(t *testing.T) {
 	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
 	out := stripANSI(components.DossierFrame(
