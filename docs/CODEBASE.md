@@ -82,7 +82,7 @@ Target import rules. `app` is allowed to assemble services and translate progres
 
 ### 2. Dataset bootstrap
 
-1. Triggered when `!cache.Service.HasActiveDataset()` on browse, or `poke update`.
+1. Triggered when `!cache.Service.HasActiveDataset()` on browse, or `poke refresh`.
 2. App chooses TUI (`tui/bootstrap.Run`) if stderr is a terminal, else throttled CLI lines (`formatBootstrapProgress`).
 3. `Service.BootstrapDataset` is single-flight (`group.Do("dataset-bootstrap")`).
 4. Stages (`cache.DatasetStage`): `index` → parallel `records` (pokemon+species+encounters) → `evolution` → `moves` → validate → write aggregates → `dataset` activate.
@@ -394,7 +394,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `artwork_sync.go`
 
-- Selective official-artwork sync for `poke update`.
+- Selective official-artwork sync for `poke refresh`.
 
 #### `asset.go` / `sprites.go` / `sprite_meta.go` / `paths.go`
 

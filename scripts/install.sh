@@ -279,5 +279,6 @@ esac
 echo ""
 echo "${GREEN}You can now use 'poke' (or 'pokedex'):${NC}"
 echo "  ${BLUE}poke --help${NC}"
+echo "  ${BLUE}poke refresh${NC}"
 echo "  ${BLUE}poke update${NC}"
 echo ""

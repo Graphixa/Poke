@@ -72,7 +72,7 @@ func TestUpdateDataOnlyNoNativeCache(t *testing.T) {
 		stdout: &stdout,
 		stderr: &stderr,
 	}
-	if err := cmds.Update(context.Background()); err != nil {
+	if err := cmds.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(stderr.String(), "Building image cache") {

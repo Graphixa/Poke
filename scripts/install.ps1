@@ -270,5 +270,6 @@ if ($PathEntries -contains $InstallDir) {
 Write-Host ""
 Write-Host "You can now use 'poke' (or 'pokedex'):" -ForegroundColor Green
 Write-Host "  poke --help" -ForegroundColor Blue
+Write-Host "  poke refresh" -ForegroundColor Blue
 Write-Host "  poke update" -ForegroundColor Blue
 Write-Host ""

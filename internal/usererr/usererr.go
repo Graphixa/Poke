@@ -56,8 +56,8 @@ func classify(err error) classification {
 	if errors.As(err, &offline) {
 		return classification{
 			format: offline.Error(),
-			hint:   "Connect to the internet and run poke update, then retry.",
-			tab:    "Offline with empty cache — run poke update while online.",
+			hint:   "Connect to the internet and run poke refresh, then retry.",
+			tab:    "Offline with empty cache — run poke refresh while online.",
 		}
 	}
 
@@ -76,11 +76,11 @@ func classify(err error) classification {
 		}
 	}
 
-	offlineTab := "Unavailable offline — not in cache. Connect and reopen, or run poke update."
+	offlineTab := "Unavailable offline — not in cache. Connect and reopen, or run poke refresh."
 	if errors.Is(err, pokeapi.ErrOffline) {
 		return classification{
 			format: "Network unavailable.",
-			hint:   "Use warm cache offline, or reconnect and run poke update.",
+			hint:   "Use warm cache offline, or reconnect and run poke refresh.",
 			tab:    offlineTab,
 		}
 	}
@@ -94,15 +94,15 @@ func classify(err error) classification {
 	if errors.Is(err, cache.ErrEmpty) {
 		return classification{
 			format: cache.ErrEmpty.Error(),
-			hint:   "Run poke update while online to bootstrap the cache.",
+			hint:   "Run poke refresh while online to bootstrap the cache.",
 		}
 	}
 
 	if errors.Is(err, cache.ErrCorrupt) {
 		return classification{
 			format: "Cached data was corrupt and has been quarantined.",
-			hint:   "Run poke update to rebuild, or poke cache clear then poke update.",
-			tab:    "Corrupt cache entry quarantined — run poke update to rebuild.",
+			hint:   "Run poke refresh to rebuild, or poke cache clear then poke refresh.",
+			tab:    "Corrupt cache entry quarantined — run poke refresh to rebuild.",
 		}
 	}
 

@@ -1,6 +1,6 @@
 module github.com/Graphixa/Pokedex
 
-go 1.26
+go 1.26.0
 
 require (
 	charm.land/bubbles/v2 v2.2.0
@@ -13,6 +13,7 @@ require (
 	github.com/ploMP4/chafa-go v0.5.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.36.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/term v0.40.0
 	gopkg.in/yaml.v3 v3.0.1
 )

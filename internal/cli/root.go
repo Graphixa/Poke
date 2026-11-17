@@ -35,8 +35,10 @@ type Options struct {
 	Getenv         func(string) string
 	App            AppHandler
 	Cache          CacheCommands
+	Updater        Updater
 	Stdout         io.Writer
 	Stderr         io.Writer
+	Stdin          io.Reader
 	// OnDebug is invoked when --debug is set. path may be empty for the default log file.
 	OnDebug func(path string) error
 }
@@ -44,7 +46,16 @@ type Options struct {
 // CacheCommands handles cache maintenance subcommands.
 type CacheCommands interface {
 	Clear() error
-	Update(context.Context) error
+	Refresh(context.Context) error
+}
+
+// Updater installs poke binary updates from GitHub Releases.
+type Updater interface {
+	Check(ctx context.Context) (current, latest string, needsUpdate bool, err error)
+	ApplyLatest(ctx context.Context) error
+	ApplyVersion(ctx context.Context, version string) error
+	RecordCheck(lastChecked, nextCheck string) error
+	CheckIntervalHours() int
 }
 
 func NewRoot(options Options) *cobra.Command {
@@ -110,6 +121,7 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.AddCommand(newVersionCommand(options.Stdout))
 	cmd.AddCommand(newConfigCommand(options))
 	cmd.AddCommand(newCacheCommand(options))
+	cmd.AddCommand(newRefreshCommand(options))
 	cmd.AddCommand(newUpdateCommand(options))
 	cmd.AddCommand(newSearchCommand(options))
 	cmd.AddCommand(newRandomCommand(options))
@@ -239,19 +251,44 @@ func newCacheCommand(options Options) *cobra.Command {
 	return parent
 }
 
-func newUpdateCommand(options Options) *cobra.Command {
+func newRefreshCommand(options Options) *cobra.Command {
 	return &cobra.Command{
-		Use:   "update",
-		Short: "Refresh index and sync official artwork",
-		Long:  "Refreshes the species index and type enrichment, then downloads new or changed official artwork into the app cache. Native Kitty/iTerm/Sixel frame caches are built in the background while browsing, not during update.",
+		Use:   "refresh",
+		Short: "Refresh local dataset and sync official artwork",
+		Long:  "Rebuilds the species dataset snapshot and downloads new or changed official artwork into the app cache. Native Kitty/iTerm/Sixel frame caches are built in the background while browsing, not during refresh.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if options.Cache == nil {
-				return fmt.Errorf("poke update is unavailable")
+				return fmt.Errorf("poke refresh is unavailable")
 			}
-			return options.Cache.Update(cmd.Context())
+			return options.Cache.Refresh(cmd.Context())
 		},
 	}
+}
+
+func newUpdateCommand(options Options) *cobra.Command {
+	var checkOnly, autoYes bool
+	var targetVersion string
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update poke to the latest release",
+		Long:  "Checks GitHub Releases for a newer poke binary, verifies checksums, and replaces the installed executable.\n\nUse --check to inspect only, -y to skip confirmation, or --version for a specific release.",
+		Example: `  poke update
+  poke update --check
+  poke update -y
+  poke update --version 1.2.3`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if options.Updater == nil {
+				return fmt.Errorf("poke update is unavailable")
+			}
+			return runUpdateCommand(cmd.Context(), options, checkOnly, autoYes, targetVersion)
+		},
+	}
+	cmd.Flags().BoolVarP(&checkOnly, "check", "c", false, "Check only; do not install")
+	cmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "Skip confirmation prompt")
+	cmd.Flags().StringVar(&targetVersion, "version", "", "Update to a specific version (e.g. 1.2.3)")
+	return cmd
 }
 
 func newThemeCommand(options Options) *cobra.Command {

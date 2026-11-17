@@ -88,7 +88,7 @@ func (c cacheCommands) Clear() error {
 	return nil
 }
 
-func (c cacheCommands) Update(ctx context.Context) error {
+func (c cacheCommands) Refresh(ctx context.Context) error {
 	svc, err := c.services()
 	if err != nil {
 		return err

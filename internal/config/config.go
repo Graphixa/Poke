@@ -45,6 +45,16 @@ type Config struct {
 	Theme   Theme   `yaml:"theme"`
 	Network Network `yaml:"network"`
 	Setup   Setup   `yaml:"setup"`
+	// Update uses FontGet-compatible PascalCase keys.
+	Update Update `yaml:"Update"`
+}
+
+// Update controls binary self-update checks (not dataset refresh).
+type Update struct {
+	CheckForUpdates     bool   `yaml:"CheckForUpdates"`
+	UpdateCheckInterval int    `yaml:"UpdateCheckInterval"` // hours
+	LastUpdateCheck     string `yaml:"LastUpdateCheck"`     // RFC3339 UTC
+	NextUpdateCheck     string `yaml:"NextUpdateCheck"`     // RFC3339 UTC; suppress prompts until
 }
 
 // Setup tracks first-run wizard state and official-artwork consent.
@@ -125,6 +135,12 @@ func Default() Config {
 			ArtworkConsent: ArtworkConsentNone,
 			ArtworkMode:    ArtworkModeOff,
 		},
+		Update: Update{
+			CheckForUpdates:     false,
+			UpdateCheckInterval: 24,
+			LastUpdateCheck:     "",
+			NextUpdateCheck:     "",
+		},
 	}
 }
 
@@ -181,6 +197,9 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Network.UserAgent) == "" {
 		problems = append(problems, "network.user_agent must not be empty")
+	}
+	if c.Update.UpdateCheckInterval < 0 {
+		problems = append(problems, "Update.UpdateCheckInterval must not be negative")
 	}
 	if len(problems) > 0 {
 		return errors.New(strings.Join(problems, "; "))
@@ -434,6 +453,21 @@ func SetThemeName(path, name string) error {
 		return err
 	}
 	cfg.Theme.Name = name
+	return Save(path, cfg)
+}
+
+// RecordUpdateCheck writes LastUpdateCheck and optionally NextUpdateCheck.
+func RecordUpdateCheck(path, lastChecked, nextCheck string) error {
+	cfg, _, err := Load(path)
+	if err != nil {
+		return err
+	}
+	if lastChecked != "" {
+		cfg.Update.LastUpdateCheck = lastChecked
+	}
+	if nextCheck != "" {
+		cfg.Update.NextUpdateCheck = nextCheck
+	}
 	return Save(path, cfg)
 }
 

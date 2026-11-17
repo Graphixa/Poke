@@ -18,10 +18,10 @@ func TestFormatRemediation(t *testing.T) {
 		wantHint string
 	}{
 		{&app.NotFoundError{Query: "missingno"}, "Pokémon not found: missingno", "poke search"},
-		{&cache.OfflineError{Err: pokeapi.ErrOffline}, "cache is empty", "poke update"},
+		{&cache.OfflineError{Err: pokeapi.ErrOffline}, "cache is empty", "poke refresh"},
 		{&pokeapi.RateLimitError{RetryAfter: 2 * time.Second}, "rate limited", "Wait"},
-		{cache.ErrEmpty, "empty", "poke update"},
-		{cache.ErrCorrupt, "corrupt", "poke update"},
+		{cache.ErrEmpty, "empty", "poke refresh"},
+		{cache.ErrCorrupt, "corrupt", "poke refresh"},
 	}
 	for _, tc := range cases {
 		got := usererr.Format(tc.err)

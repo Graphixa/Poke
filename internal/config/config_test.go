@@ -34,8 +34,32 @@ func TestDefault(t *testing.T) {
 	if cfg.EffectiveSixelColors() != DefaultSixelColors {
 		t.Fatalf("effective sixel_colors = %d want %d", cfg.EffectiveSixelColors(), DefaultSixelColors)
 	}
+	if cfg.Update.CheckForUpdates {
+		t.Fatal("Update.CheckForUpdates default want false")
+	}
+	if cfg.Update.UpdateCheckInterval != 24 {
+		t.Fatalf("Update.UpdateCheckInterval = %d want 24", cfg.Update.UpdateCheckInterval)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config is invalid: %v", err)
+	}
+}
+
+func TestLoadUpdateSectionPascalCase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte("Update:\n  CheckForUpdates: true\n  UpdateCheckInterval: 12\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Update.CheckForUpdates {
+		t.Fatal("CheckForUpdates want true")
+	}
+	if cfg.Update.UpdateCheckInterval != 12 {
+		t.Fatalf("interval = %d", cfg.Update.UpdateCheckInterval)
 	}
 }
 

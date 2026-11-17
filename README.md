@@ -62,6 +62,9 @@ Scoop is not supported (out of scope for v1).
 poke
 
 # Or bootstrap metadata + artwork explicitly first
+poke refresh
+
+# Update the poke binary from GitHub Releases
 poke update
 
 # Open browse with a selection / search prefill
@@ -143,12 +146,12 @@ Official artwork downloads in the background after the TUI opens (and can resume
 | Situation | Behaviour |
 | --- | --- |
 | Dataset present | TUI starts immediately; no metadata network required |
-| Empty cache + online | First run / `poke update` builds a complete local dataset (blocking), then activates it atomically before browse |
-| Empty cache + offline | Hard failure with a clear remediation (`poke update` while online) |
+| Empty cache + online | First run / `poke refresh` builds a complete local dataset (blocking), then activates it atomically before browse |
+| Empty cache + offline | Hard failure with a clear remediation (`poke refresh` while online) |
 | Failed update | Previous snapshot stays active |
 | Artwork still downloading | List and text stay usable; selected missing art is prioritised |
 
-`poke update` rebuilds a new dataset snapshot beside the active one, switches `active.json` only if the snapshot is complete, and syncs official artwork.
+`poke refresh` rebuilds a new dataset snapshot beside the active one, switches `active.json` only if the snapshot is complete, and syncs official artwork. `poke update` installs a newer poke binary from GitHub Releases (checksum-verified).
 
 ### Renderer fallback
 
@@ -164,8 +167,8 @@ Braille and ASCII modes are no longer in the production path; old config values 
 
 | Problem | What to try |
 | --- | --- |
-| Empty cache / offline error | Connect to the network and run `poke update` |
-| Stale or odd data | `poke update`, or `poke cache clear` then `poke update` |
+| Empty cache / offline error | Connect to the network and run `poke refresh` |
+| Stale or odd data | `poke refresh`, or `poke cache clear` then `poke refresh` |
 | Corrupt cache entry | App quarantines bad files under `corrupt/` and rebuilds; clear cache if needed |
 | Rate limited (HTTP 429) | Wait and retry; client backs off automatically |
 | Not found (inline flags) | Check spelling/slug/number; inline mode exits non-zero |
@@ -175,7 +178,7 @@ Braille and ASCII modes are no longer in the production path; old config values 
 
 ## Screenshots
 
-Representative browse screenshots are not checked into the repository yet. Until they are added, use `tui-example.md` for the canonical wireframe of browse mode, or run `poke` locally after `poke update`.
+Representative browse screenshots are not checked into the repository yet. Until they are added, use `tui-example.md` for the canonical wireframe of browse mode, or run `poke` locally after `poke refresh`.
 
 ## Development
 

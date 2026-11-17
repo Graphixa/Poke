@@ -77,19 +77,25 @@ func Execute(ctx context.Context, runtime Runtime) error {
 		app = appHandler
 	}
 
-	// Apply configured theme before any TUI runs.
+	updater := releaseUpdater{configPath: paths.ConfigFile}
+	// Apply configured theme before any TUI runs; also seed updater interval + startup check.
 	if svc, err := services(); err == nil {
 		ApplyTheme(paths, svc.Config)
+		updater.interval = svc.Config.Update.UpdateCheckInterval
+		maybeStartupUpdateCheck(paths, svc.Config, runtime.Stderr)
 	}
 
+	stdin := io.Reader(os.Stdin)
 	root := cli.NewRoot(cli.Options{
 		InvocationPath: runtime.InvocationPath,
 		Paths:          paths,
 		Getenv:         runtime.Getenv,
 		App:            app,
 		Cache:          cacheCmds,
+		Updater:        updater,
 		Stdout:         runtime.Stdout,
 		Stderr:         runtime.Stderr,
+		Stdin:          stdin,
 		OnDebug: func(path string) error {
 			resolved, err := debuglog.Enable(path)
 			if err != nil {

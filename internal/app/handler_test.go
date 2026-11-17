@@ -28,7 +28,7 @@ func (s stubCacheCommands) Clear() error {
 	return nil
 }
 
-func (s stubCacheCommands) Update(ctx context.Context) error {
+func (s stubCacheCommands) Refresh(ctx context.Context) error {
 	if s.update != nil {
 		return s.update(ctx)
 	}
