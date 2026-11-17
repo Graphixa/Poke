@@ -33,7 +33,7 @@ func isBirthdayQuery(q string) bool {
 
 func (m Model) handleBirthdayKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q":
+	case "esc", "q", "backspace", "ctrl+h":
 		m.showBirthday = false
 		return m, nil
 	}

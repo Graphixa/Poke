@@ -289,6 +289,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.setBrowseView(m.browseView.Next())
 	}
 
+	// Search boxes eat Backspace until the query is empty; then it matches Esc.
+	if backspaceKey(msg.String()) && m.queryValue() == "" {
+		return m.dismissBrowse()
+	}
+
 	if key.Matches(msg, m.keys.Clear) {
 		if m.layout().TooSmall {
 			return m.requestQuit()
@@ -297,12 +302,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.clearQuery()
 			return m, m.syncSelectionLoads()
 		}
-		if m.viewOptions != (viewOptions{}) {
-			m.viewOptions = viewOptions{}
-			m.refilter()
-			return m, m.syncSelectionLoads()
-		}
-		return m.requestQuit()
+		return m.dismissBrowse()
 	}
 
 	if key.Matches(msg, m.keys.Up) {
@@ -351,7 +351,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.moveDetailOpen {
-		if key.Matches(msg, m.keys.Clear) || msg.String() == "backspace" || msg.String() == "ctrl+h" {
+		if key.Matches(msg, m.keys.Clear) || backspaceKey(msg.String()) {
 			m.exitMoveDetail()
 			m.syncDialogViewport()
 			m.ensureMoveFocusVisible()
@@ -370,7 +370,7 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if key.Matches(msg, m.keys.Clear) {
+	if key.Matches(msg, m.keys.Clear) || backspaceKey(msg.String()) {
 		m.showDialog = false
 		m.gamePickerOpen = false
 		m.formPickerOpen = false

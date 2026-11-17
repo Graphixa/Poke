@@ -138,11 +138,13 @@ func (m *Model) handleFormPickerKey(msg string, runes []rune) {
 		if m.formPickerCursor < len(m.formPickerItems)-1 {
 			m.formPickerCursor++
 		}
-	case "backspace":
+	case "backspace", "ctrl+h":
 		if m.formPickerFilter != "" {
 			r := []rune(m.formPickerFilter)
 			m.formPickerFilter = string(r[:len(r)-1])
 			m.refreshFormPickerItems()
+		} else {
+			m.closeFormPicker(false)
 		}
 	default:
 		if len(runes) == 1 {
@@ -179,7 +181,7 @@ func (m Model) methodPickerLines(width int) []string {
 
 func (m *Model) handleMethodPickerKey(msg string) {
 	switch msg {
-	case "esc":
+	case "esc", "backspace", "ctrl+h":
 		m.closeMethodPicker(false)
 	case "enter":
 		m.closeMethodPicker(true)

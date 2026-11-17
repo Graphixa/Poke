@@ -573,15 +573,32 @@ func (m *Model) closeFeature() {
 	m.markNativeOverlayDirty()
 }
 
+// dismissBrowse clears filters, then a compare pin, then quits. Query is already empty.
+func (m Model) dismissBrowse() (tea.Model, tea.Cmd) {
+	if m.layout().TooSmall {
+		return m.requestQuit()
+	}
+	if m.viewOptions != (viewOptions{}) {
+		m.viewOptions = viewOptions{}
+		m.refilter()
+		return m, m.syncSelectionLoads()
+	}
+	if m.comparePin != nil {
+		m.comparePin = nil
+		return m, nil
+	}
+	return m.requestQuit()
+}
+
 func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	if m.featureError != "" {
-		if k == "esc" || k == "enter" {
+		if k == "esc" || k == "enter" || backspaceKey(k) {
 			m.closeFeature()
 		}
 		return m, nil
 	}
-	if k == "esc" {
+	if k == "esc" || backspaceKey(k) {
 		m.closeFeature()
 		return m, nil
 	}
@@ -618,8 +635,6 @@ func (m Model) handleFeatureKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.filterStep < 2 {
 			m.filterStep++
 		}
-	case "backspace":
-		m.draftOptions = viewOptions{}
 	case " ", "space":
 		return m.applyFilterDraft()
 	case "enter":

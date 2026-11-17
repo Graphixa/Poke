@@ -92,11 +92,14 @@ func (m *Model) handleGamePickerKey(msg string, runes []rune) bool {
 			m.gamePickerCursor++
 		}
 		return true
-	case "backspace":
+	case "backspace", "ctrl+h":
 		if m.gamePickerFilter != "" {
 			r := []rune(m.gamePickerFilter)
 			m.gamePickerFilter = string(r[:len(r)-1])
 			m.filterGamePicker()
+		} else {
+			m.dialogCatalogErr = ""
+			m.closeGamePicker(false)
 		}
 		return true
 	}

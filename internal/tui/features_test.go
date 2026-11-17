@@ -81,11 +81,8 @@ func TestViewOptionsApplyCancelAndIntersectSearch(t *testing.T) {
 	}
 	m = featureKey(m, tea.KeyF2)
 	m = featureKey(m, tea.KeyBackspace)
-	m = featureKey(m, tea.KeyEnter) // still Collection after reset → Type
-	m = featureKey(m, tea.KeyEnter) // → Sort
-	m = featureKey(m, tea.KeyEnter) // apply on last step
-	if m.viewOptions != (viewOptions{}) || m.queryValue() != "char" {
-		t.Fatal("reset must preserve search")
+	if m.showFilters || m.viewOptions.Type != 2 || m.queryValue() != "char" {
+		t.Fatal("backspace must close filter without clearing search")
 	}
 }
 
@@ -151,6 +148,63 @@ func TestFilterWizardChromeAndStepNav(t *testing.T) {
 	m = featureKey(m, tea.KeyEscape)
 	if m.showFilters || m.viewOptions.FavouritesOnly {
 		t.Fatal("esc must discard draft")
+	}
+}
+
+func TestEscClearsPinAndBackspaceLeavesScreens(t *testing.T) {
+	m := featureModel()
+	m = featureKey(m, tea.KeyF3)
+	if m.escHelpDesc() != "clear" {
+		t.Fatal("pinned browse esc label")
+	}
+	m = featureKey(m, tea.KeyEscape)
+	if m.comparePin != nil || m.quitting {
+		t.Fatal("esc must clear compare pin before quit")
+	}
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyDown)
+	m = featureKey(m, tea.KeyF3)
+	m = featureKey(m, tea.KeyBackspace)
+	if m.showCompare || m.comparePin == nil {
+		t.Fatal("backspace must close compare and keep the pin")
+	}
+	m.showDialog = true
+	m = featureKey(m, tea.KeyBackspace)
+	if m.showDialog {
+		t.Fatal("backspace must close dossier")
+	}
+	m.gamePickerOpen = true
+	m.gamePickerFilter = "x"
+	m.handleGamePickerKey("backspace", nil)
+	if !m.gamePickerOpen || m.gamePickerFilter != "" {
+		t.Fatal("backspace must edit a non-empty game filter")
+	}
+	m.handleGamePickerKey("backspace", nil)
+	if m.gamePickerOpen {
+		t.Fatal("empty game filter backspace must close the picker")
+	}
+	m.formPickerOpen = true
+	m.handleFormPickerKey("backspace", nil)
+	if m.formPickerOpen {
+		t.Fatal("empty form filter backspace must close the picker")
+	}
+	m.methodPickerOpen = true
+	m.handleMethodPickerKey("backspace")
+	if m.methodPickerOpen {
+		t.Fatal("backspace must close the method picker")
+	}
+	m.search.SetValue("c")
+	m = featureKey(m, tea.KeyBackspace)
+	if m.queryValue() != "" || m.quitting {
+		t.Fatal("backspace must delete the query before leaving browse")
+	}
+	m = featureKey(m, tea.KeyBackspace)
+	if m.comparePin != nil || m.quitting {
+		t.Fatal("empty backspace must clear the pin")
+	}
+	m = featureKey(m, tea.KeyBackspace)
+	if !m.quitting {
+		t.Fatal("empty backspace with nothing left must quit")
 	}
 }
 

@@ -151,9 +151,13 @@ func (k keyMap) ShortHelp() []key.Binding {
 	}
 }
 
-// escHelpDesc is "clear" when esc will wipe search/filters, else "quit".
+func backspaceKey(s string) bool {
+	return s == "backspace" || s == "ctrl+h"
+}
+
+// escHelpDesc is "clear" when esc will wipe search, filters, or a compare pin, else "quit".
 func (m Model) escHelpDesc() string {
-	if m.queryValue() != "" || m.viewOptions != (viewOptions{}) {
+	if m.queryValue() != "" || m.viewOptions != (viewOptions{}) || m.comparePin != nil {
 		return "clear"
 	}
 	return "quit"
