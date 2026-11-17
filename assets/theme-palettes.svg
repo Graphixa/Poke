@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="180" viewBox="0 0 1020 180" role="img" aria-labelledby="title desc">
+<title id="title">Poke theme palettes</title>
+<desc id="desc">Five bundled palettes: Dracula, Pokédex, Nord, Catppuccin and Solarized Light. Each card shows its primary, secondary, components, warning and success colours on its base colour. Palette swatches, not app screenshots.</desc>
+<!-- Colours sourced from internal/theme/themes/*.yaml. -->
+<g transform="translate(4 4)"><rect width="196" height="172" rx="14" fill="#44475a"/><rect x="16" y="18" width="28" height="4" rx="2" fill="#bd93f9"/>
+<text x="16" y="56" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="18" font-weight="600" fill="#f8f8f2">Dracula</text>
+<text x="16" y="80" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="12" fill="#f8f8f2">Default palette</text>
+<rect x="16" y="111" width="27" height="34" rx="6" fill="#bd93f9"/>
+<rect x="49" y="111" width="27" height="34" rx="6" fill="#8be9fd"/>
+<rect x="82" y="111" width="27" height="34" rx="6" fill="#f8f8f2"/>
+<rect x="115" y="111" width="27" height="34" rx="6" fill="#f1fa8c"/>
+<rect x="148" y="111" width="27" height="34" rx="6" fill="#50fa7b"/>
+</g>
+<g transform="translate(208 4)"><rect width="196" height="172" rx="14" fill="#1B1E24"/><rect x="16" y="18" width="28" height="4" rx="2" fill="#ff4061"/>
+<text x="16" y="56" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="18" font-weight="600" fill="#EEF1F4">Pokédex</text>
+<text x="16" y="80" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="12" fill="#EEF1F4">Dark palette</text>
+<rect x="16" y="111" width="27" height="34" rx="6" fill="#ff4061"/>
+<rect x="49" y="111" width="27" height="34" rx="6" fill="#47bcff"/>
+<rect x="82" y="111" width="27" height="34" rx="6" fill="#EEF1F4"/>
+<rect x="115" y="111" width="27" height="34" rx="6" fill="#FFD143"/>
+<rect x="148" y="111" width="27" height="34" rx="6" fill="#47C97A"/>
+</g>
+<g transform="translate(412 4)"><rect width="196" height="172" rx="14" fill="#3b4252"/><rect x="16" y="18" width="28" height="4" rx="2" fill="#88c0d0"/>
+<text x="16" y="56" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="18" font-weight="600" fill="#eceff4">Nord</text>
+<text x="16" y="80" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="12" fill="#eceff4">Dark palette</text>
+<rect x="16" y="111" width="27" height="34" rx="6" fill="#88c0d0"/>
+<rect x="49" y="111" width="27" height="34" rx="6" fill="#81a1c1"/>
+<rect x="82" y="111" width="27" height="34" rx="6" fill="#eceff4"/>
+<rect x="115" y="111" width="27" height="34" rx="6" fill="#ebcb8b"/>
+<rect x="148" y="111" width="27" height="34" rx="6" fill="#a3be8c"/>
+</g>
+<g transform="translate(616 4)"><rect width="196" height="172" rx="14" fill="#313244"/><rect x="16" y="18" width="28" height="4" rx="2" fill="#cba6f7"/>
+<text x="16" y="56" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="18" font-weight="600" fill="#cdd6f4">Catppuccin</text>
+<text x="16" y="80" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="12" fill="#cdd6f4">Dark palette</text>
+<rect x="16" y="111" width="27" height="34" rx="6" fill="#cba6f7"/>
+<rect x="49" y="111" width="27" height="34" rx="6" fill="#94e2d5"/>
+<rect x="82" y="111" width="27" height="34" rx="6" fill="#cdd6f4"/>
+<rect x="115" y="111" width="27" height="34" rx="6" fill="#f9e2af"/>
+<rect x="148" y="111" width="27" height="34" rx="6" fill="#a6e3a1"/>
+</g>
+<g transform="translate(820 4)"><rect width="196" height="172" rx="14" fill="#eee8d5"/><rect x="16" y="18" width="28" height="4" rx="2" fill="#268bd2"/>
+<text x="16" y="56" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="18" font-weight="600" fill="#657b83">Solarized Light</text>
+<text x="16" y="80" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="12" fill="#657b83">Light palette</text>
+<rect x="16" y="111" width="27" height="34" rx="6" fill="#268bd2"/>
+<rect x="49" y="111" width="27" height="34" rx="6" fill="#2aa198"/>
+<rect x="82" y="111" width="27" height="34" rx="6" fill="#657b83"/>
+<rect x="115" y="111" width="27" height="34" rx="6" fill="#b58900"/>
+<rect x="148" y="111" width="27" height="34" rx="6" fill="#859900"/>
+</g>
+</svg>
