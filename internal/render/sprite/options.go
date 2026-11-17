@@ -49,15 +49,15 @@ func EffectiveSixelColors(n int) int {
 }
 
 // ChafaRenderVersion bumps when in-process chafa invocation args change.
-const ChafaRenderVersion = "lib-v1"
+const ChafaRenderVersion = "lib-v2" // HQ mosaic + 24 samples/cell (poke chafa H/D)
 
-// QualityProfile selects chafa conversion quality.
+// QualityProfile selects encode/resize quality tradeoffs.
 type QualityProfile string
 
 const (
-	// QualityInteractive uses MosaicFast for browse latency.
+	// QualityInteractive is the browse/cold path (chafa now uses full Mosaic too).
 	QualityInteractive QualityProfile = "interactive"
-	// QualityPrewarm uses full Mosaic quality for background warm.
+	// QualityPrewarm is the background warm path (may use a heavier resize scaler).
 	QualityPrewarm QualityProfile = "prewarm"
 )
 
@@ -76,7 +76,7 @@ type RenderOptions struct {
 	Label string
 	// ContentHash identifies the source image for caching.
 	ContentHash string
-	// Quality selects interactive vs prewarm chafa knobs (chafa renderer only).
+	// Quality selects interactive vs prewarm resize tradeoffs (chafa mosaic is always HQ).
 	Quality QualityProfile
 	// SixelColors is the sixel palette limit (64 | 128 | 256); zero uses 64.
 	SixelColors int

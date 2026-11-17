@@ -12,29 +12,13 @@ import (
 )
 
 type stubCacheCommands struct {
-	refresh     func(context.Context) error
-	clear       func() error
-	warmSprites func(context.Context) error
-	update      func(context.Context) error
-}
-
-func (s stubCacheCommands) Refresh(ctx context.Context) error {
-	if s.refresh != nil {
-		return s.refresh(ctx)
-	}
-	return nil
+	clear  func() error
+	update func(context.Context) error
 }
 
 func (s stubCacheCommands) Clear() error {
 	if s.clear != nil {
 		return s.clear()
-	}
-	return nil
-}
-
-func (s stubCacheCommands) WarmSprites(ctx context.Context) error {
-	if s.warmSprites != nil {
-		return s.warmSprites(ctx)
 	}
 	return nil
 }
@@ -47,7 +31,7 @@ func (s stubCacheCommands) Update(ctx context.Context) error {
 }
 
 func TestUpdateAndCacheCommands(t *testing.T) {
-	var refreshed, cleared int
+	var updated, cleared int
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	root := cli.NewRoot(cli.Options{
@@ -59,10 +43,8 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 		Stdout: stdout,
 		Stderr: stderr,
 		Cache: stubCacheCommands{
-			refresh:     func(context.Context) error { refreshed++; return nil },
-			clear:       func() error { cleared++; return nil },
-			warmSprites: func(context.Context) error { return nil },
-			update:      func(context.Context) error { refreshed++; return nil },
+			clear:  func() error { cleared++; return nil },
+			update: func(context.Context) error { updated++; return nil },
 		},
 	})
 
@@ -70,15 +52,7 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	root.SetArgs([]string{"cache", "refresh"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
 	root.SetArgs([]string{"cache", "clear"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	root.SetArgs([]string{"cache", "warm-sprites"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
@@ -86,8 +60,8 @@ func TestUpdateAndCacheCommands(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if refreshed != 2 || cleared != 1 {
-		t.Fatalf("refreshed=%d cleared=%d want update+refresh=2", refreshed, cleared)
+	if updated != 1 || cleared != 1 {
+		t.Fatalf("updated=%d cleared=%d want 1,1", updated, cleared)
 	}
 	if !strings.Contains(stdout.String(), "cache") {
 		t.Fatalf("stdout = %q", stdout.String())

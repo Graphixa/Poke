@@ -8,6 +8,7 @@ import (
 )
 
 // Validate checks an in-memory builder before aggregate files are written.
+// expected is the species/browse count. Pokemon may exceed that when varieties are stored.
 func Validate(b *Builder, expected int, browse []domain.BrowseEntry) error {
 	if b == nil {
 		return fmt.Errorf("dataset: nil builder")
@@ -15,30 +16,32 @@ func Validate(b *Builder, expected int, browse []domain.BrowseEntry) error {
 	if expected < 1 {
 		return fmt.Errorf("dataset: expected count %d", expected)
 	}
-	if len(b.Pokemon) != expected {
-		return fmt.Errorf("dataset: pokemon %d != expected %d", len(b.Pokemon), expected)
-	}
 	if len(b.Species) != expected {
 		return fmt.Errorf("dataset: species %d != expected %d", len(b.Species), expected)
 	}
-	if len(b.Encounters) != expected {
-		return fmt.Errorf("dataset: encounters %d != expected %d", len(b.Encounters), expected)
-	}
 	if len(browse) != expected {
 		return fmt.Errorf("dataset: browse %d != expected %d", len(browse), expected)
+	}
+	if len(b.Pokemon) < expected {
+		return fmt.Errorf("dataset: pokemon %d < expected %d", len(b.Pokemon), expected)
 	}
 	for _, entry := range browse {
 		if entry.ID < 1 {
 			return fmt.Errorf("dataset: browse entry has invalid id %d", entry.ID)
 		}
-		if _, ok := b.Pokemon[entry.ID]; !ok {
-			return fmt.Errorf("dataset: browse id %d missing pokemon", entry.ID)
-		}
-		if _, ok := b.Species[entry.ID]; !ok {
+		sp, ok := b.Species[entry.ID]
+		if !ok {
 			return fmt.Errorf("dataset: browse id %d missing species", entry.ID)
 		}
-		if _, ok := b.Encounters[entry.ID]; !ok {
-			return fmt.Errorf("dataset: browse id %d missing encounters key", entry.ID)
+		pokeID := sp.DefaultPokemonID
+		if pokeID == 0 {
+			pokeID = entry.ID
+		}
+		if _, ok := b.Pokemon[pokeID]; !ok {
+			return fmt.Errorf("dataset: browse id %d missing default pokemon %d", entry.ID, pokeID)
+		}
+		if _, ok := b.Encounters[pokeID]; !ok {
+			return fmt.Errorf("dataset: browse id %d missing encounters key %d", entry.ID, pokeID)
 		}
 	}
 	for id, p := range b.Pokemon {
@@ -56,6 +59,9 @@ func Validate(b *Builder, expected int, browse []domain.BrowseEntry) error {
 		for _, row := range rows {
 			if row.MoveID < 1 {
 				return fmt.Errorf("dataset: pokemon %d learnset has invalid move id", id)
+			}
+			if row.LearnMethod == "" {
+				return fmt.Errorf("dataset: pokemon %d learnset missing learn_method", id)
 			}
 			if _, ok := b.Moves[row.MoveID]; !ok {
 				return fmt.Errorf("dataset: pokemon %d learnset references missing move %d", id, row.MoveID)
@@ -82,12 +88,26 @@ func Validate(b *Builder, expected int, browse []domain.BrowseEntry) error {
 			return fmt.Errorf("dataset: learnset references missing pokemon %d", pokemonID)
 		}
 		sort.SliceStable(rows, func(i, j int) bool {
-			if rows[i].Level != rows[j].Level {
-				return rows[i].Level < rows[j].Level
+			if rows[i].VersionGroupID != rows[j].VersionGroupID {
+				return rows[i].VersionGroupID < rows[j].VersionGroupID
+			}
+			if rows[i].LearnMethod != rows[j].LearnMethod {
+				return rows[i].LearnMethod < rows[j].LearnMethod
+			}
+			if rows[i].LevelLearnedAt != rows[j].LevelLearnedAt {
+				return rows[i].LevelLearnedAt < rows[j].LevelLearnedAt
 			}
 			return rows[i].MoveID < rows[j].MoveID
 		})
 		b.Learnsets[pokemonID] = rows
+	}
+	for id, f := range b.Forms {
+		if id < 1 || f.ID < 1 {
+			return fmt.Errorf("dataset: invalid form id %d", id)
+		}
+		if _, ok := b.Pokemon[f.PokemonID]; !ok {
+			return fmt.Errorf("dataset: form %d missing pokemon %d", id, f.PokemonID)
+		}
 	}
 	return nil
 }

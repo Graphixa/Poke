@@ -37,20 +37,36 @@ const (
 	DialogStats
 	DialogEvolution
 	DialogMoves
-	DialogLocations
-	DialogPokedex
+	DialogEncounters
+	DialogDescriptions
 	DialogBiology
 	dialogSectionCount
 )
 
+// Legacy aliases (tests / older call sites).
+const (
+	DialogLocations = DialogEncounters
+	DialogPokedex   = DialogDescriptions
+)
+
 var dialogSectionLabels = [...]string{
-	DialogOverview:  "Overview",
-	DialogStats:     "Stats",
-	DialogEvolution: "Evolution",
-	DialogMoves:     "Moves",
-	DialogLocations: "Locations",
-	DialogPokedex:   "Pokédex",
-	DialogBiology:   "Biology",
+	DialogOverview:     "Overview",
+	DialogStats:        "Stats",
+	DialogEvolution:    "Evolution",
+	DialogMoves:        "Moves",
+	DialogEncounters:   "Encounters",
+	DialogDescriptions: "Descriptions",
+	DialogBiology:      "Biology",
+}
+
+// UsesGame is true for sections that show the Game control.
+func (s DialogSection) UsesGame() bool {
+	switch s {
+	case DialogMoves, DialogEncounters, DialogDescriptions:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s DialogSection) Label() string {

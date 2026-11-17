@@ -74,23 +74,6 @@ type updateProgress struct {
 
 type updateProgressFunc func(updateProgress)
 
-func (c cacheCommands) Refresh(ctx context.Context) error {
-	svc, err := c.services()
-	if err != nil {
-		return err
-	}
-	run := func(ctx context.Context, progress cache.DatasetProgressFunc) error {
-		return svc.Cache.RefreshDataset(ctx, progress)
-	}
-	if err := cacheDatasetProgress(ctx, c.stderr, run); err != nil {
-		return err
-	}
-	if c.stdout != nil {
-		fmt.Fprintln(c.stdout, "Cache update complete")
-	}
-	return nil
-}
-
 func (c cacheCommands) Clear() error {
 	svc, err := c.services()
 	if err != nil {
@@ -101,34 +84,6 @@ func (c cacheCommands) Clear() error {
 	}
 	if c.stdout != nil {
 		fmt.Fprintf(c.stdout, "Cleared cache at %s\n", svc.Cache.Path())
-	}
-	return nil
-}
-
-func (c cacheCommands) WarmSprites(ctx context.Context) error {
-	svc, err := c.services()
-	if err != nil {
-		return err
-	}
-	index, _, err := svc.Cache.EnsureIndex(ctx, nil)
-	if err != nil {
-		return err
-	}
-	progress := func(p cache.ArtworkSyncProgress) {
-		if c.stderr == nil || p.Total <= 0 {
-			return
-		}
-		if p.Done == p.Total || p.Done%25 == 0 {
-			fmt.Fprintf(c.stderr, "Downloading artwork %d/%d\n", p.Done, p.Total)
-		}
-	}
-	result, err := svc.Cache.SyncArtwork(ctx, index, progress)
-	if err != nil {
-		return err
-	}
-	if c.stdout != nil {
-		fmt.Fprintf(c.stdout, "Artwork sync complete: new=%d updated=%d unchanged=%d failed=%d\n",
-			result.New, result.Updated, result.Unchanged, result.Failed)
 	}
 	return nil
 }

@@ -11,9 +11,10 @@ import (
 	chafago "github.com/ploMP4/chafa-go"
 )
 
-// Samples per cell for early resize. Chafa's internal grain is 8×8; an 8×8
-// isotropic grid keeps octant/sextant detail while preserving 1:1 subject crops.
-const samplesPerCell = 8
+// Samples per cell for early resize. 24 beat 8 in poke chafa (variant H) for
+// glance-size clarity; hero size already had enough cells that denser sampling
+// was a wash vs fill/braille extras.
+const samplesPerCell = 24
 
 // Renderer produces Chafa mosaic (sextant/octant) ANSI frames for the TUI.
 type Renderer struct{}
@@ -28,10 +29,10 @@ func (Renderer) Supported(caps sprite.Capabilities) bool {
 
 // Render converts src into Chafa mosaic ANSI art.
 //
-// Speed path:
+// Path (poke chafa winners H/D):
 //  1. Composite transparency onto the theme background
-//  2. Early-resize with golang.org/x/image/draw to an octant-aligned pixel grid
-//  3. Convert with QualityMosaicFast (mosaic glyphs, interactive work factor)
+//  2. Early-resize to a dense isotropic sample grid (24×cell)
+//  3. Convert with QualityMosaic (work=1, DIN99D, median)
 func (r Renderer) Render(ctx context.Context, src image.Image, opts sprite.RenderOptions) (sprite.Frame, error) {
 	if err := ctx.Err(); err != nil {
 		return sprite.Frame{}, err
@@ -62,14 +63,6 @@ func (r Renderer) renderLib(ctx context.Context, src image.Image, opts sprite.Re
 	// Sample isotropically. opts.Width×Height should already be cell-aspect
 	// corrected (e.g. 32×16) so Stretch into that grid is visually square.
 	sampleSide := max(w, h) * samplesPerCell
-	quality := QualityMosaicFast
-	if opts.Quality == sprite.QualityPrewarm {
-		quality = QualityMosaic
-		// Mild integer upscale before mosaic conversion for prewarm fidelity.
-		if opts.Source == sprite.SourcePixel && sampleSide < 256 {
-			sampleSide *= 2
-		}
-	}
 	// Crop-to-content then fit (never stretch the Pokémon into the mosaic grid).
 	scaled := sprite.PrepareEncodeSrc(src, sampleSide, sampleSide, opts.Source, bg, threshold, 0)
 
@@ -88,7 +81,7 @@ func (r Renderer) renderLib(ctx context.Context, src image.Image, opts sprite.Re
 		Width:      w,
 		Height:     h,
 		Mode:       canvasMode(opts.ColorMode),
-		Quality:    quality,
+		Quality:    QualityMosaic,
 		Stretch:    true,
 		Background: bg,
 	})

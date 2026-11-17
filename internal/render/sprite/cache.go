@@ -75,8 +75,11 @@ func ParseCacheKey(key string) (hash string, source SpriteSource, mode string, w
 //	<hash>-image[-<proto>]-<w>x<h>-<bg>[-c<palette>]-<version>
 //
 // Sixel keys include c64|c128|c256 before the version. Non-sixel protocols omit palette.
+// Sixel bakes the letterbox into pixels, so the bg slot is the live theme base.
+// Kitty/iTerm ignore encode bg — their key uses a fixed DefaultBackground tag so
+// a theme switch does not orphan those caches.
 //
-// Example: abc...-image-sixel-320x160-313244-c64-v13
+// Example: abc...-image-sixel-320x160-282a36-c64-v13
 func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA, sixelColors int) string {
 	tag := "image"
 	if proto != "" {
@@ -84,6 +87,9 @@ func NativeCacheKey(contentHash, proto string, w, h int, bg color.RGBA, sixelCol
 	}
 	pxW, pxH := PixelSize(w, h)
 	bgTag := BackgroundHash(bg)
+	if proto != "sixel" {
+		bgTag = BackgroundHash(DefaultBackground)
+	}
 	if proto == "sixel" {
 		colors := EffectiveSixelColors(sixelColors)
 		return fmt.Sprintf("%s-%s-%dx%d-%s-c%d-%s",

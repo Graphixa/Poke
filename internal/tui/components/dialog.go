@@ -98,8 +98,22 @@ func DialogLayout(termW, termH int, sectionLabels []string) DialogGeom {
 	return DialogGeom{Stacked: stacked, BodyH: h, BodyW: bodyW, InnerW: innerW}
 }
 
+// DossierChrome is stationary chrome around the scroll body (not in the border title).
+type DossierChrome struct {
+	ContextLines []string // notice rows above body
+	StickyLines  []string // e.g. move table header; not scrolled
+	PositionHint string   // e.g. "Rows 8–24 of 42"; pinned below scroll
+	SidebarFocus bool     // strong section highlight when sidebar owns focus
+	TopRight     string   // right-aligned top-border chips (M/G), like browse F4
+}
+
 // DossierFrame renders a full-terminal dossier (title card + footer), not an overlay.
 func DossierFrame(title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int, footer string) string {
+	return DossierFrameEx(title, section, sectionLabels, bodyLines, bodyOff, termW, termH, footer, DossierChrome{})
+}
+
+// DossierFrameEx is DossierFrame with context chrome.
+func DossierFrameEx(title string, section int, sectionLabels, bodyLines []string, bodyOff, termW, termH int, footer string, chrome DossierChrome) string {
 	if termW < 20 {
 		termW = 20
 	}
@@ -111,7 +125,7 @@ func DossierFrame(title string, section int, sectionLabels, bodyLines []string, 
 	if frameH < 8 {
 		frameH = termH
 	}
-	inner := renderDossierInner(section, sectionLabels, bodyLines, bodyOff, geom, frameH)
+	inner := renderDossierInner(section, sectionLabels, bodyLines, bodyOff, geom, frameH, chrome)
 
 	card := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -120,7 +134,7 @@ func DossierFrame(title string, section int, sectionLabels, bodyLines []string, 
 		Width(termW).
 		Height(frameH).
 		Render(inner)
-	card = stampDialogTitle(card, title, termW)
+	card = stampDialogTitle(card, title, termW, chrome.TopRight)
 
 	if footer == "" {
 		return card
@@ -129,40 +143,92 @@ func DossierFrame(title string, section int, sectionLabels, bodyLines []string, 
 	return card + "\n" + footerSty().Render(footer)
 }
 
-func renderDossierInner(section int, labels, bodyLines []string, bodyOff int, geom DialogGeom, frameH int) string {
+func renderDossierInner(section int, labels, bodyLines []string, bodyOff int, geom DialogGeom, frameH int, chrome DossierChrome) string {
 	innerW := geom.InnerW
 	wrapRow := func(row string) string {
 		return " " + textwidth.PadRight(textwidth.Truncate(row, innerW), innerW) + " "
 	}
+	reserve := chromeBodyReserve(chrome)
+	sec := lipgloss.NewStyle().Foreground(style.SecondaryColor())
+	muted := lipgloss.NewStyle().Foreground(style.SecondaryColor())
 	if geom.Stacked {
-		bodyH := geom.BodyH
+		scrollH := geom.BodyH - reserve
+		if scrollH < 1 {
+			scrollH = 1
+		}
 		pager := dialogSectionPager(section, labels, innerW)
 		divider := lipgloss.NewStyle().
 			Foreground(style.BorderColor()).
 			Render(strings.Repeat("─", maxInt(1, innerW)))
-		body := clipLines(bodyLines, bodyOff, bodyH, innerW)
 		lines := []string{wrapRow(pager), wrapRow(divider)}
+		for _, row := range chrome.ContextLines {
+			lines = append(lines, wrapRow(sec.Render(row)))
+		}
+		if len(chrome.ContextLines) > 0 {
+			lines = append(lines, wrapRow(""))
+		}
+		for _, row := range chrome.StickyLines {
+			lines = append(lines, wrapRow(row))
+		}
+		body := clipLines(bodyLines, bodyOff, scrollH, innerW)
 		for _, line := range strings.Split(body, "\n") {
 			lines = append(lines, wrapRow(line))
+		}
+		if chrome.PositionHint != "" {
+			lines = append(lines, wrapRow(muted.Render(chrome.PositionHint)))
 		}
 		return strings.Join(lines, "\n")
 	}
 
 	railW := dialogRailWidth(labels)
 	bodyH := geom.BodyH
-	rail := dialogSectionRail(section, labels, railW, bodyH)
 	bodyW := geom.BodyW
-	body := clipLines(bodyLines, bodyOff, bodyH, bodyW)
+	scrollH := bodyH - reserve
+	if scrollH < 1 {
+		scrollH = 1
+	}
+	var parts []string
+	for _, row := range chrome.ContextLines {
+		parts = append(parts, textwidth.PadRight(textwidth.Truncate(sec.Render(row), bodyW), bodyW))
+	}
+	if len(chrome.ContextLines) > 0 {
+		parts = append(parts, strings.Repeat(" ", bodyW))
+	}
+	for _, row := range chrome.StickyLines {
+		parts = append(parts, textwidth.PadRight(textwidth.Truncate(row, bodyW), bodyW))
+	}
+	parts = append(parts, clipLines(bodyLines, bodyOff, scrollH, bodyW))
+	if chrome.PositionHint != "" {
+		parts = append(parts, textwidth.PadRight(textwidth.Truncate(muted.Render(chrome.PositionHint), bodyW), bodyW))
+	}
+	bodyBlock := strings.Join(parts, "\n")
+	blank := strings.Repeat(" ", bodyW)
+	for strings.Count(bodyBlock, "\n")+1 < bodyH {
+		bodyBlock += "\n" + blank
+	}
+	rail := dialogSectionRail(section, labels, railW, bodyH, chrome.SidebarFocus)
 	separator := lipgloss.NewStyle().
 		Foreground(style.BorderColor()).
 		Render(strings.Repeat("│\n", bodyH-1) + "│")
-	content := lipgloss.JoinHorizontal(lipgloss.Top, rail, " ", separator, " ", body)
+	content := lipgloss.JoinHorizontal(lipgloss.Top, rail, " ", separator, " ", bodyBlock)
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
 		lines[i] = " " + line + " "
 	}
 	_ = frameH
 	return strings.Join(lines, "\n")
+}
+
+func chromeBodyReserve(chrome DossierChrome) int {
+	n := 0
+	if len(chrome.ContextLines) > 0 {
+		n += len(chrome.ContextLines) + 1
+	}
+	n += len(chrome.StickyLines)
+	if chrome.PositionHint != "" {
+		n++
+	}
+	return n
 }
 
 func dialogRailWidth(labels []string) int {
@@ -178,14 +244,21 @@ func dialogRailWidth(labels []string) int {
 	return width
 }
 
-func dialogSectionRail(active int, labels []string, width, height int) string {
+func dialogSectionRail(active int, labels []string, width, height int, sidebarFocus bool) string {
 	lines := make([]string, 0, height)
 	for i, label := range labels {
-		prefix := "  "
-		sty := lipgloss.NewStyle().Foreground(style.SecondaryColor())
-		if i == active {
-			prefix = "> "
+		var prefix string
+		var sty lipgloss.Style
+		switch {
+		case i == active && sidebarFocus:
+			prefix = "▶ "
 			sty = lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
+		case i == active:
+			prefix = "● "
+			sty = lipgloss.NewStyle().Foreground(style.SecondaryColor())
+		default:
+			prefix = "  "
+			sty = lipgloss.NewStyle().Foreground(style.SecondaryColor())
 		}
 		line := textwidth.PadRight(textwidth.Truncate(prefix+label, width), width)
 		lines = append(lines, sty.Render(line))
@@ -211,7 +284,7 @@ func dialogSectionPager(active int, labels []string, width int) string {
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, boldSty().Render(pager))
 }
 
-func stampDialogTitle(card, title string, width int) string {
+func stampDialogTitle(card, title string, width int, topRight string) string {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return card
@@ -234,12 +307,25 @@ func stampDialogTitle(card, title string, width int) string {
 	}
 	border := lipgloss.NewStyle().Foreground(style.BorderColor())
 	titleSt := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Bold(true)
-	prefix := border.Render("╭─") + titleSt.Render(label) + border.Render("─")
-	remain := tw - lipgloss.Width(prefix) - 1
+	horiz := border.Render("─")
+	prefix := border.Render("╭─") + titleSt.Render(label) + horiz
+	remain := tw - lipgloss.Width(prefix) - 1 // minus ╮
 	if remain < 0 {
 		remain = 0
 	}
-	lines[0] = prefix + strings.Repeat(border.Render("─"), remain) + border.Render("╮")
+	topRight = strings.TrimSpace(topRight)
+	if topRight == "" {
+		lines[0] = prefix + strings.Repeat(horiz, remain) + border.Render("╮")
+		return strings.Join(lines, "\n")
+	}
+	// Right-align chips before ╮ (same idea as browse F4): ──  M  method  G  choose game  ─╮
+	suffix := " " + topRight + "  "
+	sw := lipgloss.Width(suffix) + 1 // +1 trailing horiz
+	if sw >= remain {
+		lines[0] = prefix + lipgloss.NewStyle().MaxWidth(remain).Render(suffix) + border.Render("╮")
+	} else {
+		lines[0] = prefix + strings.Repeat(horiz, remain-sw) + suffix + horiz + border.Render("╮")
+	}
 	return strings.Join(lines, "\n")
 }
 

@@ -192,6 +192,109 @@ func (c *Client) GetMove(ctx context.Context, id int) (domain.Move, error) {
 	return mapMove(dto), nil
 }
 
+func (c *Client) GetAbility(ctx context.Context, id int) (domain.Ability, error) {
+	var dto abilityDTO
+	if err := c.getJSON(ctx, fmt.Sprintf("%s/ability/%d", c.baseURL, id), &dto); err != nil {
+		return domain.Ability{}, err
+	}
+	return mapAbility(dto), nil
+}
+
+func (c *Client) GetPokemonForm(ctx context.Context, id int) (domain.PokemonForm, error) {
+	var dto pokemonFormDTO
+	if err := c.getJSON(ctx, fmt.Sprintf("%s/pokemon-form/%d", c.baseURL, id), &dto); err != nil {
+		return domain.PokemonForm{}, err
+	}
+	return mapPokemonForm(dto), nil
+}
+
+func (c *Client) ListVersionGroups(ctx context.Context) ([]domain.VersionGroup, error) {
+	ids, err := c.listResourceIDs(ctx, "version-group")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.VersionGroup, 0, len(ids))
+	for _, id := range ids {
+		var dto versionGroupDTO
+		if err := c.getJSON(ctx, fmt.Sprintf("%s/version-group/%d", c.baseURL, id), &dto); err != nil {
+			return nil, err
+		}
+		out = append(out, mapVersionGroup(dto))
+	}
+	return out, nil
+}
+
+func (c *Client) ListVersions(ctx context.Context) ([]domain.Version, error) {
+	ids, err := c.listResourceIDs(ctx, "version")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.Version, 0, len(ids))
+	for _, id := range ids {
+		var dto versionDTO
+		if err := c.getJSON(ctx, fmt.Sprintf("%s/version/%d", c.baseURL, id), &dto); err != nil {
+			return nil, err
+		}
+		out = append(out, mapVersion(dto))
+	}
+	return out, nil
+}
+
+// ApplyVersionGroupOrder sets Version.Order from version-group.order (explicit chronology).
+func ApplyVersionGroupOrder(versions []domain.Version, groups []domain.VersionGroup) {
+	groupOrder := map[int]int{}
+	groupGen := map[int]string{}
+	for _, g := range groups {
+		groupOrder[g.ID] = g.Order
+		groupGen[g.ID] = g.Generation
+	}
+	for i := range versions {
+		if ord, ok := groupOrder[versions[i].VersionGroupID]; ok {
+			versions[i].Order = ord*100 + versions[i].ID
+		}
+		if gen := groupGen[versions[i].VersionGroupID]; gen != "" {
+			versions[i].Generation = gen
+		}
+	}
+}
+
+func (c *Client) ListTypes(ctx context.Context) ([]domain.TypeInfo, error) {
+	ids, err := c.listResourceIDs(ctx, "type")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.TypeInfo, 0, len(ids))
+	for _, id := range ids {
+		// Skip weird /type/10001+ shadow etc. if needed — import all; UI filters later.
+		var dto typeDTO
+		if err := c.getJSON(ctx, fmt.Sprintf("%s/type/%d", c.baseURL, id), &dto); err != nil {
+			return nil, err
+		}
+		out = append(out, mapType(dto))
+	}
+	return out, nil
+}
+
+func (c *Client) listResourceIDs(ctx context.Context, resource string) ([]int, error) {
+	var ids []int
+	next := fmt.Sprintf("%s/%s?limit=%d", c.baseURL, resource, listPageLimit)
+	for next != "" {
+		var page namedResourceList
+		if err := c.getJSON(ctx, next, &page); err != nil {
+			return nil, err
+		}
+		for _, item := range page.Results {
+			id, err := idFromURL(item.URL)
+			if err != nil {
+				return nil, fmt.Errorf("%s list entry %q: %w", resource, item.Name, err)
+			}
+			ids = append(ids, id)
+		}
+		next = page.Next
+	}
+	return ids, nil
+}
+
 func (c *Client) GetSprite(ctx context.Context, spriteURL string) (io.ReadCloser, error) {
 	body, err := c.getBytes(ctx, spriteURL, maxSpriteBytes)
 	if err != nil {

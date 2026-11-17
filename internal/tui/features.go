@@ -37,7 +37,7 @@ type favouriteSavedMsg struct {
 }
 
 func (m Model) overlayOpen() bool {
-	return m.showDialog || m.showFilters || m.showCompare || m.featureError != ""
+	return m.showDialog || m.showFilters || m.showCompare || m.featureError != "" || m.showBirthday
 }
 
 func (m Model) filterSpecies(input []domain.SpeciesSummary, opts viewOptions) []domain.SpeciesSummary {

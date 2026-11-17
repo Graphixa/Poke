@@ -50,6 +50,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case birthdayTickMsg:
+		return m.onBirthdayTick(msg)
+
 	case tea.WindowSizeMsg:
 		// Wipe sixel at the pre-resize art origin before layout moves — WT does
 		// not erase old placements when CUP shifts.
@@ -65,6 +68,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDialog {
 			m.syncDialogViewport()
 		}
+		m.resizeBirthday()
 		m.invalidateNativePaintGeometry()
 		m.markNativeOverlayDirty()
 		layoutCmd := m.handleSpriteLayoutChange(prevShow, prevSide)
@@ -94,6 +98,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		r.applyCore(msg.dossier, msg.complete)
 		if m.showDialog {
+			m.initDialogContext(msg.speciesID, msg.dossier)
 			m.syncDialogViewport()
 		} else if m.nativeSpriteActive() {
 			// Core only adds genus cells outside the art box; the Sixel
@@ -158,6 +163,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		r.applyDossier(msg.dossier)
 		if m.showDialog {
+			m.initDialogContext(msg.speciesID, msg.dossier)
 			m.syncDialogViewport()
 		}
 		return m, m.ensureSpriteLoad()
@@ -249,6 +255,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.requestQuit()
 	}
 
+	if m.showBirthday {
+		return m.handleBirthdayKey(msg)
+	}
+
 	if m.showFilters || m.showCompare || m.featureError != "" {
 		return m.handleFeatureKey(msg)
 	}
@@ -272,7 +282,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key.Matches(msg, m.keys.Enter) {
-		return m.openDialog()
+		return m.handleBirthdayEnter()
 	}
 
 	if key.Matches(msg, m.keys.ViewCycle) {
@@ -326,35 +336,158 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Topmost overlay owns all keys.
+	if m.gamePickerOpen {
+		m.handleGamePickerKey(msg.String(), []rune(msg.Text))
+		return m, nil
+	}
+	if m.formPickerOpen {
+		m.handleFormPickerKey(msg.String(), []rune(msg.Text))
+		return m, nil
+	}
+	if m.methodPickerOpen {
+		m.handleMethodPickerKey(msg.String())
+		return m, nil
+	}
+
+	if m.moveDetailOpen {
+		if key.Matches(msg, m.keys.Clear) {
+			m.exitMoveDetail()
+			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Up) {
+			m.nudgeMoveFocus(-1)
+			m.syncDialogViewport()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Down) {
+			m.nudgeMoveFocus(1)
+			m.syncDialogViewport()
+			return m, nil
+		}
+		return m, nil
+	}
+
 	if key.Matches(msg, m.keys.Clear) {
 		m.showDialog = false
-		// Dialog wiped native graphics from the cell grid; force space-clear restore.
+		m.gamePickerOpen = false
+		m.formPickerOpen = false
+		m.methodPickerOpen = false
+		m.moveDetailOpen = false
 		m.invalidateNativePaintGeometry()
 		m.markNativeOverlayDirty()
 		return m, nil
 	}
-	stacked := m.dialogStacked()
-	// Stacked pager: ←/→ sections, ↑/↓ scroll.
-	// Side rail: ↑/↓ sections (vertical list), ←/→ still cycle sections; PgUp/PgDn scroll.
-	if key.Matches(msg, m.keys.TabNext) || key.Matches(msg, m.keys.Right) ||
-		(!stacked && key.Matches(msg, m.keys.Down)) {
-		m.dialogSection = m.dialogSection.Next()
-		m.dialogVP.GotoTop()
+
+	if key.Matches(msg, m.keys.TabNext) || key.Matches(msg, m.keys.TabPrev) {
+		m.toggleDialogFocus()
+		m.syncDialogViewport()
+		if m.dialogContentFocus && m.dialogSection == DialogMoves {
+			m.ensureMoveFocusVisible()
+		}
+		return m, nil
+	}
+
+	letter := msg.Text
+	if letter == "" {
+		letter = msg.String()
+	}
+	if key.Matches(msg, m.keys.Game) || letter == "g" || letter == "G" {
+		m.openGamePicker()
 		m.syncDialogViewport()
 		return m, nil
 	}
-	if key.Matches(msg, m.keys.TabPrev) || key.Matches(msg, m.keys.Left) ||
-		(!stacked && key.Matches(msg, m.keys.Up)) {
-		m.dialogSection = m.dialogSection.Prev()
-		m.dialogVP.GotoTop()
+	if (letter == "f" || letter == "F") && m.dialogHasForms() {
+		m.openFormPicker()
 		m.syncDialogViewport()
 		return m, nil
 	}
-	if stacked && key.Matches(msg, m.keys.Up) {
+	if (letter == "m" || letter == "M") && m.dialogSection == DialogMoves {
+		m.openMethodPicker()
+		m.syncDialogViewport()
+		return m, nil
+	}
+
+	if !m.dialogContentFocus {
+		// Sidebar focus: ↑/↓ change section (←/→ also).
+		if key.Matches(msg, m.keys.Down) || key.Matches(msg, m.keys.Right) {
+			m.dialogNotice = ""
+			m.changeDialogSection(m.dialogSection.Next())
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Up) || key.Matches(msg, m.keys.Left) {
+			m.dialogNotice = ""
+			m.changeDialogSection(m.dialogSection.Prev())
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Home) {
+			m.changeDialogSection(DialogOverview)
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.End) {
+			m.changeDialogSection(DialogBiology)
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.PageUp) {
+			m.scrollDialog(-m.dialogPageSize())
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.PageDown) {
+			m.scrollDialog(m.dialogPageSize())
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Enter) && m.dialogSection == DialogMoves {
+			m.dialogContentFocus = true
+			m.syncDialogViewport()
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// Content focus.
+	if m.dialogSection == DialogMoves {
+		if key.Matches(msg, m.keys.Up) {
+			m.nudgeMoveFocus(-1)
+			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Down) {
+			m.nudgeMoveFocus(1)
+			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Enter) {
+			if len(m.dialogMoveRows()) > 0 {
+				m.moveDetailOpen = true
+				m.syncDialogViewport()
+			}
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.Home) {
+			m.moveFocusIdx = 0
+			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
+			return m, nil
+		}
+		if key.Matches(msg, m.keys.End) {
+			if n := len(m.dialogMoveRows()); n > 0 {
+				m.moveFocusIdx = n - 1
+			}
+			m.syncDialogViewport()
+			m.ensureMoveFocusVisible()
+			return m, nil
+		}
+	}
+
+	if key.Matches(msg, m.keys.Up) {
 		m.scrollDialog(-1)
 		return m, nil
 	}
-	if stacked && key.Matches(msg, m.keys.Down) {
+	if key.Matches(msg, m.keys.Down) {
 		m.scrollDialog(1)
 		return m, nil
 	}
@@ -387,9 +520,23 @@ func (m Model) openDialog() (tea.Model, tea.Cmd) {
 	m.showDialog = true
 	m.glanceHoldID = 0
 	m.dialogSection = DialogOverview
+	m.dialogScroll = map[DialogSection]int{}
+	m.moveDetailOpen = false
+	m.dialogContentFocus = false
+	m.gamePickerOpen = false
+	m.formPickerOpen = false
+	m.methodPickerOpen = false
+	m.dialogNotice = ""
+	if r := m.resources[sel.ID]; r != nil && r.HasCore {
+		m.initDialogContext(sel.ID, domain.Dossier{Pokemon: r.Pokemon, Species: r.Species})
+	} else {
+		m.dialogForms = nil
+		m.dialogFormIdx = 0
+		m.dialogPokemon = domain.Pokemon{}
+		m.dialogSpeciesID = sel.ID
+	}
 	m.dialogVP.GotoTop()
 	m.syncDialogViewport()
-	_ = sel
 	covered, wipe := m.coverNativeOverlay()
 	return covered, tea.Batch(wipe, covered.ensureDossierLoad())
 }
@@ -415,6 +562,9 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.search, cmd = m.search.Update(msg)
 	if m.search.Value() != prev {
+		if !isBirthdayQuery(m.search.Value()) {
+			m.declanEnterCount = 0
+		}
 		m.refilter()
 		m.dialogVP.GotoTop()
 		return m, tea.Batch(cmd, m.syncSelectionLoads())

@@ -15,6 +15,7 @@ func PokemonFromDomain(p domain.Pokemon) DatasetPokemon {
 		Types:           p.TypeNames(),
 		Abilities:       append([]domain.AbilitySlot(nil), p.Abilities...),
 		Stats:           p.Stats,
+		FormIDs:         append([]int(nil), p.FormIDs...),
 		OfficialArtwork: p.Sprites.OfficialArtwork,
 		PixelSprite:     p.Sprites.FrontDefault,
 		HomeSprite:      p.Sprites.HomeFront,
@@ -40,6 +41,7 @@ func PokemonToDomain(p DatasetPokemon, moves []domain.LearnedMove) domain.Pokemo
 		Abilities:       append([]domain.AbilitySlot(nil), p.Abilities...),
 		Stats:           p.Stats,
 		Moves:           moves,
+		FormIDs:         append([]int(nil), p.FormIDs...),
 		Sprites: domain.Sprites{
 			FrontDefault:    p.PixelSprite,
 			HomeFront:       p.HomeSprite,
@@ -57,17 +59,23 @@ func SpeciesFromDomain(s domain.Species) DatasetSpecies {
 		DisplayName:      s.DisplayName,
 		Genus:            s.Genus,
 		Generation:       s.Generation,
-		Habitat:          s.Habitat,
 		Shape:            s.Shape,
 		Color:            s.Color,
 		GrowthRate:       s.GrowthRate,
 		CaptureRate:      s.CaptureRate,
 		BaseHappiness:    s.BaseHappiness,
 		GenderRate:       s.GenderRate,
+		HatchCounter:     s.HatchCounter,
+		IsBaby:           s.IsBaby,
 		IsLegendary:      s.IsLegendary,
 		IsMythical:       s.IsMythical,
 		DefaultPokemonID: s.DefaultPokemonID,
 		EvolutionChainID: s.EvolutionChainID,
+		EggGroups:        append([]string(nil), s.EggGroups...),
+	}
+	if s.Habitat != "" {
+		h := s.Habitat
+		out.Habitat = &h
 	}
 	for _, f := range s.FlavorTextEntries {
 		if f.Language != "" && f.Language != "en" {
@@ -75,6 +83,7 @@ func SpeciesFromDomain(s domain.Species) DatasetSpecies {
 		}
 		out.FlavorTexts = append(out.FlavorTexts, DatasetFlavorText{
 			Version:      f.Version,
+			VersionID:    f.VersionID,
 			VersionOrder: f.VersionOrder,
 			Text:         f.Text,
 		})
@@ -97,22 +106,28 @@ func SpeciesToDomain(s DatasetSpecies) domain.Species {
 		DisplayName:      s.DisplayName,
 		Genus:            s.Genus,
 		Generation:       s.Generation,
-		Habitat:          s.Habitat,
 		Shape:            s.Shape,
 		Color:            s.Color,
 		GrowthRate:       s.GrowthRate,
 		CaptureRate:      s.CaptureRate,
 		BaseHappiness:    s.BaseHappiness,
 		GenderRate:       s.GenderRate,
+		HatchCounter:     s.HatchCounter,
+		IsBaby:           s.IsBaby,
 		IsLegendary:      s.IsLegendary,
 		IsMythical:       s.IsMythical,
 		DefaultPokemonID: s.DefaultPokemonID,
 		EvolutionChainID: s.EvolutionChainID,
+		EggGroups:        append([]string(nil), s.EggGroups...),
+	}
+	if s.Habitat != nil {
+		out.Habitat = *s.Habitat
 	}
 	for _, f := range s.FlavorTexts {
 		out.FlavorTextEntries = append(out.FlavorTextEntries, domain.FlavorText{
 			Language:     "en",
 			Version:      f.Version,
+			VersionID:    f.VersionID,
 			VersionOrder: f.VersionOrder,
 			Text:         f.Text,
 		})
@@ -135,8 +150,10 @@ func LearnedMovesFromLearnset(rows []DatasetLearn, slugs map[int]string) []domai
 	byMove := make(map[int][]domain.MoveLearning)
 	for _, row := range rows {
 		byMove[row.MoveID] = append(byMove[row.MoveID], domain.MoveLearning{
-			Method: "level-up",
-			Level:  row.Level,
+			VersionGroupID:    row.VersionGroupID,
+			VersionGroupOrder: row.VersionGroupID,
+			Method:            row.LearnMethod,
+			Level:             row.LevelLearnedAt,
 		})
 	}
 	out := make([]domain.LearnedMove, 0, len(byMove))
@@ -161,6 +178,7 @@ func MoveFromDomain(m domain.Move) DatasetMove {
 		Power:       m.Power,
 		Accuracy:    m.Accuracy,
 		PP:          m.PP,
+		Effect:      m.Effect,
 	}
 }
 
@@ -175,6 +193,88 @@ func MoveToDomain(m DatasetMove) domain.Move {
 		Power:       m.Power,
 		Accuracy:    m.Accuracy,
 		PP:          m.PP,
+		Effect:      m.Effect,
+	}
+}
+
+// VersionFromDomain / VersionToDomain catalog mappers.
+func VersionFromDomain(v domain.Version) DatasetVersion {
+	return DatasetVersion{
+		ID: v.ID, Slug: v.Slug, DisplayName: v.DisplayName,
+		VersionGroupID: v.VersionGroupID, Generation: v.Generation, Order: v.Order,
+	}
+}
+
+func VersionToDomain(v DatasetVersion) domain.Version {
+	return domain.Version{
+		ID: v.ID, Slug: v.Slug, DisplayName: v.DisplayName,
+		VersionGroupID: v.VersionGroupID, Generation: v.Generation, Order: v.Order,
+	}
+}
+
+func VersionGroupFromDomain(g domain.VersionGroup) DatasetVersionGroup {
+	return DatasetVersionGroup{
+		ID: g.ID, Slug: g.Slug, DisplayName: g.DisplayName,
+		Generation: g.Generation, Order: g.Order, VersionIDs: append([]int(nil), g.VersionIDs...),
+	}
+}
+
+func VersionGroupToDomain(g DatasetVersionGroup) domain.VersionGroup {
+	return domain.VersionGroup{
+		ID: g.ID, Slug: g.Slug, DisplayName: g.DisplayName,
+		Generation: g.Generation, Order: g.Order, VersionIDs: append([]int(nil), g.VersionIDs...),
+	}
+}
+
+func TypeFromDomain(t domain.TypeInfo) DatasetType {
+	return DatasetType{
+		ID: t.ID, Slug: t.Slug, Name: t.Name,
+		NoDamage: append([]string(nil), t.NoDamage...),
+		Half:     append([]string(nil), t.Half...),
+		Double:   append([]string(nil), t.Double...),
+	}
+}
+
+func TypeToDomain(t DatasetType) domain.TypeInfo {
+	return domain.TypeInfo{
+		ID: t.ID, Slug: t.Slug, Name: t.Name,
+		NoDamage: append([]string(nil), t.NoDamage...),
+		Half:     append([]string(nil), t.Half...),
+		Double:   append([]string(nil), t.Double...),
+	}
+}
+
+func AbilityFromDomain(a domain.Ability) DatasetAbility {
+	return DatasetAbility{ID: a.ID, Slug: a.Slug, DisplayName: a.DisplayName, Effect: a.Effect}
+}
+
+func AbilityToDomain(a DatasetAbility) domain.Ability {
+	return domain.Ability{ID: a.ID, Slug: a.Slug, DisplayName: a.DisplayName, Effect: a.Effect}
+}
+
+func FormFromDomain(f domain.PokemonForm) DatasetForm {
+	return DatasetForm{
+		ID: f.ID, Slug: f.Slug, DisplayName: f.DisplayName, FormName: f.FormName,
+		FormOrder: f.FormOrder, Order: f.Order, IsDefault: f.IsDefault,
+		IsBattleOnly: f.IsBattleOnly, IsMega: f.IsMega, PokemonID: f.PokemonID,
+		IntroVersionGroupID: f.IntroVersionGroupID, IntroVersionGroup: f.IntroVersionGroup,
+		Types:           append([]string(nil), f.Types...),
+		OfficialArtwork: f.Sprites.OfficialArtwork,
+		PixelSprite:     f.Sprites.FrontDefault,
+		HomeSprite:      f.Sprites.HomeFront,
+	}
+}
+
+func FormToDomain(f DatasetForm) domain.PokemonForm {
+	return domain.PokemonForm{
+		ID: f.ID, Slug: f.Slug, DisplayName: f.DisplayName, FormName: f.FormName,
+		FormOrder: f.FormOrder, Order: f.Order, IsDefault: f.IsDefault,
+		IsBattleOnly: f.IsBattleOnly, IsMega: f.IsMega, PokemonID: f.PokemonID,
+		IntroVersionGroupID: f.IntroVersionGroupID, IntroVersionGroup: f.IntroVersionGroup,
+		Types: append([]string(nil), f.Types...),
+		Sprites: domain.Sprites{
+			FrontDefault: f.PixelSprite, HomeFront: f.HomeSprite, OfficialArtwork: f.OfficialArtwork,
+		},
 	}
 }
 
@@ -266,7 +366,9 @@ func EncountersFromDomain(rows []domain.Encounter) []DatasetEncounter {
 	for _, e := range rows {
 		out = append(out, DatasetEncounter{
 			Version:           e.Version,
+			VersionID:         e.VersionID,
 			VersionGroup:      e.VersionGroup,
+			VersionGroupID:    e.VersionGroupID,
 			VersionGroupOrder: e.VersionGroupOrder,
 			Area:              e.Area,
 			Method:            e.Method,
@@ -285,7 +387,9 @@ func EncountersToDomain(rows []DatasetEncounter) []domain.Encounter {
 	for _, e := range rows {
 		out = append(out, domain.Encounter{
 			Version:           e.Version,
+			VersionID:         e.VersionID,
 			VersionGroup:      e.VersionGroup,
+			VersionGroupID:    e.VersionGroupID,
 			VersionGroupOrder: e.VersionGroupOrder,
 			Area:              e.Area,
 			Method:            e.Method,

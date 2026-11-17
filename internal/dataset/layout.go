@@ -2,19 +2,24 @@
 package dataset
 
 // SchemaVersion is the dataset snapshot layout version (aggregate files, no per-record envelopes).
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // Aggregate filenames inside datasets/<dataset-version>/.
 const (
-	FileManifest   = "manifest.json"
-	FileBootstrap  = "bootstrap.json"
-	FileBrowse     = "browse.json"
-	FilePokemon    = "pokemon.json"
-	FileSpecies    = "species.json"
-	FileLearnsets  = "learnsets.json"
-	FileMoves      = "moves.json"
-	FileEvolutions = "evolutions.json"
-	FileEncounters = "encounters.json"
+	FileManifest      = "manifest.json"
+	FileBootstrap     = "bootstrap.json"
+	FileBrowse        = "browse.json"
+	FilePokemon       = "pokemon.json"
+	FileSpecies       = "species.json"
+	FileLearnsets     = "learnsets.json"
+	FileMoves         = "moves.json"
+	FileEvolutions    = "evolutions.json"
+	FileEncounters    = "encounters.json"
+	FileVersions      = "versions.json"
+	FileVersionGroups = "version_groups.json"
+	FileTypes         = "types.json"
+	FileAbilities     = "abilities.json"
+	FileForms         = "forms.json"
 )
 
 // Layout is the on-disk snapshot structure:
@@ -30,7 +35,9 @@ const (
 //	    moves.json
 //	    evolutions.json
 //	    encounters.json
-//
-// Each aggregate file is compact JSON (no indentation). Dataset-wide metadata lives
-// in manifest.json; individual records are not wrapped in per-file envelopes.
+//	    versions.json
+//	    version_groups.json
+//	    types.json
+//	    abilities.json
+//	    forms.json
 type Layout struct{}

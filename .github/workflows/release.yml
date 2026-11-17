@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   goreleaser:
+    name: Release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,14 +24,27 @@ jobs:
           go-version: "1.26.x"
           cache: true
 
+      - name: Run tests
+        run: go test ./...
+
+      - name: Validate GoReleaser config
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+      # GitHub Release + Homebrew + Winget. Chocolatey is chocolatey-release.yml.
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: release --clean --skip=chocolatey
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          WINGET_PR_TOKEN: ${{ secrets.WINGET_PR_TOKEN }}
 
       - name: Verify release archives
         run: bash scripts/verify-release-archives.sh

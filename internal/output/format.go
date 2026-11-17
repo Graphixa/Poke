@@ -67,7 +67,15 @@ func JoinTypes(types []string) string {
 }
 
 // CleanFlavor collapses whitespace and form-feed characters from flavour text.
+// Soft hyphens (U+00AD) mark Game Boy line-wrap syllable breaks ("sun\xad\nlight");
+// drop them so syllables rejoin, and strip leftovers — Windows Terminal smears
+// glyphs when SHY remains in the buffer (vertical ghosting on the next word).
 func CleanFlavor(text string) string {
+	const softHyphen = "\u00ad"
+	text = strings.ReplaceAll(text, softHyphen+"\r\n", "")
+	text = strings.ReplaceAll(text, softHyphen+"\n", "")
+	text = strings.ReplaceAll(text, softHyphen+"\r", "")
+	text = strings.ReplaceAll(text, softHyphen, "")
 	text = strings.ReplaceAll(text, "\f", " ")
 	text = strings.ReplaceAll(text, "\n", " ")
 	text = strings.ReplaceAll(text, "\r", " ")

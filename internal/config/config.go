@@ -42,7 +42,6 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 type Config struct {
 	Cache   Cache   `yaml:"cache"`
 	Render  Render  `yaml:"render"`
-	TUI     TUI     `yaml:"tui"`
 	Theme   Theme   `yaml:"theme"`
 	Network Network `yaml:"network"`
 	Setup   Setup   `yaml:"setup"`
@@ -75,7 +74,7 @@ type Cache struct {
 }
 
 type Render struct {
-	// SpriteMode selects sprite output: auto | image | text | chafa | off.
+	// SpriteMode selects sprite output: auto | image | chafa | off.
 	SpriteMode string `yaml:"sprite_mode"`
 	// SpriteSource selects pixel (nearest) or artwork (filtered) resize/assets.
 	// Product default is artwork; pixel remains for tests and fallbacks.
@@ -84,14 +83,8 @@ type Render struct {
 	Color string `yaml:"color"`
 	// SpritePrewarm controls background chafa warm: all_pixel | window | off.
 	SpritePrewarm string `yaml:"sprite_prewarm"`
-	// SpriteHD controls HD assets for native image: auto | off.
-	SpriteHD string `yaml:"sprite_hd"`
 	// SixelColors selects sixel palette size: 64 (default) | 128 | 256.
 	SixelColors int `yaml:"sixel_colors"`
-}
-
-type TUI struct {
-	ShowSprite bool `yaml:"show_sprite"`
 }
 
 // Theme selects the TUI colour palette (FontGet-compatible YAML themes).
@@ -118,13 +111,9 @@ func Default() Config {
 			SpriteSource:  "artwork",
 			Color:         "auto",
 			SpritePrewarm: "window",
-			SpriteHD:      "auto",
 			SixelColors:   DefaultSixelColors,
 		},
-		TUI: TUI{
-			ShowSprite: true,
-		},
-		Theme: Theme{Name: "catppuccin"},
+		Theme: Theme{Name: "dracula"},
 		Network: Network{
 			Timeout:        Duration{10 * time.Second},
 			Retries:        3,
@@ -149,10 +138,10 @@ func (c Config) Validate() error {
 	positiveDuration("cache.index_ttl", c.Cache.IndexTTL.Duration)
 	positiveDuration("network.timeout", c.Network.Timeout.Duration)
 	switch c.Render.SpriteMode {
-	case "", "auto", "off", "image", "text", "chafa":
+	case "", "auto", "off", "image", "chafa", "text": // "text" accepted as legacy alias for chafa
 		// Allowed.
 	default:
-		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "text", "chafa", "off"`)
+		problems = append(problems, `render.sprite_mode must be one of "auto", "image", "chafa", "off"`)
 	}
 	switch c.Render.SpriteSource {
 	case "", "pixel", "artwork":
@@ -168,11 +157,6 @@ func (c Config) Validate() error {
 	case "", "all_pixel", "window", "off":
 	default:
 		problems = append(problems, `render.sprite_prewarm must be one of "all_pixel", "window", "off"`)
-	}
-	switch c.Render.SpriteHD {
-	case "", "auto", "off":
-	default:
-		problems = append(problems, `render.sprite_hd must be one of "auto", "off"`)
 	}
 	switch c.Cache.DossierPrewarm {
 	case "", "all", "window", "off":
@@ -205,13 +189,14 @@ func (c Config) Validate() error {
 }
 
 // EffectiveSpriteMode returns auto, image, chafa, or off.
+// Legacy "text" maps to chafa.
 func (c Config) EffectiveSpriteMode() string {
 	switch c.Render.SpriteMode {
 	case "off":
 		return "off"
 	case "image":
 		return "image"
-	case "text", "chafa":
+	case "chafa", "text":
 		return "chafa"
 	default:
 		return "auto"
@@ -248,10 +233,10 @@ func (c Config) EffectiveDossierPrewarm() string {
 	}
 }
 
-// SpriteHDEnabled reports whether bulk artwork warm is allowed.
-// Resolve always prefers official artwork; this gates pack download only.
-func (c Config) SpriteHDEnabled() bool {
-	return c.Render.SpriteHD != "off"
+// ArtworkWarmEnabled reports whether bulk official-artwork download is allowed.
+// Derived from setup consent/mode (no separate sprite_hd knob).
+func (c Config) ArtworkWarmEnabled() bool {
+	return c.EffectiveArtworkMode() != ArtworkModeOff
 }
 
 // NeedsSetup reports whether the first-run wizard should run.
@@ -279,7 +264,7 @@ func (c Config) EffectiveArtworkMode() string {
 	}
 }
 
-// ApplyArtworkConsent updates setup + render.sprite_hd to match a wizard choice.
+// ApplyArtworkConsent updates setup fields to match a wizard choice.
 func (c *Config) ApplyArtworkConsent(consent, mode string) {
 	if c == nil {
 		return
@@ -287,7 +272,6 @@ func (c *Config) ApplyArtworkConsent(consent, mode string) {
 	switch consent {
 	case ArtworkConsentAccepted:
 		c.Setup.ArtworkConsent = ArtworkConsentAccepted
-		c.Render.SpriteHD = "auto"
 		switch mode {
 		case ArtworkModeBackground:
 			c.Setup.ArtworkMode = ArtworkModeBackground
@@ -297,11 +281,9 @@ func (c *Config) ApplyArtworkConsent(consent, mode string) {
 	case ArtworkConsentDeclined:
 		c.Setup.ArtworkConsent = ArtworkConsentDeclined
 		c.Setup.ArtworkMode = ArtworkModeOff
-		c.Render.SpriteHD = "off"
 	default:
 		c.Setup.ArtworkConsent = ArtworkConsentNone
 		c.Setup.ArtworkMode = ArtworkModeOff
-		c.Render.SpriteHD = "off"
 	}
 }
 
@@ -475,8 +457,17 @@ func Edit(path string, getenv func(string) string) error {
 	if len(command) == 0 {
 		return errors.New("no editor command configured")
 	}
-	args := append(command[1:], path)
+	args := append(append([]string{}, command[1:]...), path)
 	cmd := exec.Command(command[0], args...) // #nosec G204 -- user $VISUAL/$EDITOR or platform default
+	if !editorWaits(command) {
+		// GUI editors (notepad, code, cursor, …): open and return so the TTY
+		// is not stuck until the window closes / CTRL+C.
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("open config in %s: %w", command[0], err)
+		}
+		go func() { _ = cmd.Wait() }() // reap; ignore exit
+		return nil
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -484,6 +475,27 @@ func Edit(path string, getenv func(string) string) error {
 		return fmt.Errorf("open config in %s: %w", command[0], err)
 	}
 	return nil
+}
+
+// editorWaits is true for TTY editors (vim/nano/…) or when --wait/-w is set.
+// GUI editors return false so Edit can fire-and-forget.
+func editorWaits(command []string) bool {
+	if len(command) == 0 {
+		return true
+	}
+	for _, a := range command[1:] {
+		if a == "--wait" || a == "-w" {
+			return true
+		}
+	}
+	base := strings.ToLower(filepath.Base(command[0]))
+	base = strings.TrimSuffix(base, ".exe")
+	switch base {
+	case "vi", "vim", "nvim", "nano", "emacs", "helix", "hx", "micro":
+		return true
+	default:
+		return false
+	}
 }
 
 func splitCommand(value string) []string {

@@ -238,7 +238,7 @@ func TestBrowseListVeryNarrowPrioritizesSelectedName(t *testing.T) {
 }
 
 func TestDialogOverlaySnapshot(t *testing.T) {
-	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Locations", "Pokédex", "Biology"}
+	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
 	out := views.Browse(views.BrowseData{
 		Width: 120, Height: 40,
 		HasSelected: true,
@@ -255,7 +255,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		FooterHint:    "↑/↓ section • PgUp/PgDn scroll • esc close",
 	})
 	plain := stripANSI(out)
-	for _, want := range []string{"Charmander", "#004", "> Overview", "Height", "↑/↓ section", "esc close"} {
+	for _, want := range []string{"Charmander", "#004", "● Overview", "Height", "↑/↓ section", "esc close"} {
 		if !strings.Contains(out, want) && !strings.Contains(plain, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -297,7 +297,7 @@ func TestBrowseSpriteNoSwitcher(t *testing.T) {
 }
 
 func TestDossierFrameFillsTerminal(t *testing.T) {
-	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Locations", "Pokédex", "Biology"}
+	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
 	out := stripANSI(components.DossierFrame(
 		"Charmander #004",
 		0,
@@ -315,7 +315,7 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "╭─") || !strings.Contains(lines[0], "Charmander") {
 		t.Fatalf("expected full-frame title border:\n%s", lines[0])
 	}
-	if !strings.Contains(out, "> Overview") || !strings.Contains(out, "  Stats") {
+	if !strings.Contains(out, "● Overview") || !strings.Contains(out, "  Stats") {
 		t.Fatalf("expected vertical section rail:\n%s", out)
 	}
 	// No dimmed browse peek: first content row should start at the card edge.
@@ -329,7 +329,7 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 }
 
 func TestDialogNarrowUsesStackedPager(t *testing.T) {
-	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Locations", "Pokédex", "Biology"}
+	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
 	out := stripANSI(components.DossierFrame(
 		"Charmander #004",
 		3,

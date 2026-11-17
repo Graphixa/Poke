@@ -241,7 +241,7 @@ func (e *Engine) lookupAssetRefs(ctx context.Context, pokemon domain.Pokemon, na
 	return nil
 }
 
-// WarmRender forces the chafa backend at interactive (fast) quality for
+// WarmRender forces the chafa backend at interactive quality for
 // background warm. Full Mosaic prewarm is too expensive and unused on native
 // terminals (browse skips chafa warm when NativeImage is set).
 func (e *Engine) WarmRender(ctx context.Context, pokemon domain.Pokemon, cells int) RenderResult {
@@ -663,7 +663,7 @@ func (e *Engine) resolveNativeAsset(ctx context.Context, pokemon domain.Pokemon,
 	return last, AssetTierHD
 }
 
-// nativeCacheKey builds a mem+disk key for Kitty/iTerm/Sixel frames (bg + version + palette).
+// nativeCacheKey builds a mem+disk key for Kitty/iTerm/Sixel frames (fixed letterbox + version + palette).
 func nativeCacheKey(contentHash string, rend Renderer, w, h int, bg color.RGBA, sixelColors int) string {
 	proto := ""
 	if namer, ok := rend.(protocolNamer); ok {

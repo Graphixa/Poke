@@ -2,6 +2,7 @@ package cache_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,29 +12,10 @@ import (
 	"github.com/Graphixa/Pokedex/internal/domain"
 )
 
-func TestIncompatibleSchemaDestructiveReset(t *testing.T) {
+func TestIncompatibleSchemaDeactivatesWithoutDelete(t *testing.T) {
 	root := t.TempDir()
 	clock := fixedClock{t: time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)}
 	store := cache.NewStore(root, clock)
-
-	legacyPaths := []string{
-		filepath.Join("pokemon", "25.json"),
-		filepath.Join("species", "25.json"),
-		filepath.Join("moves", "1.json"),
-		filepath.Join("evolution", "10.json"),
-		filepath.Join("encounters", "25.json"),
-		filepath.Join("pokemon", "025-pikachu", "dossier.json"),
-		"manifest.json",
-	}
-	for _, rel := range legacyPaths {
-		path := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
 
 	id := "2026-08-29T000000"
 	if err := store.EnsureDatasetDir(id); err != nil {
@@ -47,25 +29,54 @@ func TestIncompatibleSchemaDestructiveReset(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ActivateDataset(id); err != nil {
+	// Simulate a previously activated incompatible snapshot (Activate refuses wrong schema).
+	ptr, _ := json.Marshal(map[string]any{"schema_version": 2, "dataset_id": id})
+	if err := os.WriteFile(filepath.Join(root, "active.json"), ptr, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	marker := filepath.Join(root, "datasets", id, "keep-me.txt")
+	if err := os.WriteFile(marker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := store.EnsureCompatibleDataset(); err != nil {
 		t.Fatal(err)
 	}
 	if store.HasActiveDataset() {
-		t.Fatal("incompatible dataset must be reset")
-	}
-	for _, rel := range legacyPaths {
-		if _, err := os.Stat(filepath.Join(root, rel)); !os.IsNotExist(err) {
-			t.Fatalf("legacy file remains: %s", rel)
-		}
+		t.Fatal("incompatible dataset must not stay active")
 	}
 	if _, err := os.Stat(filepath.Join(root, "active.json")); !os.IsNotExist(err) {
 		t.Fatal("active.json must be removed")
 	}
-	if _, err := os.Stat(filepath.Join(root, "datasets", id)); !os.IsNotExist(err) {
-		t.Fatal("incompatible dataset dir must be removed")
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("dataset snapshot must be preserved: %v", err)
+	}
+	notice, err := store.ReadDatasetNotice()
+	if err != nil || !notice.NeedsUpdate || notice.DatasetID != id {
+		t.Fatalf("notice=%+v err=%v", notice, err)
+	}
+	if notice.Reason == "" {
+		t.Fatal("notice reason required")
+	}
+}
+
+func TestActivateDatasetRefusesWrongSchema(t *testing.T) {
+	root := t.TempDir()
+	store := cache.NewStore(root, fixedClock{t: time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)})
+	id := "2026-08-29T000000"
+	if err := store.EnsureDatasetDir(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteDatasetManifest(cache.DatasetManifest{
+		SchemaVersion:  2,
+		DatasetVersion: id,
+		Complete:       true,
+		PokemonCount:   1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ActivateDataset(id); err == nil {
+		t.Fatal("must refuse wrong schema")
 	}
 }
 

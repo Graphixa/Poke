@@ -46,6 +46,7 @@ type pokemonDTO struct {
 			VersionGroup    namedAPIResource `json:"version_group"`
 		} `json:"version_group_details"`
 	} `json:"moves"`
+	Forms   []namedAPIResource `json:"forms"`
 	Sprites struct {
 		FrontDefault *string `json:"front_default"`
 		Other        *struct {
@@ -60,19 +61,22 @@ type pokemonDTO struct {
 }
 
 type speciesDTO struct {
-	ID             int               `json:"id"`
-	Name           string            `json:"name"`
-	CaptureRate    int               `json:"capture_rate"`
-	BaseHappiness  int               `json:"base_happiness"`
-	GenderRate     int               `json:"gender_rate"`
-	IsLegendary    bool              `json:"is_legendary"`
-	IsMythical     bool              `json:"is_mythical"`
-	GrowthRate     *namedAPIResource `json:"growth_rate"`
-	Color          *namedAPIResource `json:"color"`
-	Shape          *namedAPIResource `json:"shape"`
-	Habitat        *namedAPIResource `json:"habitat"`
-	Generation     *namedAPIResource `json:"generation"`
-	EvolutionChain apiResource       `json:"evolution_chain"`
+	ID             int                `json:"id"`
+	Name           string             `json:"name"`
+	CaptureRate    int                `json:"capture_rate"`
+	BaseHappiness  int                `json:"base_happiness"`
+	GenderRate     int                `json:"gender_rate"`
+	HatchCounter   int                `json:"hatch_counter"`
+	IsBaby         bool               `json:"is_baby"`
+	IsLegendary    bool               `json:"is_legendary"`
+	IsMythical     bool               `json:"is_mythical"`
+	GrowthRate     *namedAPIResource  `json:"growth_rate"`
+	Color          *namedAPIResource  `json:"color"`
+	Shape          *namedAPIResource  `json:"shape"`
+	Habitat        *namedAPIResource  `json:"habitat"`
+	Generation     *namedAPIResource  `json:"generation"`
+	EvolutionChain apiResource        `json:"evolution_chain"`
+	EggGroups      []namedAPIResource `json:"egg_groups"`
 	Names          []struct {
 		Name     string           `json:"name"`
 		Language namedAPIResource `json:"language"`
@@ -149,4 +153,95 @@ type moveDTO struct {
 		Name     string           `json:"name"`
 		Language namedAPIResource `json:"language"`
 	} `json:"names"`
+	EffectEntries []struct {
+		ShortEffect string           `json:"short_effect"`
+		Effect      string           `json:"effect"`
+		Language    namedAPIResource `json:"language"`
+	} `json:"effect_entries"`
+}
+
+type versionDTO struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Names []struct {
+		Name     string           `json:"name"`
+		Language namedAPIResource `json:"language"`
+	} `json:"names"`
+	VersionGroup namedAPIResource `json:"version_group"`
+}
+
+type versionGroupDTO struct {
+	ID         int                `json:"id"`
+	Name       string             `json:"name"`
+	Order      int                `json:"order"`
+	Generation *namedAPIResource  `json:"generation"`
+	Versions   []namedAPIResource `json:"versions"`
+	Names      []struct {
+		Name     string           `json:"name"`
+		Language namedAPIResource `json:"language"`
+	} `json:"names"`
+}
+
+type typeDTO struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Names []struct {
+		Name     string           `json:"name"`
+		Language namedAPIResource `json:"language"`
+	} `json:"names"`
+	DamageRelations struct {
+		NoDamageFrom     []namedAPIResource `json:"no_damage_from"`
+		HalfDamageFrom   []namedAPIResource `json:"half_damage_from"`
+		DoubleDamageFrom []namedAPIResource `json:"double_damage_from"`
+	} `json:"damage_relations"`
+}
+
+type abilityDTO struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Names []struct {
+		Name     string           `json:"name"`
+		Language namedAPIResource `json:"language"`
+	} `json:"names"`
+	EffectEntries []struct {
+		ShortEffect string           `json:"short_effect"`
+		Effect      string           `json:"effect"`
+		Language    namedAPIResource `json:"language"`
+	} `json:"effect_entries"`
+}
+
+type pokemonFormDTO struct {
+	ID           int              `json:"id"`
+	Name         string           `json:"name"`
+	Order        int              `json:"order"`
+	FormOrder    int              `json:"form_order"`
+	IsDefault    bool             `json:"is_default"`
+	IsBattleOnly bool             `json:"is_battle_only"`
+	IsMega       bool             `json:"is_mega"`
+	FormName     string           `json:"form_name"`
+	VersionGroup namedAPIResource `json:"version_group"`
+	Pokemon      namedAPIResource `json:"pokemon"`
+	Types        []struct {
+		Slot int              `json:"slot"`
+		Type namedAPIResource `json:"type"`
+	} `json:"types"`
+	Names []struct {
+		Name     string           `json:"name"`
+		Language namedAPIResource `json:"language"`
+	} `json:"names"`
+	FormNames []struct {
+		Name     string           `json:"name"`
+		Language namedAPIResource `json:"language"`
+	} `json:"form_names"`
+	Sprites struct {
+		FrontDefault *string `json:"front_default"`
+		Other        *struct {
+			Home *struct {
+				FrontDefault *string `json:"front_default"`
+			} `json:"home"`
+			OfficialArtwork *struct {
+				FrontDefault *string `json:"front_default"`
+			} `json:"official-artwork"`
+		} `json:"other"`
+	} `json:"sprites"`
 }

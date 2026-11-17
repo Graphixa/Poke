@@ -45,7 +45,7 @@ func NewThemePicker(opts ThemePickerOptions) (*ThemePicker, error) {
 	idx := 0
 	cur := strings.TrimSpace(opts.Current)
 	if cur == "" {
-		cur = "catppuccin"
+		cur = "dracula"
 	}
 	for i, o := range list {
 		if o.Name == cur {

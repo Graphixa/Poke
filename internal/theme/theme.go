@@ -137,11 +137,11 @@ func Apply(f File) {
 	style.SetPalette(f.Colors.ToPalette())
 }
 
-// Resolve loads user theme, then embedded, then catppuccin, then system.
+// Resolve loads user theme, then embedded, then dracula, then system.
 func Resolve(themesDir, name string) (File, string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		name = "catppuccin"
+		name = "dracula"
 	}
 	name = normalize(name)
 	if name == "system" {
@@ -155,7 +155,7 @@ func Resolve(themesDir, name string) (File, string, error) {
 	if f, err := LoadEmbedded(name); err == nil {
 		return f, "embedded", nil
 	}
-	if f, err := LoadEmbedded("catppuccin"); err == nil {
+	if f, err := LoadEmbedded("dracula"); err == nil {
 		return f, "default", nil
 	}
 	return System(), "system", nil
@@ -165,7 +165,7 @@ func Resolve(themesDir, name string) (File, string, error) {
 func ListOptions(themesDir, current string) ([]Option, error) {
 	current = normalize(current)
 	if current == "" {
-		current = "catppuccin"
+		current = "dracula"
 	}
 	seen := map[string]bool{}
 	var out []Option

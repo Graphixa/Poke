@@ -6,24 +6,42 @@ The canonical command is **`poke`**. **`pokedex`** is an equivalent alias (same 
 
 ## Install
 
+### One-liner (recommended)
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Graphixa/Pokedex/main/scripts/install.ps1 | iex
+```
+
+Pin a version with `POKE_VERSION=1.0.0` (shell) or `$env:POKE_VERSION="1.0.0"` (PowerShell). Scripts download the GitHub Release archive, verify `checksums.txt`, and install both `poke` and `pokedex`.
+
+### Winget (Windows)
+
+```powershell
+winget install --id Graphixa.Poke
+```
+
+### Homebrew (macOS)
+
+```bash
+brew tap Graphixa/homebrew-tap
+brew install poke
+```
+
+### Chocolatey (Windows)
+
+Coming soon (`choco install poke`). Package scaffolding is in-repo; publish follows the first Chocolatey.org approval.
+
 ### From a GitHub Release
 
 Download the archive for your OS/architecture from the [Releases](https://github.com/Graphixa/Pokedex/releases) page, extract it, and put the binaries on your `PATH`.
 
-Each archive includes both names:
-
-| Platform | Executables |
-| --- | --- |
-| Linux / macOS | `poke` and `pokedex` (identical binaries; a Homebrew tap may later install `pokedex` as a symlink) |
-| Windows | `poke.exe` and `pokedex.exe` |
-
-Verify the download with `checksums.txt` from the same release.
-
-```bash
-# Example after extracting a Linux/macOS archive
-./poke version
-./pokedex version
-```
+Each archive includes both names (`poke` / `pokedex`, or `.exe` on Windows). Verify with `checksums.txt` from the same release.
 
 ### From source
 
@@ -33,15 +51,10 @@ Requires Go 1.26+.
 git clone https://github.com/Graphixa/Pokedex.git
 cd Pokedex
 go build -o poke ./cmd/poke
-# optional alias name
 cp poke pokedex   # or: ln -s poke pokedex
 ```
 
-### Homebrew / Scoop
-
-- **Homebrew tap:** planned immediately after the first tagged GitHub Release. Not part of the v1 packaging gate.
-- **Scoop:** not supported (out of scope for v1).
-
+Scoop is not supported (out of scope for v1).
 ## Quick start
 
 ```bash
@@ -63,14 +76,10 @@ poke random --stats
 
 # Cache / config helpers
 poke cache path
-poke cache refresh   # same as: poke update
 poke cache clear
 poke config path
 poke config init
 poke config edit
-
-# Clear cache and config to re-run first-run setup
-poke reset
 
 # Colour themes (interactive selector with live preview)
 poke theme
@@ -78,7 +87,7 @@ poke theme
 
 All of the above work with `pokedex` instead of `poke`.
 
-Default theme is **Catppuccin**. Bundled themes include Nord, Dracula, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can be placed next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
+Default theme is **Dracula**. Bundled themes include Pokédex, Nord, Catppuccin, and Solarized Light; `system` uses the terminal defaults. Custom YAML themes can be placed next to the config file under `themes/` (FontGet-compatible keys: `primary`, `secondary`, `components`, `placeholders`, `base`, `warning`, `error`, `success`). Set `theme.name` in `config.yaml` or pick one with `poke theme`.
 
 ## Prototype branch
 
@@ -139,7 +148,7 @@ Official artwork downloads in the background after the TUI opens (and can resume
 | Failed update | Previous snapshot stays active |
 | Artwork still downloading | List and text stay usable; selected missing art is prioritised |
 
-`poke update` / `poke cache refresh` rebuild a new dataset snapshot beside the active one, then switch `active.json` only if the snapshot is complete. They also sync official artwork.
+`poke update` rebuilds a new dataset snapshot beside the active one, switches `active.json` only if the snapshot is complete, and syncs official artwork.
 
 ### Renderer fallback
 
@@ -156,7 +165,7 @@ Braille and ASCII modes are no longer in the production path; old config values 
 | Problem | What to try |
 | --- | --- |
 | Empty cache / offline error | Connect to the network and run `poke update` |
-| Stale or odd data | `poke cache refresh`, or `poke cache clear` then `poke update` |
+| Stale or odd data | `poke update`, or `poke cache clear` then `poke update` |
 | Corrupt cache entry | App quarantines bad files under `corrupt/` and rebuilds; clear cache if needed |
 | Rate limited (HTTP 429) | Wait and retry; client backs off automatically |
 | Not found (inline flags) | Check spelling/slug/number; inline mode exits non-zero |
@@ -181,6 +190,12 @@ On Windows without `bash` on `PATH`, archive verification can use:
 pwsh -File scripts/verify-release-archives.ps1
 ```
 
-CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser and publishes GitHub Release assets with checksums.
+CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser (tests + check first), publishes GitHub Release assets with checksums, updates the Homebrew tap, and opens a Winget PR. Chocolatey packs from a separate Windows workflow after the release.
+
+Licensed under [GPL-3.0](LICENSE).
+
+## Credits
+
+Terminal fireworks animation adapted from [erik-adelbert/firework](https://github.com/erik-adelbert/firework) (MIT). See [`internal/fireworks/LICENSE.MIT`](internal/fireworks/LICENSE.MIT).
 
 Release notes are grouped from conventional commit subjects (`feat`, `fix`, `docs`, …).

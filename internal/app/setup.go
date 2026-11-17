@@ -19,7 +19,7 @@ import (
 func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services) (config.Config, bool, error) {
 	cfg := svc.Config
 	if !cfg.NeedsSetup() {
-		bg := cfg.EffectiveArtworkMode() == config.ArtworkModeBackground && cfg.SpriteHDEnabled()
+		bg := cfg.EffectiveArtworkMode() == config.ArtworkModeBackground
 		return cfg, bg, nil
 	}
 

@@ -64,7 +64,7 @@ func TestPokemonRoundTrip(t *testing.T) {
 		Stats:     domain.Stats{HP: 35, Speed: 90},
 		Moves: []domain.LearnedMove{{
 			MoveID: 1, Slug: "thunder-shock",
-			Learnings: []domain.MoveLearning{{Method: "level-up", Level: 1}},
+			Learnings: []domain.MoveLearning{{Method: "level-up", Level: 1, VersionGroupID: 1}},
 		}},
 		Sprites: domain.Sprites{
 			FrontDefault:    "https://example/pixel.png",
@@ -81,7 +81,7 @@ func TestPokemonRoundTrip(t *testing.T) {
 		t.Fatalf("sprites=%+v", got.Sprites)
 	}
 	learnset := dataset.LearnsetFromPokemon(src)
-	if len(learnset) != 1 || learnset[0].MoveID != 1 || learnset[0].Level != 1 {
+	if len(learnset) != 1 || learnset[0].MoveID != 1 || learnset[0].LevelLearnedAt != 1 {
 		t.Fatalf("learnset=%+v", learnset)
 	}
 }
@@ -122,7 +122,7 @@ func TestEvolutionRoundTrip(t *testing.T) {
 }
 
 func TestSchemaVersion(t *testing.T) {
-	if dataset.SchemaVersion != 3 {
-		t.Fatalf("schema version=%d want 3", dataset.SchemaVersion)
+	if dataset.SchemaVersion != 4 {
+		t.Fatalf("schema version=%d want 4", dataset.SchemaVersion)
 	}
 }

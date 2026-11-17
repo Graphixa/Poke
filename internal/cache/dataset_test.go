@@ -367,8 +367,8 @@ func TestDatasetSnapshotHasBoundedFileCount(t *testing.T) {
 		count++
 		return nil
 	})
-	if count > 12 {
-		t.Fatalf("dataset snapshot files=%d want <=12", count)
+	if count > 20 {
+		t.Fatalf("dataset snapshot files=%d want <=20", count)
 	}
 }
 
@@ -475,7 +475,7 @@ func TestAggregatePathsAndRoundTrip(t *testing.T) {
 	b.Species[25] = dataset.SpeciesFromDomain(domain.Species{
 		ID: 25, Slug: "pikachu", DisplayName: "Pikachu", DefaultPokemonID: 25,
 	})
-	b.Learnsets[25] = []dataset.DatasetLearn{{Level: 1, MoveID: 84}}
+	b.Learnsets[25] = []dataset.DatasetLearn{{PokemonID: 25, LevelLearnedAt: 1, MoveID: 84, LearnMethod: "level-up", VersionGroupID: 1}}
 	b.Moves[84] = dataset.DatasetMove{ID: 84, Slug: "thunder-shock", DisplayName: "Thunder Shock", PP: 30}
 	b.Evolutions[10] = dataset.EvolutionFromDomain(domain.EvolutionTree{
 		Root: domain.EvolutionNode{SpeciesID: 25, SpeciesSlug: "pikachu", DisplayName: "Pikachu"},

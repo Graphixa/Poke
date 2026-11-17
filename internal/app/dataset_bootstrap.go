@@ -71,21 +71,6 @@ func bootstrapStageFromDataset(stage cache.DatasetStage) bootstrap.Stage {
 	}
 }
 
-// cacheDatasetProgress returns TUI progress on a terminal stderr, otherwise throttled lines.
-func cacheDatasetProgress(ctx context.Context, w io.Writer, run func(context.Context, cache.DatasetProgressFunc) error) error {
-	if isTerminal(w) {
-		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptBootstrapRun(run)})
-		if err != nil {
-			return err
-		}
-		if result.Aborted {
-			return context.Canceled
-		}
-		return nil
-	}
-	return run(ctx, throttledCLIProgress(w))
-}
-
 func cacheUpdateProgress(ctx context.Context, w io.Writer, run func(context.Context, updateProgressFunc) error) error {
 	if isTerminal(w) {
 		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptUpdateRun(run)})

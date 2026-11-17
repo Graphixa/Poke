@@ -20,9 +20,11 @@ type QualityPreset int
 const (
 	// QualityMosaic prioritises structural detail via denser Unicode mosaics.
 	QualityMosaic QualityPreset = iota
-	// QualityMosaicFast keeps mosaic symbols but lowers work factor for TUI latency.
+	// QualityMosaicFast keeps mosaic symbols but lowers work factor (legacy / tests).
 	QualityMosaicFast
 )
+
+const defaultSymbols = "block+half+quad+sextant+octant+border+space-wide-inverted"
 
 // RenderOpts controls Chafa canvas geometry, colour mode, and quality knobs.
 type RenderOpts struct {
@@ -65,7 +67,7 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 
 	symbolMap := chafago.SymbolMapNew()
 	defer chafago.SymbolMapUnref(symbolMap)
-	chafago.SymbolMapApplySelectors(symbolMap, "block+half+quad+sextant+octant+border+space-wide-inverted")
+	chafago.SymbolMapApplySelectors(symbolMap, defaultSymbols)
 
 	config := chafago.CanvasConfigNew()
 	defer chafago.CanvasConfigUnref(config)
@@ -97,7 +99,6 @@ func GenerateANSIBlockOpts(data *ImageData, opts RenderOpts) string {
 	chafago.CanvasConfigSetColorSpace(config, opts.colorSpace)
 	chafago.CanvasConfigSetColorExtractor(config, opts.colorExtractor)
 	chafago.CanvasConfigSetDitherMode(config, opts.dither)
-	// Preprocessing contrast boost is costly; leave it off for interactive browse.
 	chafago.CanvasConfigSetPreprocessingEnabled(config, false)
 
 	if opts.Background.A > 0 {
