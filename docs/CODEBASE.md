@@ -48,12 +48,12 @@ Target import rules. `app` is allowed to assemble services and translate progres
 
 | Layer | May | Must not |
 | --- | --- | --- |
-| `internal/tui` (browse, bootstrap, setup) | presentation types (`WarmStage`, local bootstrap/setup `Progress`) | import `internal/cache` |
+| `internal/tui` (browse, setup) | presentation types (`WarmStage`, setup `Progress`) | import `internal/cache` |
 | `prewarm` | one `Progress` type (with `Kind`); encode/download mechanics via per-kind hooks | no `cache` import (hooks injected by `app`) |
 
 | `cache`, `dataset` | storage, snapshots, dataset bootstrap | import `app` or `tui` |
 | `internal/app` | construct services, map subsystem progress → TUI/CLI | dump presentation terminology into renderer packages |
-| renderer / warmer packages | mechanical progress for their work units | know TUI footer/bootstrap copy or `tui.WarmStage` |
+| renderer / warmer packages | mechanical progress for their work units | know TUI footer/setup copy or `tui.WarmStage` |
 
 `cache` owns **dataset** progress (`DatasetStage` / `DatasetProgress`). It is not a global event-types package. Native/artwork/dossier/chafa stages belong to the producing subsystem; `app` classifies them into `tui.WarmStage`. Architecture/import tests in `internal/app/architecture_test.go` lock the forbidden edges.
 
@@ -61,8 +61,8 @@ Target import rules. `app` is allowed to assemble services and translate progres
 
 - `cache.DatasetProgress` / `DatasetStage` — dataset bootstrap and enrich only. No native/artwork/dossier/chafa work uses this type.
 - `prewarm.Progress` — one shared type; `app` classifies it into `tui.WarmStage*` per service. Prewarm does not import `cache`.
-- `app` maps warmer progress → `tui.WarmProgress` / `tui.WarmStage`, dataset progress → bootstrap/CLI copy, and composite update progress → bootstrap/CLI presentation.
-- `tui.WarmProgress.Stage` is `tui.WarmStage`. Browse, bootstrap, and setup do not import `cache`.
+- `app` maps warmer progress → `tui.WarmProgress` / `tui.WarmStage`. A terminal dataset download (first run, cache clear, `poke refresh`) goes through one weighted bar into `setup.Progress`. A non-terminal uses `formatBootstrapProgress`.
+- `tui.WarmProgress.Stage` is `tui.WarmStage`. Browse and setup do not import `cache`. The TUI stage sentence is `setup.StageLabel`; CLI copy stays in `formatBootstrapProgress`.
 - All four warmers are one `prewarm.Service` (heap of P0/P1 hints, latest-first, plus an optional background scan outward from the browse anchor; phased size buckets; retry backoff). Only the per-kind `Warm` hook differs.
 
 ---
@@ -75,19 +75,28 @@ Target import rules. `app` is allowed to assemble services and translate progres
 2. `app.Execute` resolves OS config/cache paths (`config.DirectoryResolver`), builds a `sync.Once` lazy `LoadServices`, applies theme, constructs cobra via `cli.NewRoot`.
 3. `LoadServices` → `config.Load` → `cache.NewStore` + `cache.EnsureCompatibleCache` → `pokeapi.NewClient` → `cache.NewService`.
 4. Root with no inline flags → `Handler.RunRoot`.
-5. If browse and no active dataset → `runDatasetBootstrap` (flow 2) before TUI.
-6. `openBrowse` → `runSetupIfNeeded` (first-run wizard) → `EnsureIndex` → capability detect → `sprite.Engine` + optional warmers → `tui.Run`.
-7. Inline `--info/--stats/--evolution` skips TUI; `DetailService` + `output`.
-8. `--debug` enables `debuglog` to a file (stderr prints the path only).
+5. `openBrowse` → `runSetupIfNeeded` (flow 2) → `EnsureIndex` → capability detect → `sprite.Engine` + optional warmers → `tui.Run`. Missing Pokédex or pictures are downloaded inside setup, not by a separate bootstrap before it.
+6. Inline `--info/--stats/--evolution` skips TUI; `DetailService` + `output`.
+7. `--debug` enables `debuglog` to a file (stderr prints the path only).
 
-### 2. Dataset bootstrap
+### 2. Dataset download (setup preloader)
 
-1. Triggered when `!cache.Service.HasActiveDataset()` on browse, or `poke refresh`.
-2. App chooses TUI (`tui/bootstrap.Run`) if stderr is a terminal, else throttled CLI lines (`formatBootstrapProgress`).
+One screen, `tui/setup`. The caller turns steps on or off.
+
+| Command | Questions | Border title |
+| --- | --- | --- |
+| First run, `poke --setup` | theme, update check, intro, then OK | `Poke - Initial Setup` |
+| `poke refresh`, cache clear | none | `Refreshing Pokédex` |
+
+The download frame is the same everywhere: a 5-line spinner (`preload.SpinEvery`, `preload.SpinDots`), a shuffled joke (`preload.Lines`, `preload.LineEvery`), one weighted bar (`preload.Bar`), and one grey `setup.StageLabel` line. No count and no species name. Empty filter in browse is unrelated: the list says "No matches" and the right pane is blank (no "Select a Pokémon", and the last native picture is cleared).
+
+1. First run / cache clear: `runSetupIfNeeded` → `prepareWork` when the dataset or pictures are missing. `Ask` is true only for first run and `--setup`.
+2. `poke refresh`: `cacheUpdateProgress`. Terminal stderr runs `setup.Run` with `Ask: false` via `setupUpdateRun` (dataset rebuild, then `SyncArtwork` on the same bar). Otherwise throttled CLI lines (`formatBootstrapProgress`).
 3. `Service.BootstrapDataset` is single-flight (`group.Do("dataset-bootstrap")`).
-4. Stages (`cache.DatasetStage`): `index` → parallel `records` (pokemon+species+encounters) → `evolution` → `moves` → validate → write aggregates → `dataset` activate.
-5. Staging snapshot under `datasets/<id>/`. `ActivateDataset` writes `active.json` only if complete. Failed run leaves the previous snapshot.
-6. Workers: HTTP semaphore + `datasetWorkers()` goroutines, result channels, cancel via context.
+4. Stages (`cache.DatasetStage`, plus `ability` / `form` / `artwork`): `index` → parallel `records` → `evolution` → `moves` → catalog → abilities → forms → validate → write aggregates → activate. Artwork is its own bar part.
+5. Bar floors in `downloadReserve` hold space until a stage reports a real total. A non-positive total drops that part.
+6. Staging snapshot under `datasets/<id>/`. `ActivateDataset` writes `active.json` only if complete. Failed run leaves the previous snapshot.
+7. Workers: HTTP semaphore + `datasetWorkers()` goroutines, result channels, cancel via context. `Ctrl+C` and `Esc` cancel the setup screen.
 
 ### 3. Artwork download
 
@@ -115,8 +124,8 @@ Read path for a paint: mem LRU → gunzip disk → cold encode.
 
 **Manual RC (Windows Terminal):** `poke` — scroll warm + cold list; Image Cache progress visible; open dialog and toggle Art; mid-band through sprite must stay gone.
 
-1. Selection change → `bumpSelection` blanks image VM, `ClearNative()`, clears paint identity (`nativePaintANSI` / species) but **keeps** `nativePaintCells` as a geometry token, marks FollowUp dirty. `glanceHoldID` may keep previous **text/stats** until the new selection is commit-ready (sprite ready **and** About can fill — or no snapshot / new core settled with error); it does **not** sticky-preserve prior graphics. About uses a **last-good snapshot** (`glanceAbout*`) so cold fast scroll survives hold-ID churn and `resources` LRU eviction — not only `resources[glanceHoldID].HasCore`. List cursor moves immediately; art shows themed blank reservation (no spinner). Stats stay put via `browseStats` / held core; About must not blank between two species that had/have core.
-2. Not-ready dirty → `emitNativeClear` (themed space-clear art rect, zeros geometry) — **only when a frame was actually painted** (skipped on startup / already-clear), and **spaces only**: no solid-Sixel `ClearNativeRegion` fill (encoding an opaque rect per uncached selection was pure lag; a cell write already erases Sixel on WT). Ready dirty → immediate `emitNativeOverlay`: **same cell bucket** overwrites in place (DCS only); **first paint / size change / post-wipe** space-clears then DCS. View-changing dirties set `nativeNeedsFollowUp` so the first paint also arms one ~60ms insurance re-paint — not a defer-first 16ms wait.
+1. Selection change → `bumpSelection` blanks image VM, `ClearNative()`, clears paint identity (`nativePaintANSI` / species) but **keeps** `nativePaintCells` as a geometry token, marks FollowUp dirty. `glanceHoldID` may keep previous **text/stats** until the new selection is commit-ready (sprite ready **and** About can fill — or no snapshot / new core settled with error); it does **not** sticky-preserve prior graphics, and it is cleared when the new id is 0 (empty search). About uses a **last-good snapshot** (`glanceAbout*`) so cold fast scroll survives hold-ID churn and `resources` LRU eviction — not only `resources[glanceHoldID].HasCore`. List cursor moves immediately; art shows themed blank reservation (no browse spinner). Stats stay put via `browseStats` / held core; About must not blank between two species that had/have core.
+2. Not-ready dirty → `emitNativeClear` (themed space-clear art rect, zeros geometry) — **only when a frame was actually painted** (skipped on startup / already-clear), and **spaces only**: no solid-Sixel `ClearNativeRegion` fill (encoding an opaque rect per uncached selection was pure lag; a cell write already erases Sixel on WT). Same cell bucket may keep the last frame while a **selected** species is still loading. An empty list always clears, even when the bucket matches. Ready dirty → immediate `emitNativeOverlay`: **same cell bucket** overwrites in place (DCS only); **first paint / size change / post-wipe** space-clears then DCS. View-changing dirties set `nativeNeedsFollowUp` so the first paint also arms one ~60ms insurance re-paint — not a defer-first 16ms wait.
    - **Browse dossier-core arrival** repaints the overlay **once, in place** via `markNativeOverlayDirty` (no `FollowUp`) and only while a native sprite is active. Core adds genus/About cells outside the art box; the Sixel payload is unchanged, so it must not arm a second, delayed ~60ms redraw (that late re-paint per newly-browsed species read as "much slower"). `origin/main` did not repaint on core at all; this is the minimal safe version.
 3. Stable-frame gate (`nativeOverlayReady`): native image ready for the selected species and sprite shown. Text hold does **not** block Raw — sixel may paint while held About remains; text commits when sprite+About are ready together.
 4. `ensureSpriteLoad` / `runColdSelection`: `LookupCached` at `currentSpriteCells()` (Glance `16` or Art `40`). Hit applies immediately; cell art appears in View on apply; native marks FollowUp for immediate Raw + insurance.
@@ -198,7 +207,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ### `internal/app` — orchestration
 
-**Package deps:** `cli`, `config`, `cache`, `debuglog`, `domain`, `output`, `pokeapi`, `search`, `theme`, `themeui`, `tui`, `tui/bootstrap`, `tui/setup`, `tui/style`, `usererr`, `render/sprite` + `chafa`, `halfblock`, `image`, `placeholder`, `prewarm`.
+**Package deps:** `cli`, `config`, `cache`, `debuglog`, `domain`, `output`, `pokeapi`, `search`, `theme`, `themeui`, `tui`, `tui/preload`, `tui/setup`, `tui/style`, `usererr`, `render/sprite` + `chafa`, `halfblock`, `image`, `placeholder`, `prewarm`.
 
 **Callers:** `cmd/poke`, tests.
 
@@ -223,9 +232,9 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `dataset_bootstrap.go`
 
-- **Responsibility:** terminal vs CLI progress for dataset runs and the composite update operation; explicit dataset → bootstrap stage mapping.
-- **Types / funcs:** `runDatasetBootstrap`, `cacheUpdateProgress`, `bootstrapStageFromDataset`, `throttledProgress`, `formatBootstrapProgress`.
-- **Ownership:** presentation strings live in app (`"index"|"enrich"|"records"|…`) duplicated with `tui/bootstrap.stageLabel`.
+- **Responsibility:** terminal vs CLI progress for `poke refresh` (dataset rebuild plus artwork sync).
+- **Types / funcs:** `cacheUpdateProgress`, `setupUpdateRun`, `throttledProgress`, `formatBootstrapProgress`.
+- **Ownership:** terminal path is `setup.Run` (`Ask: false`) and `preload.Bar`. CLI strings stay in `formatBootstrapProgress` and are not the TUI stage sentences.
 - **Tests:** `dataset_bootstrap_test.go`.
 
 #### `handler.go`
@@ -241,8 +250,8 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 #### `setup.go`
 
-- **Responsibility:** first-run wizard; blocking artwork warm via `prewarm.NewArtwork`; `SaveConfig`.
-- **Tests:** none dedicated (wizard tests in `tui/setup`).
+- **Responsibility:** first-run questions and any missing Pokédex/pictures, including after cache clear. `prepareWork` feeds `preload.Bar` (`downloadReserve` floors). `Ask` selects the question steps. Blocking artwork warm via `prewarm.NewArtwork`; `SaveConfig` only when setup asked.
+- **Tests:** none dedicated (screen tests in `tui/setup`).
 
 #### `details.go`
 
@@ -371,7 +380,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 **Deps:** `config`, `dataset`, `debuglog`, `domain`, `pokeapi` (bootstrap only), `render/sprite` (keys, CDN URL, PNG validate), `typeseed`.
 
-**Callers:** `app`, `usererr`. Rendering warmers do not import `cache`. TUI browse/bootstrap/setup do **not** import `cache`.
+**Callers:** `app`, `usererr`. Rendering warmers do not import `cache`. TUI browse and setup do **not** import `cache`.
 
 **Concurrency:** `Service.sema` HTTP slots; `singleFlight`; `inFlight` atomic; `localOnly` atomic; `Store` RWMutex (active id + snapshot); bootstrap worker pools; `BackgroundRefresh`/`BackgroundEnrich` goroutines; `prewarm` workers.
 
@@ -506,7 +515,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ### `internal/tui` — browse presentation
 
-**Deps:** bubbles/bubbletea/lipgloss, `domain`, `search`, `debuglog`, `render/sprite`, `tui/style`, `tui/components`, `tui/views`. **Does not import** `cache` (browse, bootstrap, or setup). Contract: TUI presentation has no metadata-cache dependency.
+**Deps:** bubbles/bubbletea/lipgloss, `domain`, `search`, `debuglog`, `render/sprite`, `tui/style`, `tui/components`, `tui/views`. **Does not import** `cache` (browse or setup). Contract: TUI presentation has no metadata-cache dependency.
 
 **Concurrency:** tea commands (goroutines); `coldFrameCh`; `warmEvents` channel; overlay follow-up timer; no mutex on `Model` (single-threaded tea loop). Warmers run off-loop.
 
@@ -540,15 +549,15 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 **Tests:** `model_test.go`, `layout_test.go`, `sprite_test.go`, `artwork_ready_test.go`, `ui_ready_test.go`, `spinner_ux_test.go`, `native_overlay_test.go`, `warm_footer_test.go`, `warm_footer_internal_test.go`, `e2e_acceptance_test.go`, `export_test.go` (test helpers).
 
-#### `tui/bootstrap/model.go`
+#### `tui/preload`
 
-- Fullscreen dataset/composite-update progress. Local `Stage` / `Progress` / `ProgressFunc`; app explicitly maps dataset and artwork subsystem events into it. `stageLabel` duplicates app CLI copy (wording not identical; do not unify). No `cache` import.
-- **Tests:** `model_test.go`.
+- Shared download pieces: `Lines` / `LineEvery` (jokes), `SpinEvery` / `SpinDots` (ring above the joke; the moving dot is an unstyled `●`), `Bar` (one fraction, larger parts weigh more). No `cache` import.
+- **Tests:** `lines_test.go`.
 
 #### `tui/setup/model.go`
 
-- First-run wizard (`Step` is typed). Local `Progress` / `ProgressFunc`; app adapts cache/warmer progress. No `cache` import.
-- **Tests:** `setup_test.go`.
+- First-run steps (theme, update check, intro) and the download frame. `Ask: false` skips the questions and titles the frame `Refreshing Pokédex`. `Progress` is already summed; `Stage` picks `StageLabel`. No `cache` import.
+- **Tests:** `setup_test.go`, `progress_test.go`.
 
 #### `tui/style/colors.go`
 
@@ -628,7 +637,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 
 ## Known ownership concerns
 
-1. **Duplicate stage copy:** `app.formatBootstrapProgress` vs `tui/bootstrap.stageLabel` vs `Handler.ensureIndex` switch. Keep separate (CLI vs TUI); do not unify.
+1. **Duplicate stage copy:** `app.formatBootstrapProgress` (CLI) vs `setup.StageLabel` (TUI) vs `Handler.ensureIndex` stderr. Keep separate; do not unify.
 2. **One warm service:** all kinds share `prewarm.Service`; kind differences live only in the `Warm`/`Has` hooks and config flags (`Background`, `Workers`, `ThrottleOnActivity`).
 3. **Native protocol stamp:** `NativeManifest` is retained for compatibility and acceptance-audit tooling. It is not a completeness authority and its protocol/version requires separate investigation before any change.
 4. **Test-only diagnostics:** rendering diagnostics may retain test-specific call sites; audit them separately rather than widening production ownership.
@@ -647,7 +656,7 @@ Dependencies listed are **internal** imports unless noted. Callers are productio
 | `pokeapi` | `client_test.go` |
 | `search` | `search_test.go` |
 | `sprite` + subs | engine/mem/persist/frame/source/imageprep/resize/capabilities; sixel; image; chafa; halfblock; prewarm |
-| `tui` + subs | model/layout/sprite/prefetch/artwork/ui_ready/spinner/overlay/footer/e2e/export; bootstrap; setup; style |
+| `tui` + subs | model/layout/sprite/prefetch/artwork/ui_ready/spinner/overlay/footer/e2e/export; preload; setup; style |
 | `output` | `golden_test.go` |
 | `debuglog` | `logger_test.go`, `startup_test.go` |
 | `usererr` | `usererr_test.go` |
