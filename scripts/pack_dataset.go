@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -62,16 +63,17 @@ func releaseArchive(out, sha string) error {
 }
 
 func pack(dir, out, sha string) error {
+	root := os.DirFS(dir)
 	names := archiveNames()
 	files := make(map[string][]byte, len(names)+1)
 	for _, name := range names {
-		body, err := os.ReadFile(filepath.Join(dir, name))
+		body, err := fs.ReadFile(root, name)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", name, err)
 		}
 		files[name] = body
 	}
-	lic, err := os.ReadFile(filepath.Join(dir, "LICENSE.txt"))
+	lic, err := fs.ReadFile(root, "LICENSE.txt")
 	if os.IsNotExist(err) {
 		lic, err = os.ReadFile(filepath.Join("internal", "bundled", "LICENSE.pokeapi.txt"))
 	}
