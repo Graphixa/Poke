@@ -56,39 +56,40 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services, force boo
 	return result.Config, result.StartBackgroundArtwork, nil
 }
 
+func downloadReserve(data, art bool) map[string]int {
+	// Floors keep later, larger parts on the bar before their real counts arrive.
+	// A reported total replaces the floor. pokédex ~1,025, forms ~1,600, moves ~900.
+	reserve := map[string]int{}
+	if data {
+		reserve["records"] = 1025
+		reserve["evolution"] = 500
+		reserve["moves"] = 900
+		reserve["ability"] = 300
+		reserve["form"] = 1600
+	}
+	if art {
+		reserve["artwork"] = 1025
+	}
+	return reserve
+}
+
 func (h *Handler) prepareWork(svc *Services, needData, needArt bool) func(context.Context, setup.ProgressFunc) error {
 	details := NewDetailService(svc.Cache)
 	loader := warmPokemonLoader{details}
 	resolver := &sprite.SourceResolver{Store: svc.Cache, API: svc.API}
 	workers := svc.Cache.MaxConcurrency()
 	return func(ctx context.Context, progress setup.ProgressFunc) error {
-		// Floors keep later, larger parts on the bar before their real counts arrive.
-		// A reported total replaces the floor. pokédex ~1,025, forms ~1,600, moves ~900.
-		reserve := map[string]int{}
-		if needData {
-			reserve["records"] = 1025
-			reserve["evolution"] = 500
-			reserve["moves"] = 900
-			reserve["ability"] = 300
-			reserve["form"] = 1600
-		}
-		if needArt {
-			reserve["artwork"] = 1025
-		}
-		bar := preload.NewBar(reserve)
-		report := func(stage, msg string, done, total int) {
+		bar := preload.NewBar(downloadReserve(needData, needArt))
+		report := func(stage string, done, total int) {
 			if progress == nil {
 				return
 			}
 			sumDone, sumTotal := bar.Advance(stage, done, total)
-			if stage != string(cache.DatasetStageRecords) {
-				msg = ""
-			}
-			progress(setup.Progress{Done: sumDone, Total: sumTotal, Message: msg})
+			progress(setup.Progress{Stage: stage, Done: sumDone, Total: sumTotal})
 		}
 		if needData {
 			if err := svc.Cache.BootstrapDataset(ctx, func(p cache.DatasetProgress) {
-				report(string(p.Stage), p.Message, p.Done, p.Total)
+				report(string(p.Stage), p.Done, p.Total)
 			}); err != nil {
 				return err
 			}
@@ -97,13 +98,13 @@ func (h *Handler) prepareWork(svc *Services, needData, needArt bool) func(contex
 			return nil
 		}
 		index, _, err := svc.Cache.EnsureIndex(ctx, func(p cache.DatasetProgress) {
-			report(string(p.Stage), p.Message, p.Done, p.Total)
+			report(string(p.Stage), p.Done, p.Total)
 		})
 		if err != nil {
 			return err
 		}
 		w := prewarm.NewArtwork(index, loader, resolver, workers, func(p prewarm.Progress) {
-			report("artwork", "", p.Done, p.Total)
+			report("artwork", p.Done, p.Total)
 		})
 		w.Start(ctx)
 		err = w.Wait(ctx)

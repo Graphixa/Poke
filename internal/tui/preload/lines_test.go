@@ -18,9 +18,6 @@ func TestLinesAreEditableCopy(t *testing.T) {
 	if len(got) != len(Lines) {
 		t.Fatalf("shuffle len %d", len(got))
 	}
-	if Count(55, 1025) != "55 of 1,025" {
-		t.Fatalf("count = %q", Count(55, 1025))
-	}
 }
 
 func TestBarWeightsLargerPartsMore(t *testing.T) {

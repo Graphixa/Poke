@@ -585,6 +585,7 @@ func (s *Service) fetchEncounters(ctx context.Context, pokemonID int) ([]domain.
 }
 
 func (s *Service) parallelAbilityFetch(ctx context.Context, ids []int, progress DatasetProgressFunc, builder *dataset.Builder) error {
+	var mu sync.Mutex
 	return s.parallelMetaFetch(ctx, ids, "ability", progress, func(ctx context.Context, id int) error {
 		a, err := s.fetchAbility(ctx, id)
 		if err != nil {
@@ -593,13 +594,17 @@ func (s *Service) parallelAbilityFetch(ctx context.Context, ids []int, progress 
 			return nil
 		}
 		if a.ID > 0 {
-			builder.Abilities[a.ID] = dataset.AbilityFromDomain(a)
+			got := dataset.AbilityFromDomain(a)
+			mu.Lock()
+			builder.Abilities[a.ID] = got
+			mu.Unlock()
 		}
 		return nil
 	})
 }
 
 func (s *Service) parallelFormFetch(ctx context.Context, ids []int, progress DatasetProgressFunc, builder *dataset.Builder) error {
+	var mu sync.Mutex
 	return s.parallelMetaFetch(ctx, ids, "form", progress, func(ctx context.Context, id int) error {
 		f, err := s.fetchForm(ctx, id)
 		if err != nil {
@@ -607,7 +612,10 @@ func (s *Service) parallelFormFetch(ctx context.Context, ids []int, progress Dat
 			return nil
 		}
 		if f.ID > 0 {
-			builder.Forms[f.ID] = dataset.FormFromDomain(f)
+			got := dataset.FormFromDomain(f)
+			mu.Lock()
+			builder.Forms[f.ID] = got
+			mu.Unlock()
 		}
 		return nil
 	})

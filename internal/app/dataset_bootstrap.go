@@ -11,32 +11,13 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Graphixa/Poke/internal/cache"
-	"github.com/Graphixa/Poke/internal/tui/bootstrap"
+	"github.com/Graphixa/Poke/internal/tui/preload"
+	"github.com/Graphixa/Poke/internal/tui/setup"
 )
-
-func bootstrapStageFromDataset(stage cache.DatasetStage) bootstrap.Stage {
-	switch stage {
-	case cache.DatasetStageIndex:
-		return bootstrap.StageIndex
-	case cache.DatasetStageEnrich:
-		// Enrich is dataset work and gets an explicit bootstrap label.
-		return bootstrap.StageEnrich
-	case cache.DatasetStageRecords:
-		return bootstrap.StageRecords
-	case cache.DatasetStageEvolution:
-		return bootstrap.StageEvolution
-	case cache.DatasetStageMoves:
-		return bootstrap.StageMoves
-	case cache.DatasetStageDataset:
-		return bootstrap.StageDataset
-	default:
-		return ""
-	}
-}
 
 func cacheUpdateProgress(ctx context.Context, w io.Writer, run func(context.Context, updateProgressFunc) error) error {
 	if isTerminal(w) {
-		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptUpdateRun(run)})
+		result, err := setup.Run(ctx, setup.Deps{Ask: false, RunWork: setupUpdateRun(run)})
 		if err != nil {
 			return err
 		}
@@ -48,22 +29,21 @@ func cacheUpdateProgress(ctx context.Context, w io.Writer, run func(context.Cont
 	return run(ctx, throttledCLIUpdateProgress(w))
 }
 
-func adaptUpdateRun(run func(context.Context, updateProgressFunc) error) func(context.Context, bootstrap.ProgressFunc) error {
-	return func(ctx context.Context, progress bootstrap.ProgressFunc) error {
+// setupUpdateRun feeds poke refresh into the shared preloader.
+// Dataset and artwork stay on one bar. The stage name picks the grey line.
+func setupUpdateRun(run func(context.Context, updateProgressFunc) error) func(context.Context, setup.ProgressFunc) error {
+	return func(ctx context.Context, progress setup.ProgressFunc) error {
+		bar := preload.NewBar(downloadReserve(true, true))
 		return run(ctx, func(p updateProgress) {
 			if progress == nil {
 				return
 			}
-			stage := bootstrap.StageArtwork
-			if p.kind == updateProgressDataset {
-				stage = bootstrapStageFromDataset(p.datasetStage)
+			stage := string(p.datasetStage)
+			if p.kind == updateProgressArtwork {
+				stage = "artwork"
 			}
-			progress(bootstrap.Progress{
-				Stage:   stage,
-				Done:    p.done,
-				Total:   p.total,
-				Message: p.message,
-			})
+			done, total := bar.Advance(stage, p.done, p.total)
+			progress(setup.Progress{Stage: stage, Done: done, Total: total})
 		})
 	}
 }

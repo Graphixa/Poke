@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Graphixa/Poke/internal/cache"
-	"github.com/Graphixa/Poke/internal/tui/bootstrap"
+	"github.com/Graphixa/Poke/internal/tui/setup"
 )
 
 func TestThrottledCLIProgress(t *testing.T) {
@@ -34,35 +34,25 @@ func TestFormatBootstrapProgressStages(t *testing.T) {
 	}
 }
 
-func TestBootstrapStageFromDataset(t *testing.T) {
-	t.Parallel()
-	cases := map[cache.DatasetStage]bootstrap.Stage{
-		cache.DatasetStageIndex:     bootstrap.StageIndex,
-		cache.DatasetStageEnrich:    bootstrap.StageEnrich,
-		cache.DatasetStageRecords:   bootstrap.StageRecords,
-		cache.DatasetStageEvolution: bootstrap.StageEvolution,
-		cache.DatasetStageMoves:     bootstrap.StageMoves,
-		cache.DatasetStageDataset:   bootstrap.StageDataset,
-	}
-	for datasetStage, want := range cases {
-		if got := bootstrapStageFromDataset(datasetStage); got != want {
-			t.Fatalf("bootstrapStageFromDataset(%q) = %q, want %q", datasetStage, got, want)
-		}
-	}
-}
-
-func TestAdaptUpdateRunKeepsArtworkOutOfDatasetStages(t *testing.T) {
+func TestSetupUpdateRunUsesOneBar(t *testing.T) {
 	t.Parallel()
 	run := func(_ context.Context, progress updateProgressFunc) error {
-		progress(updateProgress{kind: updateProgressArtwork, done: 2, total: 4, message: "Downloading artwork"})
+		progress(updateProgress{kind: updateProgressDataset, datasetStage: cache.DatasetStageRecords, done: 10, total: 10})
+		progress(updateProgress{kind: updateProgressArtwork, done: 1, total: 4, message: "Downloading artwork"})
 		return nil
 	}
-	var got bootstrap.Progress
-	if err := adaptUpdateRun(run)(context.Background(), func(p bootstrap.Progress) { got = p }); err != nil {
+	var got setup.Progress
+	if err := setupUpdateRun(run)(context.Background(), func(p setup.Progress) { got = p }); err != nil {
 		t.Fatal(err)
 	}
-	if got.Stage != bootstrap.StageArtwork || got.Done != 2 || got.Total != 4 {
-		t.Fatalf("adapted progress = %+v", got)
+	if got.Stage != "artwork" {
+		t.Fatalf("stage %q", got.Stage)
+	}
+	if got.Done != 11 || got.Total <= got.Done {
+		t.Fatalf("bar = %d/%d, want records kept and artwork started", got.Done, got.Total)
+	}
+	if setup.StageLabel(got.Stage) != "Saving Pokémon artwork" {
+		t.Fatal(setup.StageLabel(got.Stage))
 	}
 }
 

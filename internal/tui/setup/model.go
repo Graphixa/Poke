@@ -1,5 +1,5 @@
-// Package setup is the first-run flow: a theme, an update check, and a
-// preloader if the Pokédex or pictures are still downloading.
+// Package setup is the first-run flow: a theme, an update check, a short note,
+// then a preloader if the Pokédex or pictures are still downloading.
 package setup
 
 import (
@@ -24,14 +24,16 @@ const lineEvery = preload.LineEvery
 const (
 	stepTheme = iota
 	stepUpdates
+	stepIntro
 	stepWait
 )
 
-// Progress is a download tick (dataset or pictures).
+// Progress is one download tick, already summed across every part.
+// Stage picks the grey line. The screen does not show Done and Total.
 type Progress struct {
-	Done    int
-	Total   int
-	Message string
+	Stage string
+	Done  int
+	Total int
 }
 
 // ProgressFunc receives download progress.
@@ -61,6 +63,7 @@ type Model struct {
 	result Result
 
 	step   int
+	title  string
 	width  int
 	height int
 
@@ -88,8 +91,8 @@ type Model struct {
 type startMsg struct{}
 type lineTick struct{}
 type progressMsg struct {
+	stage       string
 	done, total int
-	message     string
 }
 type workDoneMsg struct{ err error }
 
@@ -102,8 +105,11 @@ func New(deps Deps) Model {
 		lines:    preload.Shuffle(),
 		yes:      deps.Config.Update.CheckForUpdates,
 		workDone: deps.RunWork == nil,
+		title:    refreshTitle,
 	}
-	if !deps.Ask {
+	if deps.Ask {
+		m.title = initialTitle
+	} else {
 		m.step = stepWait
 	}
 	m.themes, _ = theme.ListOptions(deps.ThemesDir, deps.Config.Theme.Name)
@@ -214,6 +220,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.errMsg != "" && !m.workDone {
 					return m, nil
 				}
+				m.step = stepIntro
+			}
+		case stepIntro:
+			if key == "enter" {
+				if m.errMsg != "" && !m.workDone {
+					return m, nil
+				}
 				if m.workDone {
 					return m.finish()
 				}
@@ -233,7 +246,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case progressMsg:
 		m.done, m.total = msg.done, msg.total
-		m.detail = msg.message
+		m.detail = StageLabel(msg.stage)
 		if msg.total > 0 {
 			m.percent = float64(msg.done) / float64(msg.total)
 		}
@@ -268,10 +281,18 @@ func (m Model) View() tea.View {
 		return tea.NewView("")
 	}
 	w, h := m.width, m.height
+	if w < 1 {
+		w = 80
+	}
+	if h < 1 {
+		h = 24
+	}
 	var body string
 	switch m.step {
 	case stepWait:
-		body = preload.Screen(w, h, m.prog.View(), m.headline(), preload.Count(m.done, m.total), m.detail, m.errMsg)
+		body = m.loadView(w, h)
+	case stepIntro:
+		body = m.introView(w, h)
 	default:
 		body = m.questionView(w, h)
 	}
@@ -282,39 +303,116 @@ func (m Model) View() tea.View {
 
 func (m Model) questionView(width, height int) string {
 	pal := style.CurrentPalette()
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("Poke")
 	head := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Components))
 	muted := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
 	sel := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Primary)).Bold(true)
 	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
 
-	var b strings.Builder
+	var body []string
 	if m.step == stepTheme {
-		fmt.Fprintf(&b, "%s\n\n%s\n\n", title, head.Render("Pick a theme"))
-		b.WriteString(m.themeLines(sel, muted))
-	} else {
-		active := 0
-		if m.yes {
-			active = 1
+		body = append(body, wrapText(head, "Pick a theme", width)...)
+		body = append(body, "")
+		for _, line := range strings.Split(strings.TrimRight(m.themeLines(sel, muted), "\n"), "\n") {
+			body = append(body, centerLine(line, width))
 		}
-		b.WriteString(lipgloss.JoinVertical(lipgloss.Center,
-			title,
-			"",
-			head.Render("Check for updates when you open Poke?"),
-			"",
-			components.ViewSwitcher(active, []string{"No", "Yes"}, 0),
-		))
+	} else {
+		active := 1
+		if m.yes {
+			active = 0
+		}
+		body = append(body, wrapText(head, "Check for updates when you open Poke?", width)...)
+		body = append(body, "")
+		body = append(body, centerLine(components.ViewSwitcher(active, []string{"Yes", "No"}, 0), width))
 	}
 	if m.errMsg != "" {
-		fmt.Fprintf(&b, "\n%s\n", errSt.Render(m.errMsg))
+		body = append(body, "")
+		body = append(body, wrapText(errSt, m.errMsg, width)...)
 	}
-	if width < 1 {
-		width = 80
+	return setupFrame(m.title, width, height, body)
+}
+
+func (m Model) introView(width, height int) string {
+	body := wrapText(lipgloss.NewStyle(), setupIntro, width)
+	body = append(body, "", centerLine(components.ViewSwitcher(0, []string{"OK"}, 0), width))
+	if m.errMsg != "" {
+		errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(style.CurrentPalette().Error))
+		body = append(body, "")
+		body = append(body, wrapText(errSt, m.errMsg, width)...)
 	}
-	if height < 1 {
-		height = 24
+	return setupFrame(m.title, width, height, body)
+}
+
+func (m Model) loadView(width, height int) string {
+	pal := style.CurrentPalette()
+	head := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Components))
+	bodySt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
+	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
+
+	body := []string{
+		centerLine(head.Render(m.headline()), width),
+		"",
+		centerLine(m.prog.View(), width),
 	}
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, b.String())
+	if m.detail != "" {
+		body = append(body, centerLine(bodySt.Render(m.detail), width))
+	}
+	if m.errMsg != "" {
+		body = append(body, "")
+		body = append(body, wrapText(errSt, m.errMsg, width)...)
+	}
+	return setupFrame(m.title, width, height, body)
+}
+
+const initialTitle = "Poke - Initial Setup"
+const refreshTitle = "Refreshing Pokédex"
+
+const setupIntro = "Poke needs to download some data and set everything up first.\nThis only happens once, and it won't take long."
+
+var stageLabels = map[string]string{
+	"index":     "Fetching the Pokémon species list",
+	"records":   "Gathering Pokémon records",
+	"evolution": "Getting evolution information",
+	"moves":     "Learning Pokémon movesets",
+	"dataset":   "Reading the game list",
+	"ability":   "Studying Pokémon abilities",
+	"form":      "Investigating Pokémon forms",
+	"artwork":   "Saving Pokémon artwork",
+}
+
+// StageLabel is the one setup loading line for a download stage.
+func StageLabel(stage string) string { return stageLabels[stage] }
+
+func setupFrame(title string, width, height int, body []string) string {
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	pad := 0
+	if innerH > len(body) {
+		pad = (innerH - len(body)) / 2
+	}
+	lines := make([]string, 0, innerH)
+	for i := 0; i < pad; i++ {
+		lines = append(lines, "")
+	}
+	lines = append(lines, body...)
+	return components.InnerCard(title, width, height, lines)
+}
+
+func wrapText(st lipgloss.Style, text string, width int) []string {
+	return strings.Split(st.Width(innerWidth(width)).Align(lipgloss.Center).Render(text), "\n")
+}
+
+func centerLine(line string, width int) string {
+	return lipgloss.PlaceHorizontal(innerWidth(width), lipgloss.Center, line)
+}
+
+func innerWidth(width int) int {
+	w := width - 2
+	if w < 1 {
+		return 1
+	}
+	return w
 }
 
 func (m Model) themeLines(sel, muted lipgloss.Style) string {
@@ -406,7 +504,7 @@ func (m Model) startWork() (Model, tea.Cmd) {
 	go func() {
 		err := run(ctx, func(p Progress) {
 			select {
-			case ch <- progressMsg{done: p.Done, total: p.Total, message: p.Message}:
+			case ch <- progressMsg{stage: p.Stage, done: p.Done, total: p.Total}:
 			default:
 			}
 		})
