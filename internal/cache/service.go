@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Graphixa/Poke/internal/bundled"
 	"github.com/Graphixa/Poke/internal/cache/typeseed"
 	"github.com/Graphixa/Poke/internal/config"
 	"github.com/Graphixa/Poke/internal/debuglog"
@@ -221,21 +222,24 @@ func (s *Service) Refresh(ctx context.Context, progress DatasetProgressFunc) err
 	return err
 }
 
-// RefreshDataset rebuilds metadata beside the active snapshot and activates the
-// new snapshot only when complete. A failed bootstrap leaves the previous
-// active snapshot in place.
+// RefreshDataset unpacks the embedded snapshot beside the active one and
+// activates it when the manifest is complete. The same source_sha is a no-op.
+// context.Canceled does not crawl. Any other unpack error uses BootstrapDataset.
+// A failed unpack leaves the previous active snapshot in place.
 func (s *Service) RefreshDataset(ctx context.Context, progress DatasetProgressFunc) error {
-	if err := s.Refresh(ctx, progress); err != nil {
-		return err
-	}
-	index, _, err := s.loadIndex()
+	before, _ := s.store.ActiveDatasetID()
+	err := s.store.Unpack(ctx, bundled.Bytes())
 	if err != nil {
-		return err
+		if errors.Is(err, context.Canceled) {
+			return err
+		}
+		return s.BootstrapDataset(ctx, progress)
 	}
-	if len(index) == 0 {
-		return ErrEmpty
+	after, _ := s.store.ActiveDatasetID()
+	if after != "" && after != before {
+		report(progress, DatasetProgress{Stage: DatasetStageImport, Done: 1, Total: 1})
 	}
-	return s.BootstrapDatasetFromIndex(ctx, index, progress)
+	return nil
 }
 
 // LocalOnly reports whether normal reads must not hit the network.

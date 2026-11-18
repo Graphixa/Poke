@@ -381,7 +381,7 @@ func (m Model) loadView(width, height int) string {
 const initialTitle = "Poke - Initial Setup"
 const refreshTitle = "Refreshing Pokédex"
 
-const setupIntro = "Poke needs to download some data and set everything up first.\nThis only happens once, and it won't take long."
+const setupIntro = "Poke will import the Pokémon data and download the artwork.\nThis only happens once, and it won't take long."
 
 var stageLabels = map[string]string{
 	"index":     "Fetching the Pokémon species list",
@@ -391,7 +391,8 @@ var stageLabels = map[string]string{
 	"dataset":   "Reading the game list",
 	"ability":   "Studying Pokémon abilities",
 	"form":      "Investigating Pokémon forms",
-	"artwork":   "Saving Pokémon artwork",
+	"import":    "Importing Pokémon data",
+	"artwork":   "Downloading Pokémon artwork",
 }
 
 // StageLabel is the one setup loading line for a download stage.

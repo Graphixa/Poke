@@ -59,6 +59,7 @@ func (h *Handler) runSetupIfNeeded(ctx context.Context, svc *Services, force boo
 func downloadReserve(data, art bool) map[string]int {
 	// Floors keep later, larger parts on the bar before their real counts arrive.
 	// A reported total replaces the floor. pokédex ~1,025, forms ~1,600, moves ~900.
+	// data floors are the crawl only. A successful import does not walk them.
 	reserve := map[string]int{}
 	if data {
 		reserve["records"] = 1025
@@ -73,22 +74,35 @@ func downloadReserve(data, art bool) map[string]int {
 	return reserve
 }
 
+// progressBar starts without crawl floors. The first crawl stage adds them.
+func progressBar(art bool) func(stage string, done, total int) (int, int) {
+	crawl := false
+	bar := preload.NewBar(downloadReserve(false, art))
+	return func(stage string, done, total int) (int, int) {
+		if !crawl && stage != "import" && stage != "artwork" && stage != "" {
+			crawl = true
+			bar = preload.NewBar(downloadReserve(true, art))
+		}
+		return bar.Advance(stage, done, total)
+	}
+}
+
 func (h *Handler) prepareWork(svc *Services, needData, needArt bool) func(context.Context, setup.ProgressFunc) error {
 	details := NewDetailService(svc.Cache)
 	loader := warmPokemonLoader{details}
 	resolver := &sprite.SourceResolver{Store: svc.Cache, API: svc.API}
 	workers := svc.Cache.MaxConcurrency()
 	return func(ctx context.Context, progress setup.ProgressFunc) error {
-		bar := preload.NewBar(downloadReserve(needData, needArt))
+		advance := progressBar(needArt)
 		report := func(stage string, done, total int) {
 			if progress == nil {
 				return
 			}
-			sumDone, sumTotal := bar.Advance(stage, done, total)
+			sumDone, sumTotal := advance(stage, done, total)
 			progress(setup.Progress{Stage: stage, Done: sumDone, Total: sumTotal})
 		}
 		if needData {
-			if err := svc.Cache.BootstrapDataset(ctx, func(p cache.DatasetProgress) {
+			if err := svc.Cache.RefreshDataset(ctx, func(p cache.DatasetProgress) {
 				report(string(p.Stage), p.Done, p.Total)
 			}); err != nil {
 				return err

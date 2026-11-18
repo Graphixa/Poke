@@ -11,7 +11,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Graphixa/Poke/internal/cache"
-	"github.com/Graphixa/Poke/internal/tui/preload"
 	"github.com/Graphixa/Poke/internal/tui/setup"
 )
 
@@ -33,7 +32,7 @@ func cacheUpdateProgress(ctx context.Context, w io.Writer, run func(context.Cont
 // Dataset and artwork stay on one bar. The stage name picks the grey line.
 func setupUpdateRun(run func(context.Context, updateProgressFunc) error) func(context.Context, setup.ProgressFunc) error {
 	return func(ctx context.Context, progress setup.ProgressFunc) error {
-		bar := preload.NewBar(downloadReserve(true, true))
+		advance := progressBar(true)
 		return run(ctx, func(p updateProgress) {
 			if progress == nil {
 				return
@@ -42,7 +41,7 @@ func setupUpdateRun(run func(context.Context, updateProgressFunc) error) func(co
 			if p.kind == updateProgressArtwork {
 				stage = "artwork"
 			}
-			done, total := bar.Advance(stage, p.done, p.total)
+			done, total := advance(stage, p.done, p.total)
 			progress(setup.Progress{Stage: stage, Done: done, Total: total})
 		})
 	}
@@ -165,6 +164,8 @@ func formatBootstrapProgress(p cache.DatasetProgress) string {
 			return p.Message
 		}
 		return "Building dataset"
+	case cache.DatasetStageImport:
+		return "Importing Pokémon data"
 	default:
 		return fmt.Sprintf("Building dataset %d%% (%d/%d)", pct, p.Done, p.Total)
 	}

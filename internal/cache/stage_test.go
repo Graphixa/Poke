@@ -14,6 +14,7 @@ func TestDatasetStageWireValues(t *testing.T) {
 		{DatasetStageEvolution, "evolution"},
 		{DatasetStageMoves, "moves"},
 		{DatasetStageDataset, "dataset"},
+		{DatasetStageImport, "import"},
 	}
 	for _, tc := range cases {
 		if string(tc.got) != tc.want {

@@ -122,7 +122,10 @@ func TestStageLabelAndYesBeforeNo(t *testing.T) {
 	if got := setup.StageLabel("records"); got != "Gathering Pokémon records" {
 		t.Fatalf("records label %q", got)
 	}
-	if got := setup.StageLabel("artwork"); got != "Saving Pokémon artwork" {
+	if got := setup.StageLabel("import"); got != "Importing Pokémon data" {
+		t.Fatalf("import label %q", got)
+	}
+	if got := setup.StageLabel("artwork"); got != "Downloading Pokémon artwork" {
 		t.Fatalf("artwork label %q", got)
 	}
 	m := setup.New(setup.Deps{Config: config.Default(), Ask: true})
@@ -135,7 +138,7 @@ func TestStageLabelAndYesBeforeNo(t *testing.T) {
 }
 
 func setupIntro(view string) bool {
-	return strings.Contains(view, "set everything up first") && strings.Contains(view, "won't take long")
+	return strings.Contains(view, "import the Pokémon data") && strings.Contains(view, "won't take long")
 }
 
 func press(t *testing.T, m setup.Model, code rune) setup.Model {

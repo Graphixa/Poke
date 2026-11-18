@@ -13,4 +13,5 @@ const (
 	DatasetStageEvolution DatasetStage = "evolution"
 	DatasetStageMoves     DatasetStage = "moves"
 	DatasetStageDataset   DatasetStage = "dataset"
+	DatasetStageImport    DatasetStage = "import"
 )

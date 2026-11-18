@@ -51,7 +51,7 @@ func TestSetupUpdateRunUsesOneBar(t *testing.T) {
 	if got.Done != 11 || got.Total <= got.Done {
 		t.Fatalf("bar = %d/%d, want records kept and artwork started", got.Done, got.Total)
 	}
-	if setup.StageLabel(got.Stage) != "Saving Pokémon artwork" {
+	if setup.StageLabel(got.Stage) != "Downloading Pokémon artwork" {
 		t.Fatal(setup.StageLabel(got.Stage))
 	}
 }

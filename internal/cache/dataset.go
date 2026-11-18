@@ -28,6 +28,7 @@ type DatasetManifest struct {
 	SchemaVersion   int       `json:"schema_version"`
 	DatasetVersion  string    `json:"dataset_version"`
 	Source          string    `json:"source,omitempty"`
+	SourceSHA       string    `json:"source_sha,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	PokeAPIBase     string    `json:"pokeapi_base"`
 	PokemonCount    int       `json:"pokemon_count"`
