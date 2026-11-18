@@ -6,6 +6,8 @@ project_name: poke
 before:
   hooks:
     - go mod tidy
+    # .syso must land in cmd/poke: that is the package both poke and pokedex compile.
+    - go run github.com/tc-hib/go-winres@v0.3.3 make --in build/winres.json --out cmd/poke/rsrc --arch amd64,arm64 --file-version {{.Major}}.{{.Minor}}.{{.Patch}}.0 --product-version {{.Major}}.{{.Minor}}.{{.Patch}}.0
 
 builds:
   - id: poke

@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check vet staticcheck gosec govulncheck test race build cross-build check release-check verify-archives
+.PHONY: fmt fmt-check vet staticcheck gosec govulncheck test race winres build cross-build check release-check verify-archives
 
 GO ?= go
 PKGS := ./...
@@ -10,6 +10,7 @@ GOVULNCHECK ?= govulncheck
 STATICCHECK_VERSION := 2026.2.1
 GOSEC_VERSION := v2.29.0
 GOVULNCHECK_VERSION := v1.10.0
+GOWINRES_VERSION := v0.3.3
 GO_SRC := $$(find cmd internal pkg scripts -name '*.go' -type f)
 
 # Prefer Git Bash on Windows when `bash` is not on PATH.
@@ -45,10 +46,14 @@ race:
 	@echo "Note: -race requires CGO (gcc). On Windows without a C toolchain, rely on CI."
 	CGO_ENABLED=1 $(GO) test -race $(PKGS)
 
-build:
+# Icon + version resource for Windows exes. Ignored by non-Windows builds.
+winres:
+	$(GO) run github.com/tc-hib/go-winres@$(GOWINRES_VERSION) make --in build/winres.json --out cmd/poke/rsrc --arch amd64,arm64
+
+build: winres
 	$(GO) build -o poke$(shell go env GOEXE) ./cmd/poke
 
-cross-build:
+cross-build: winres
 	mkdir -p $(CROSS_DIR)
 	GOOS=linux GOARCH=amd64 $(GO) build -o $(CROSS_DIR)/poke-linux-amd64 ./cmd/poke
 	GOOS=darwin GOARCH=amd64 $(GO) build -o $(CROSS_DIR)/poke-darwin-amd64 ./cmd/poke

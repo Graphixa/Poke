@@ -6,6 +6,7 @@ dist/
 /poke
 /poke.exe
 /pokedex
+*.syso
 /pokedex.exe
 plans/DECISIONS.md
 plans/MANUAL_RC.md
