@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Graphixa/Poke/internal/app"
 	"github.com/Graphixa/Poke/internal/config"
@@ -96,7 +96,7 @@ func main() {
 	// Wait until main info has loaded (Ability / genus / height).
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		plain := stripANSI(model.(tui.Model).View().Content)
+		plain := ansi.Strip(model.(tui.Model).View().Content)
 		if strings.Contains(plain, "Ability:") || strings.Contains(plain, "Height:") || strings.Contains(plain, "Lizard") {
 			break
 		}
@@ -110,7 +110,7 @@ func main() {
 
 	deadline = time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		plain := stripANSI(model.(tui.Model).View().Content)
+		plain := ansi.Strip(model.(tui.Model).View().Content)
 		if strings.Contains(plain, "Charmeleon") || strings.Contains(plain, "Level 16") {
 			break
 		}
@@ -119,7 +119,7 @@ func main() {
 	}
 
 	raw := model.(tui.Model).View().Content
-	plain := stripANSI(raw)
+	plain := ansi.Strip(raw)
 
 	outDir := filepath.Join("scripts", "captures")
 	_ = os.MkdirAll(outDir, 0o755)
@@ -186,12 +186,6 @@ func drain(model *tea.Model, cmd tea.Cmd) {
 		*model = next
 		drain(model, nextCmd)
 	}
-}
-
-var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b.`)
-
-func stripANSI(s string) string {
-	return ansiRe.ReplaceAllString(s, "")
 }
 
 func fatal(err error) {

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/Graphixa/Poke/internal/domain"
 )
 
@@ -55,14 +57,14 @@ func TestMovesSingleMethodTable(t *testing.T) {
 		t.Fatalf("single-method table must not list other methods:\n%s", joined)
 	}
 	sticky := moveStickyLines(rows, 80, "level-up", "Pearl")
-	if len(sticky) != 1 || !strings.Contains(stripANSIForFocus(sticky[0]), "Lvl") {
+	if len(sticky) != 1 || !strings.Contains(ansi.Strip(sticky[0]), "Lvl") {
 		t.Fatalf("sticky=%v", sticky)
 	}
 	hint := statusLine("Game: Pearl", "Row 1 of 2", 80)
 	if !strings.Contains(hint, "Game: Pearl") || !strings.Contains(hint, "Row 1 of 2") {
 		t.Fatalf("status line=%q", hint)
 	}
-	if !strings.Contains(joined, "Game") || !strings.Contains(stripANSIForFocus(joined), "All") {
+	if !strings.Contains(joined, "Game") || !strings.Contains(ansi.Strip(joined), "All") {
 		t.Fatalf("moves table should include Game column:\n%s", joined)
 	}
 	if strings.Contains(joined, "All Games") {

@@ -625,13 +625,6 @@ func visibleRows(rows []components.ListRow, off, count int) []components.ListRow
 	return rows[off:end]
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func fallbackCombine(title string, leftW, rightW, height int, leftContent, rightContent, topRight string) string {
 	if leftW < 4 {
 		leftW = 4

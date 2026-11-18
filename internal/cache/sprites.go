@@ -117,16 +117,6 @@ func (s *Service) StoreArtefact(ctx context.Context, key, ansi string) error {
 	return s.store.StoreArtefact(ctx, key, []byte(ansi))
 }
 
-// Halfblock is a legacy alias for Artefact.
-func (s *Service) Halfblock(ctx context.Context, key string) (string, error) {
-	return s.Artefact(ctx, key)
-}
-
-// StoreHalfblock is a legacy alias for StoreArtefact.
-func (s *Service) StoreHalfblock(ctx context.Context, key, ansi string) error {
-	return s.StoreArtefact(ctx, key, ansi)
-}
-
 var _ sprite.ArtefactCache = (*Service)(nil)
 
 // HasNativeFile reports whether a gzip native frame file exists on disk (stat only).

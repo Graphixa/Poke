@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/Graphixa/Poke/internal/domain"
 	"github.com/Graphixa/Poke/internal/textwidth"
 	"github.com/Graphixa/Poke/internal/tui/components"
@@ -73,7 +75,7 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 	wantHeader := tableHeaderBand(moveTableHeader("level-up", moveW, gameW, true, true), 80)
 	var header, dataRow string
 	for _, line := range lines {
-		plain := stripANSIForFocus(line)
+		plain := ansi.Strip(line)
 		if strings.HasPrefix(strings.TrimSpace(plain), "Lvl") {
 			header = line
 		}
@@ -89,17 +91,17 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 		t.Fatalf("header must not use background: %q", header)
 	}
 	requireANSI(t, dataRow) // type colour on unfocused rows
-	if !strings.Contains(stripANSIForFocus(dataRow), "All") {
+	if !strings.Contains(ansi.Strip(dataRow), "All") {
 		t.Fatalf("Game column should show All: %q", dataRow)
 	}
-	if strings.Contains(stripANSIForFocus(dataRow), "All…") || strings.Contains(stripANSIForFocus(dataRow), "All Games") {
+	if strings.Contains(ansi.Strip(dataRow), "All…") || strings.Contains(ansi.Strip(dataRow), "All Games") {
 		t.Fatalf("Game must not truncate All / say All Games: %q", dataRow)
 	}
 	if !strings.Contains(dataRow, "25") {
 		t.Fatalf("move row should include PP: %q", dataRow)
 	}
-	plainHeader := stripANSIForFocus(header)
-	plainRow := stripANSIForFocus(dataRow)
+	plainHeader := ansi.Strip(header)
+	plainRow := ansi.Strip(dataRow)
 	if !strings.Contains(plainHeader, "Category") {
 		t.Fatalf("category header should not be clipped: %q", plainHeader)
 	}
@@ -140,7 +142,7 @@ func TestMoveColumnsDropAccThenPPWhenNarrow(t *testing.T) {
 	}}
 	findHeader := func(lines []string) string {
 		for _, line := range lines {
-			plain := strings.TrimSpace(stripANSIForFocus(line))
+			plain := strings.TrimSpace(ansi.Strip(line))
 			if strings.HasPrefix(plain, "Lvl") {
 				return plain
 			}
@@ -274,7 +276,7 @@ func TestFlavourStylesVersionOnly(t *testing.T) {
 		Text:         "Tough fights could excite this Pokémon.",
 	}}})
 
-	plain := stripANSIForFocus(lines[0])
+	plain := ansi.Strip(lines[0])
 	if !strings.HasPrefix(plain, "Lets Go Eevee") || !strings.Contains(plain, "Tough fights") {
 		t.Fatalf("want labelled flavour fact line: %q", lines[0])
 	}
@@ -324,7 +326,7 @@ func TestLocationsTableAllGames(t *testing.T) {
 
 func TestStatsStyleLabelsOnly(t *testing.T) {
 	lines := formatStatsBars(domain.Pokemon{Stats: domain.Stats{HP: 58, Attack: 64, Defense: 58, SpecialAttack: 80, SpecialDefense: 65, Speed: 90}})
-	if len(lines) < 1 || strings.Contains(stripANSIForFocus(lines[0]), "Base stats") {
+	if len(lines) < 1 || strings.Contains(ansi.Strip(lines[0]), "Base stats") {
 		t.Fatalf("stats must not show base-stats disclaimer: %q", lines[0])
 	}
 	hp := lines[0]
@@ -404,7 +406,7 @@ func TestMoveDetailFactLayoutAndSideList(t *testing.T) {
 	if !strings.Contains(joined, "Move List") {
 		t.Fatalf("side list needs Move List header:\n%s", joined)
 	}
-	plain0 := stripANSIForFocus(lines[0])
+	plain0 := ansi.Strip(lines[0])
 	sep := strings.Index(plain0, "│")
 	if sep < 0 {
 		t.Fatalf("detail/list need vertical divider:\n%s", joined)
@@ -419,7 +421,7 @@ func TestMoveDetailFactLayoutAndSideList(t *testing.T) {
 	if !strings.Contains(plain0[sep:], "Tackle") {
 		t.Fatalf("detail name should be right of divider: %q", plain0)
 	}
-	plain1 := stripANSIForFocus(lines[1])
+	plain1 := ansi.Strip(lines[1])
 	left1 := plain1[:strings.Index(plain1, "│")]
 	if !strings.Contains(left1, "  Tackle") {
 		t.Fatalf("move names should be indented under Move List: %q", left1)
@@ -438,7 +440,7 @@ func TestMoveDetailGroupsByGame(t *testing.T) {
 	lines := moveDetailSideList(rows, 1, 24)
 	var plain []string
 	for _, l := range lines {
-		plain = append(plain, stripANSIForFocus(l))
+		plain = append(plain, ansi.Strip(l))
 	}
 	joined := strings.Join(plain, "\n")
 	if !strings.Contains(joined, "Red (Japan)") || !strings.Contains(joined, "Emerald") {
@@ -501,7 +503,7 @@ func TestDialogChromeKeepsHeaderDuringGamePicker(t *testing.T) {
 	}
 	m.gamePickerOpen = true
 	sticky, hint := m.dialogChrome(m.dialogGeom().BodyW, 10, 0)
-	if len(sticky) == 0 || !strings.Contains(stripANSIForFocus(sticky[0]), "Area") {
+	if len(sticky) == 0 || !strings.Contains(ansi.Strip(sticky[0]), "Area") {
 		t.Fatalf("sticky header should survive G picker: %v", sticky)
 	}
 	if !strings.Contains(hint, "Game:") {
@@ -532,7 +534,7 @@ func TestDialogOverviewPaintsFromBrowseWithoutCore(t *testing.T) {
 	if strings.Contains(joined, "Loading…") {
 		t.Fatalf("overview should not wait on core: %q", joined)
 	}
-	if !strings.Contains(stripANSIForFocus(joined), "Lizard Pokémon") {
+	if !strings.Contains(ansi.Strip(joined), "Lizard Pokémon") {
 		t.Fatalf("want browse genus, got %q", joined)
 	}
 

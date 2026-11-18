@@ -99,10 +99,3 @@ func canvasMode(mode sprite.ColorMode) chafago.CanvasMode {
 		return chafago.CHAFA_CANVAS_MODE_TRUECOLOR
 	}
 }
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

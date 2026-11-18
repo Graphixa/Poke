@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Graphixa/Poke/internal/domain"
 	"github.com/Graphixa/Poke/internal/render/sprite"
@@ -214,7 +215,7 @@ func TestBrowseListRowsNoTypes(t *testing.T) {
 		OnePane: true, ShowListPane: true,
 		Rows: rows,
 	})
-	plain := stripANSI(out)
+	plain := ansi.Strip(out)
 	for _, want := range []string{"Bulbasaur", "#001", "Caterpie ⇄", "#010"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("missing %q in list:\n%s", want, plain)
@@ -233,7 +234,7 @@ func TestBrowseListVeryNarrowPrioritizesSelectedName(t *testing.T) {
 		Summary:  domain.SpeciesSummary{ID: 1, DisplayName: "Bulbasaur", Types: []string{"grass", "poison"}},
 		Selected: true,
 	}}, 12, 1, 0)
-	if got, want := stripANSI(out), ">   Bulbasa…"; got != want {
+	if got, want := ansi.Strip(out), ">   Bulbasa…"; got != want {
 		t.Fatalf("narrow list row = %q, want %q", got, want)
 	}
 }
@@ -255,7 +256,7 @@ func TestDialogOverlaySnapshot(t *testing.T) {
 		DialogLines:   []string{"Fire · Lizard Pokémon", "Height    0.6 m"},
 		FooterHint:    "←/→ section • ↑/↓ scroll • esc close",
 	})
-	plain := stripANSI(out)
+	plain := ansi.Strip(out)
 	for _, want := range []string{"Charmander", "#004", "Overview", "Height", "←/→ section", "esc close"} {
 		if !strings.Contains(out, want) && !strings.Contains(plain, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
@@ -288,7 +289,7 @@ func TestBrowseSpriteNoSwitcher(t *testing.T) {
 		HeaderTypes: "Fire",
 		SpriteANSI:  "X",
 	})
-	plain := stripANSI(out)
+	plain := ansi.Strip(out)
 	if strings.Contains(plain, "[ Sprite ]") || strings.Contains(plain, "Summary ·") {
 		t.Fatalf("unexpected browse switcher:\n%s", plain)
 	}
@@ -299,7 +300,7 @@ func TestBrowseSpriteNoSwitcher(t *testing.T) {
 
 func TestDossierFrameFillsTerminal(t *testing.T) {
 	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
-	out := stripANSI(components.DossierFrame(
+	out := ansi.Strip(components.DossierFrame(
 		"Charmander #004",
 		0,
 		labels,
@@ -331,7 +332,7 @@ func TestDossierFrameFillsTerminal(t *testing.T) {
 
 func TestDossierBodySharesSectionInset(t *testing.T) {
 	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
-	out := stripANSI(components.DossierFrame(
+	out := ansi.Strip(components.DossierFrame(
 		"Venusaur #003",
 		3,
 		labels,
@@ -366,7 +367,7 @@ func TestDossierBodySharesSectionInset(t *testing.T) {
 
 func TestDialogNarrowUsesCompactPager(t *testing.T) {
 	labels := []string{"Overview", "Stats", "Evolution", "Moves", "Encounters", "Descriptions", "Biology"}
-	out := stripANSI(components.DossierFrame(
+	out := ansi.Strip(components.DossierFrame(
 		"Charmander #004",
 		3,
 		labels,
@@ -389,10 +390,10 @@ func TestSwitcherChipStableWidth(t *testing.T) {
 	a := components.ViewSwitcher(0, labels, 0)
 	b := components.ViewSwitcher(1, labels, 0)
 	if wa, wb := lipgloss.Width(a), lipgloss.Width(b); wa != wb {
-		t.Fatalf("selection jumped width: active0=%d %q active1=%d %q", wa, stripANSI(a), wb, stripANSI(b))
+		t.Fatalf("selection jumped width: active0=%d %q active1=%d %q", wa, ansi.Strip(a), wb, ansi.Strip(b))
 	}
-	if strings.Contains(stripANSI(a), "[") {
-		t.Fatalf("brackets must not appear: %q", stripANSI(a))
+	if strings.Contains(ansi.Strip(a), "[") {
+		t.Fatalf("brackets must not appear: %q", ansi.Strip(a))
 	}
 }
 
@@ -405,24 +406,4 @@ func assertDexRightAligned(t *testing.T, row, dex string) {
 	if pad := len(row) - len(trimmed); pad != 1 {
 		t.Fatalf("want 1 column of padding after %s, got %d in %q", dex, pad, row)
 	}
-}
-
-func stripANSI(s string) string {
-	var b strings.Builder
-	inEsc := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == 0x1b {
-			inEsc = true
-			continue
-		}
-		if inEsc {
-			if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
-				inEsc = false
-			}
-			continue
-		}
-		b.WriteByte(c)
-	}
-	return b.String()
 }

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/Graphixa/Poke/internal/domain"
 	"github.com/Graphixa/Poke/internal/render/sprite"
 	"github.com/Graphixa/Poke/internal/tui/views"
@@ -223,7 +225,7 @@ func TestSpriteArtOriginMatchesRenderedCard(t *testing.T) {
 		t.Fatalf("art %dx%d want 16x8", artW, artH)
 	}
 
-	plain := stripANSI(views.Browse(d))
+	plain := ansi.Strip(views.Browse(d))
 	lines := strings.Split(plain, "\n")
 	artTop, artCol := -1, -1
 	for i, line := range lines {
@@ -292,7 +294,7 @@ func TestBrowseGlanceAbilitiesVisibleMediumHeight(t *testing.T) {
 		SpriteANSI: "[sprite]",
 		ImageState: 2,
 	})
-	plain := stripANSI(out)
+	plain := ansi.Strip(out)
 	if !strings.Contains(plain, "Abilities") || !strings.Contains(plain, "Overgrow") {
 		t.Fatalf("Abilities missing at medium height:\n%s", plain)
 	}
@@ -315,7 +317,7 @@ func TestBrowseArtCardPinnedSize(t *testing.T) {
 		SpriteANSI:     "X",
 		ImageState:     2,
 	})
-	plain := stripANSI(out)
+	plain := ansi.Strip(out)
 	lines := strings.Split(plain, "\n")
 	artTop := -1
 	artCol := -1
@@ -385,7 +387,7 @@ func TestBrowseArtViewNoStatsAbilities(t *testing.T) {
 		SpriteANSI:     "[hero]",
 		ImageState:     2,
 	})
-	plain := stripANSI(out)
+	plain := ansi.Strip(out)
 	if strings.Contains(plain, "Stats") || strings.Contains(plain, "Abilities") {
 		t.Fatalf("Art view must omit Stats/Abilities:\n%s", plain)
 	}
@@ -399,21 +401,6 @@ func TestBrowseArtViewNoStatsAbilities(t *testing.T) {
 	if g.ArtW != 40 || g.ArtH != 20 {
 		t.Fatalf("hero art %dx%d want 40x20", g.ArtW, g.ArtH)
 	}
-}
-
-func stripANSI(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\x1b' {
-			for i < len(s) && s[i] != 'm' {
-				i++
-			}
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
 }
 
 func TestArtCardCentresSprite(t *testing.T) {

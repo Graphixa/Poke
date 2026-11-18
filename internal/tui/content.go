@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Graphixa/Poke/internal/domain"
 	"github.com/Graphixa/Poke/internal/output"
@@ -698,7 +699,7 @@ func formatEncounterTableRowsFocused(rows []domain.Encounter, bodyW int, focusId
 	}
 	li := mainLine[focusIdx]
 	if li >= 0 && li < len(lines) {
-		lines[li] = tableFocusBand(stripANSIForFocus(lines[li]), bodyW)
+		lines[li] = tableFocusBand(ansi.Strip(lines[li]), bodyW)
 	}
 	return lines
 }
@@ -828,17 +829,17 @@ func formatMoveDataRowsFocused(rows []domain.LevelUpMove, bodyW int, focus bool,
 	if !focus || len(rows) == 0 || focusIdx < 0 || focusIdx >= len(lines) {
 		return lines
 	}
-	lines[focusIdx] = tableFocusBand(stripANSIForFocus(lines[focusIdx]), bodyW)
+	lines[focusIdx] = tableFocusBand(ansi.Strip(lines[focusIdx]), bodyW)
 	return lines
 }
 
 func tableHeaderBand(plain string, bodyW int) string {
 	_ = bodyW
-	return boldPrimary(stripANSIForFocus(plain))
+	return boldPrimary(ansi.Strip(plain))
 }
 
 func tableFocusBand(plain string, bodyW int) string {
-	padded := textwidth.PadRight(stripANSIForFocus(plain), max(1, bodyW))
+	padded := textwidth.PadRight(ansi.Strip(plain), max(1, bodyW))
 	// White selection band — keeps primary accent for labels/headers only.
 	return lipgloss.NewStyle().
 		Foreground(tuistyle.BaseColor()).
@@ -1074,27 +1075,6 @@ func joinMoveDetailColumns(left, right []string, bodyW, rightW int) []string {
 		out = append(out, textwidth.PadRight(textwidth.Truncate(l, leftW), leftW)+sep+r)
 	}
 	return out
-}
-
-func stripANSIForFocus(s string) string {
-	// Focus restyles the whole line; drop prior colour codes if present.
-	var b strings.Builder
-	inESC := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\x1b' {
-			inESC = true
-			continue
-		}
-		if inESC {
-			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-				inESC = false
-			}
-			continue
-		}
-		b.WriteByte(c)
-	}
-	return b.String()
 }
 
 func moveColumnFlags(bodyW int) (showAcc, showPP bool) {

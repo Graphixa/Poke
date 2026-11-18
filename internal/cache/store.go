@@ -205,7 +205,7 @@ func (s *Store) SpriteURLLookup(_ context.Context, urlHash string) (contentHash 
 	if err != nil {
 		return "", err
 	}
-	contentHash = string(bytesTrimSpace(data))
+	contentHash = strings.TrimSpace(string(data))
 	if contentHash == "" {
 		return "", ErrNotFound
 	}
@@ -229,15 +229,6 @@ func (s *Store) Artefact(_ context.Context, key string) ([]byte, error) {
 
 func (s *Store) StoreArtefact(_ context.Context, key string, data []byte) error {
 	return writeAtomic(s.halfblockPath(key), data, 0o600)
-}
-
-// Halfblock is a legacy alias for Artefact (on-disk directory remains halfblock/).
-func (s *Store) Halfblock(ctx context.Context, key string) ([]byte, error) {
-	return s.Artefact(ctx, key)
-}
-
-func (s *Store) StoreHalfblock(ctx context.Context, key string, data []byte) error {
-	return s.StoreArtefact(ctx, key, data)
 }
 
 func (s *Store) HasNativeFile(key string) bool {
@@ -268,17 +259,6 @@ func (s *Store) StoreNative(_ context.Context, key string, data []byte) error {
 		return err
 	}
 	return writeAtomicRename(s.nativePath(key), compressed, 0o600)
-}
-
-func bytesTrimSpace(b []byte) []byte {
-	i, j := 0, len(b)
-	for i < j && (b[i] == ' ' || b[i] == '\n' || b[i] == '\r' || b[i] == '\t') {
-		i++
-	}
-	for j > i && (b[j-1] == ' ' || b[j-1] == '\n' || b[j-1] == '\r' || b[j-1] == '\t') {
-		j--
-	}
-	return b[i:j]
 }
 
 func (s *Store) StoreSpeciesIndex(_ context.Context, index []domain.SpeciesSummary, fetchedAt time.Time) error {
@@ -376,6 +356,8 @@ func (s *Store) spritePath(hash string) string {
 func (s *Store) spriteURLPath(urlHash string) string {
 	return filepath.Join(s.root, "sprites", "urls", urlHash)
 }
+
+// halfblock/ is the on-disk artefact directory name.
 func (s *Store) halfblockPath(key string) string {
 	return filepath.Join(s.root, "halfblock", key+".ansi")
 }

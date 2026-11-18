@@ -39,15 +39,15 @@ func TestSpriteAndHalfblockArtefacts(t *testing.T) {
 	}
 	ansi, err := svc.Artefact(context.Background(), key)
 	if err != nil || ansi != "ANSI" {
-		t.Fatalf("Halfblock = %q err=%v", ansi, err)
+		t.Fatalf("Artefact = %q err=%v", ansi, err)
 	}
 
 	// Dimension change → different key → miss (invalidation).
 	other := sprite.CacheKey(hash, sprite.SourcePixel, "chafa", 10, 10, sprite.ColorTrueColor, color.RGBA{A: 255})
-	if _, err := svc.Halfblock(context.Background(), other); err == nil {
+	if _, err := svc.Artefact(context.Background(), other); err == nil {
 		t.Fatal("expected miss for different size key")
 	}
-	if err := svc.StoreHalfblock(context.Background(), "../escape", "x"); err == nil {
+	if err := svc.StoreArtefact(context.Background(), "../escape", "x"); err == nil {
 		t.Fatal("expected reject of invalid key")
 	}
 
