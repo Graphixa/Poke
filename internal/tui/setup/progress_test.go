@@ -7,6 +7,28 @@ import (
 	"github.com/Graphixa/Poke/internal/config"
 )
 
+func TestSpinnerSitsAboveTheJoke(t *testing.T) {
+	m := New(Deps{Config: config.Default(), Ask: true})
+	m.width, m.height = 80, 24
+	if strings.Contains(m.View().Content, "·") {
+		t.Fatal("spinner is on the theme step")
+	}
+	m.step = stepWait
+	view := m.View().Content
+	jokeAt := strings.Index(view, m.headline())
+	dotAt := strings.Index(view, "·")
+	if jokeAt < 0 || dotAt < 0 || dotAt > jokeAt || !strings.Contains(view, "●") {
+		t.Fatalf("spinner should be above the joke:\n%s", view)
+	}
+	next, cmd := m.Update(spinTick{})
+	if cmd == nil {
+		t.Fatal("spinner stopped")
+	}
+	if next.(Model).spin == m.spin {
+		t.Fatal("frame did not advance")
+	}
+}
+
 func TestStageLineReplacesTheLastSentence(t *testing.T) {
 	m := New(Deps{Config: config.Default(), Ask: false})
 	m.width, m.height = 80, 24

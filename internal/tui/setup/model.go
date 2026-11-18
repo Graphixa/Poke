@@ -75,6 +75,7 @@ type Model struct {
 	barWidth int
 	lines    []string
 	lineIdx  int
+	spin     int
 	done     int
 	total    int
 	percent  float64
@@ -170,7 +171,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		if m.step == stepWait {
-			cmds = append(cmds, tickLine())
+			cmds = append(cmds, waitTicks())
 		}
 		return m, tea.Batch(cmds...)
 
@@ -231,7 +232,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m.finish()
 				}
 				m.step = stepWait
-				return m, tickLine()
+				return m, waitTicks()
 			}
 		}
 
@@ -243,6 +244,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tickLine()
+
+	case spinTick:
+		if n := len(preload.SpinDots); n > 0 {
+			m.spin = (m.spin + 1) % n
+		}
+		if m.quitting || m.step != stepWait {
+			return m, nil
+		}
+		return m, tickSpin()
 
 	case progressMsg:
 		m.done, m.total = msg.done, msg.total
@@ -348,11 +358,16 @@ func (m Model) loadView(width, height int) string {
 	bodySt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
 	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
 
-	body := []string{
+	var body []string
+	for _, line := range m.spinLines() {
+		body = append(body, centerLine(line, width))
+	}
+	body = append(body,
+		"",
 		centerLine(head.Render(m.headline()), width),
 		"",
 		centerLine(m.prog.View(), width),
-	}
+	)
 	if m.detail != "" {
 		body = append(body, centerLine(bodySt.Render(m.detail), width))
 	}
@@ -514,8 +529,63 @@ func (m Model) startWork() (Model, tea.Cmd) {
 	return m, listenEvents(ch)
 }
 
+type spinTick struct{}
+
 func tickLine() tea.Cmd {
 	return tea.Tick(lineEvery, func(time.Time) tea.Msg { return lineTick{} })
+}
+
+func tickSpin() tea.Cmd {
+	every := preload.SpinEvery
+	if every <= 0 {
+		every = time.Millisecond
+	}
+	return tea.Tick(every, func(time.Time) tea.Msg { return spinTick{} })
+}
+
+func waitTicks() tea.Cmd {
+	return tea.Batch(tickLine(), tickSpin())
+}
+
+func (m Model) spinLines() []string {
+	dots := preload.SpinDots
+	if len(dots) == 0 {
+		return nil
+	}
+	w, h := 0, 0
+	for _, d := range dots {
+		if d[0]+1 > w {
+			w = d[0] + 1
+		}
+		if d[1]+1 > h {
+			h = d[1] + 1
+		}
+	}
+	grid := make([][]rune, h)
+	for r := range grid {
+		grid[r] = []rune(strings.Repeat(" ", w))
+	}
+	for _, d := range dots {
+		grid[d[1]][d[0]] = '·'
+	}
+	hot := dots[m.spin%len(dots)]
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(style.CurrentPalette().Placeholders))
+	out := make([]string, h)
+	for r := range grid {
+		var b strings.Builder
+		for c, ch := range grid[r] {
+			switch {
+			case r == hot[1] && c == hot[0]:
+				b.WriteString("●")
+			case ch != ' ':
+				b.WriteString(dim.Render(string(ch)))
+			default:
+				b.WriteRune(' ')
+			}
+		}
+		out[r] = b.String()
+	}
+	return out
 }
 
 func listenEvents(ch <-chan tea.Msg) tea.Cmd {

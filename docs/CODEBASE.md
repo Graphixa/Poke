@@ -4,7 +4,7 @@ Repository architecture for module `github.com/Graphixa/Poke` (Go 1.26). Not a c
 
 **Public binary:** `poke` (`cmd/poke`). Alias name `pokedex` is the same program.
 
-**Supported GOOS/GOARCH (Makefile + CI):** `linux/amd64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`. CI also builds natively on ubuntu, macos, and windows hosts.
+**Supported GOOS/GOARCH (Makefile + CI):** `linux/amd64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`. CI also builds natively on ubuntu, macos, and windows hosts. Windows exes embed `assets/icons/icon.ico` via `go-winres` v0.3.3 (`make winres` / GoReleaser before hook → `cmd/poke/rsrc_windows_*.syso`, gitignored). `poke` and `pokedex` share that package, so both get the icon.
 
 **Formatting / lint:** `gofmt` (Makefile `fmt` / `fmt-check`; CI prints offenders). `go vet ./...`. `staticcheck ./...` (`2026.2.1`). `gosec ./...` (`v2.29.0`; excludes G104/G115/G301/G304/G306/G404). `govulncheck ./...` (`v1.10.0`). No golangci-lint. Race: `CGO_ENABLED=1 go test -race ./...` — Windows **can** run this (gcc/CGO required; recorded PASS ~197s on this tree). Linux CI (`ubuntu-latest`, `go test -race ./...`) is the merge gate.
 

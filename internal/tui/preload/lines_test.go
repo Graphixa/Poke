@@ -18,6 +18,14 @@ func TestLinesAreEditableCopy(t *testing.T) {
 	if len(got) != len(Lines) {
 		t.Fatalf("shuffle len %d", len(got))
 	}
+	if SpinEvery <= 0 || len(SpinDots) < 8 {
+		t.Fatalf("spinner every %s dots %d", SpinEvery, len(SpinDots))
+	}
+	for _, d := range SpinDots {
+		if d[0] < 0 || d[0] > 14 || d[1] < 0 || d[1] > 4 {
+			t.Fatalf("dot outside the ring: %v", d)
+		}
+	}
 }
 
 func TestBarWeightsLargerPartsMore(t *testing.T) {

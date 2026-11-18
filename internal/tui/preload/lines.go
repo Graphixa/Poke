@@ -8,6 +8,22 @@ import (
 // LineEvery is how long one loading headline stays up.
 const LineEvery = 4200 * time.Millisecond
 
+// SpinEvery is how long one spinner frame stays up. Lower it to spin faster.
+var SpinEvery = 80 * time.Millisecond
+
+// SpinDots are the bright-dot positions, clockwise, on a 5-line ring.
+// Each pair is column, row. The ring is wider than it is tall so the cells read as a circle.
+var SpinDots = [][2]int{
+	{5, 0}, {7, 0}, {9, 0},
+	{11, 1},
+	{13, 2},
+	{11, 3},
+	{9, 4}, {7, 4}, {5, 4},
+	{3, 3},
+	{1, 2},
+	{3, 1},
+}
+
 // Lines are the loading headlines. Edit this list.
 // Each run is shuffled; a line does not repeat until the list wraps.
 var Lines = []string{
