@@ -29,15 +29,21 @@
 - **Keep your favourites.** Save Pokémon you want to return to and browse your own collection.
 - **Take it offline.** Browse and look up Pokémon from a local dataset after the first download. Artwork is available offline once cached.
 
+<p align="center">
+  <img src="assets/screenshots/main-screen.png" alt="Poke browse screen showing Bulbasaur with stats and abilities" width="900">
+</p>
+
 ## Installation
 
-**Windows · PowerShell**
+Install Poke with one of the commands below. Poke is a single binary with no external dependencies.
+
+#### Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.ps1 | iex
 ```
 
-**macOS & Linux · Terminal**
+#### macOS & Linux (Shell)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.sh | sh
@@ -45,46 +51,47 @@ curl -fsSL https://raw.githubusercontent.com/Graphixa/Poke/main/scripts/install.
 
 The installers download the latest release and verify its checksum. Follow any `PATH` instructions shown when installation finishes.
 
-<details>
-<summary>Homebrew, manual downloads and other installation options</summary>
+More options are in the [installation guide](docs/INSTALLATION.md).
 
-**Homebrew · macOS**
+## Installation via Package Manager
+
+### Windows
+
+**[WinGet](https://learn.microsoft.com/windows/package-manager/winget/)**
+
+```powershell
+winget install --id Graphixa.Poke
+```
+
+### macOS
+
+**[Homebrew](https://brew.sh/)**
 
 ```bash
 brew tap Graphixa/homebrew-tap
 brew install --cask poke
 ```
 
-Prefer a manual install? Download the archive for your system from [Releases](https://github.com/Graphixa/Poke/releases/latest).
-
-See the [installation guide](docs/INSTALLATION.md) for supported platforms, version selection, updates and building from source.
-
-</details>
-
 ## Quick start
-
-Open your Pokédex:
 
 ```bash
 poke
 ```
 
-On first launch, connect to the internet. Poke asks you to pick a theme and whether to check for updates, then downloads the Pokémon data and artwork.
+On first launch, pick a theme and whether to check for updates. Poke then downloads Pokémon data and artwork (internet required once).
 
-Type to search, use **↑ / ↓** to move and press **Enter** to explore a Pokémon. The footer shows the controls for your current view.
+Type to search, **↑ / ↓** to move, **Enter** for details. The footer always shows the keys for your current view.
 
-For a quick lookup without opening the browser:
+### Lookups
+
+Skip the browser when you just need a quick answer:
 
 ```bash
 poke pikachu --stats
 poke eevee --evolution
 ```
 
-[Explore the user guide →](docs/USER_GUIDE.md)
-
-## Themes
-
-Find a palette that feels at home in your terminal.
+### Themes
 
 <p align="center">
   <img src="assets/theme-palettes.svg" alt="Bundled colour palettes: Dracula, Pokédex, Nord, Catppuccin and Solarized Light" width="920">
@@ -94,9 +101,9 @@ Find a palette that feels at home in your terminal.
 poke theme
 ```
 
-Preview with **↑ / ↓**, then press **Enter** to apply. Dracula is the default; choose System to use your terminal’s colours.
+Preview with **↑ / ↓**, then **Enter** to apply. Dracula is the default; System uses your terminal colours.
 
-[Browse themes and create your own →](docs/THEMES.md)
+[User guide](docs/USER_GUIDE.md) · [Themes](docs/THEMES.md)
 
 ## Documentation
 
