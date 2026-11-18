@@ -223,7 +223,6 @@ func (m *Model) selectDialogForm(idx int) {
 }
 
 func (m *Model) openGamePicker() {
-	m.moveDetailOpen = false
 	m.formPickerOpen = false
 	m.methodPickerOpen = false
 	m.dialogCatalogErr = ""

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/Graphixa/Poke/internal/domain"
 )
 
@@ -123,9 +125,10 @@ func TestStageE_RapidFormAndGameClearsMoveDetail(t *testing.T) {
 	m.moveDetailOpen = true
 	m.dialogGameID = 1
 	m.dialogGameLabel = "Red"
-	m.openGamePicker()
-	if m.moveDetailOpen {
-		t.Fatal("opening game picker should clear move detail")
+	next, _ := m.handleDialogKey(tea.KeyPressMsg{Text: "g"})
+	got := next.(Model)
+	if !got.moveDetailOpen || !got.gamePickerOpen {
+		t.Fatal("g in move detail must open choose-game without leaving the list")
 	}
 }
 

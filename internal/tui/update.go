@@ -350,6 +350,16 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	letter := msg.Text
+	if letter == "" {
+		letter = msg.String()
+	}
+	if key.Matches(msg, m.keys.Game) || letter == "g" || letter == "G" {
+		m.openGamePicker()
+		m.syncDialogViewport()
+		return m, nil
+	}
+
 	if m.moveDetailOpen {
 		if key.Matches(msg, m.keys.Clear) || backspaceKey(msg.String()) {
 			m.exitMoveDetail()
@@ -381,15 +391,6 @@ func (m Model) handleDialogKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	letter := msg.Text
-	if letter == "" {
-		letter = msg.String()
-	}
-	if key.Matches(msg, m.keys.Game) || letter == "g" || letter == "G" {
-		m.openGamePicker()
-		m.syncDialogViewport()
-		return m, nil
-	}
 	if (letter == "f" || letter == "F") && m.dialogHasForms() {
 		m.openFormPicker()
 		m.syncDialogViewport()
