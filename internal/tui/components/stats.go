@@ -40,18 +40,6 @@ func StatsBars(s domain.Stats) []string {
 	}
 }
 
-// AbilitySlotCell is dossier-style: "Slot N  Name", or "Hidden  Name" for
-// hidden abilities (games/fan convention — not "Slot 3 (hidden)").
-func AbilitySlotCell(a domain.AbilitySlot) string {
-	name := output.TitleFromSlug(a.Name)
-	label := fmt.Sprintf("Slot %d", a.Slot)
-	if a.IsHidden || a.Slot >= 3 {
-		label = "Hidden"
-	}
-	slot := lipgloss.NewStyle().Foreground(style.PrimaryColor()).Render(label)
-	return fmt.Sprintf("%s  %s", slot, name)
-}
-
 // GlanceAbilityGrid lays out glance abilities as:
 //
 //	[Slot 1] [Slot 2]   — fixed half-width cells (empty slot still shows label)

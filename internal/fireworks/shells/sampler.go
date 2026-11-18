@@ -10,100 +10,6 @@ import (
 	"github.com/Graphixa/Poke/internal/fireworks/vec"
 )
 
-func AllUniformDisk(ρ float64, n int) iter.Seq[vec.Vec] {
-	return func(yield func(vec.Vec) bool) {
-		for i := 0; i < n; {
-			v := vec.Vec{
-				X: 2*ρ*rand.Float64() - ρ,
-				Y: 2*ρ*rand.Float64() - ρ,
-			}
-
-			switch {
-			case v.Length2() > ρ*ρ:
-				continue
-			case !yield(v):
-				return
-			}
-
-			i++
-		}
-	}
-}
-
-func AllUniformFan(ρ, α, ω float64, n int) iter.Seq[vec.Vec] {
-	return func(yield func(vec.Vec) bool) {
-		for i := 0; i < n; {
-			v := vec.Vec{
-				X: 2*ρ*rand.Float64() - ρ,
-				Y: 2*ρ*rand.Float64() - ρ,
-			}
-
-			θ := v.Angle()
-			if θ >= α && θ <= ω && v.Length2() <= ρ*ρ {
-				v.Y = -v.Y
-
-				if !yield(v) {
-					return
-				}
-
-				i++
-			}
-		}
-	}
-
-}
-
-func AllUniformCircle(ρ float64, n int) iter.Seq[vec.Vec] {
-	return func(yield func(vec.Vec) bool) {
-		for range n {
-			θ := 2 * math.Pi * rand.Float64()
-
-			v := vec.Vec{
-				X: ρ * math.Cos(θ),
-				Y: -ρ * math.Sin(θ),
-			}
-
-			if !yield(v) {
-				return
-			}
-		}
-	}
-}
-
-func AllUniformCircleBalanced(ρ float64, n int) iter.Seq[vec.Vec] {
-	return func(yield func(vec.Vec) bool) {
-		for range n / 2 {
-			θ := 2 * math.Pi * rand.Float64()
-
-			v := vec.Vec{
-				X: ρ * math.Cos(θ),
-				Y: -ρ * math.Sin(θ),
-			}
-
-			if !yield(v) {
-				return
-			}
-
-			if !yield(v.Scale(-1)) {
-				return
-			}
-		}
-
-		if n%2 == 1 {
-			θ := 2 * math.Pi * rand.Float64()
-
-			v := vec.Vec{
-				X: ρ * math.Cos(θ),
-				Y: -ρ * math.Sin(θ),
-			}
-
-			if !yield(v) {
-				return
-			}
-		}
-	}
-}
-
 // AllStratifiedCircle divides the full circle into n equal sectors and
 // samples one uniformly random angle per sector, guaranteeing even angular
 // coverage regardless of particle count.
@@ -113,23 +19,6 @@ func AllStratifiedCircle(ρ float64, n int) iter.Seq[vec.Vec] {
 
 		for i := range n {
 			θ := (float64(i) + rand.Float64()) * slice
-
-			v := vec.Vec{
-				X: ρ * math.Cos(θ),
-				Y: -ρ * math.Sin(θ),
-			}
-
-			if !yield(v) {
-				return
-			}
-		}
-	}
-}
-
-func AllUniformArc(ρ, α, ω float64, n int) iter.Seq[vec.Vec] {
-	return func(yield func(vec.Vec) bool) {
-		for range n {
-			θ := α + (ω-α)*rand.Float64()
 
 			v := vec.Vec{
 				X: ρ * math.Cos(θ),

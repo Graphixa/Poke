@@ -54,8 +54,3 @@ func SanitizeSlug(slug string) string {
 func SpriteRelPath(id int, slug string) string {
 	return filepath.ToSlash(filepath.Join("sprites", PokemonFolderKey(id, slug), SpriteFileFrontDefault))
 }
-
-// ArtworkRelPath returns the cache-relative official-artwork path.
-func ArtworkRelPath(id int, slug string) string {
-	return filepath.ToSlash(filepath.Join("official-artwork", PokemonFolderKey(id, slug), SpriteFileFrontDefault))
-}

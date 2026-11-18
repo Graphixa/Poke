@@ -145,31 +145,6 @@ func SpeciesToDomain(s DatasetSpecies) domain.Species {
 	return out
 }
 
-// LearnedMovesFromLearnset rebuilds domain move-learning stubs for dossier resolution.
-func LearnedMovesFromLearnset(rows []DatasetLearn, slugs map[int]string) []domain.LearnedMove {
-	if len(rows) == 0 {
-		return nil
-	}
-	byMove := make(map[int][]domain.MoveLearning)
-	for _, row := range rows {
-		byMove[row.MoveID] = append(byMove[row.MoveID], domain.MoveLearning{
-			VersionGroupID:    row.VersionGroupID,
-			VersionGroupOrder: row.VersionGroupID,
-			Method:            row.LearnMethod,
-			Level:             row.LevelLearnedAt,
-		})
-	}
-	out := make([]domain.LearnedMove, 0, len(byMove))
-	for moveID, learnings := range byMove {
-		out = append(out, domain.LearnedMove{
-			MoveID:    moveID,
-			Slug:      slugs[moveID],
-			Learnings: learnings,
-		})
-	}
-	return out
-}
-
 // MoveFromDomain maps a domain move into the compact persisted form.
 func MoveFromDomain(m domain.Move) DatasetMove {
 	return DatasetMove{
@@ -217,13 +192,6 @@ func VersionToDomain(v DatasetVersion) domain.Version {
 
 func VersionGroupFromDomain(g domain.VersionGroup) DatasetVersionGroup {
 	return DatasetVersionGroup{
-		ID: g.ID, Slug: g.Slug, DisplayName: g.DisplayName,
-		Generation: g.Generation, Order: g.Order, VersionIDs: append([]int(nil), g.VersionIDs...),
-	}
-}
-
-func VersionGroupToDomain(g DatasetVersionGroup) domain.VersionGroup {
-	return domain.VersionGroup{
 		ID: g.ID, Slug: g.Slug, DisplayName: g.DisplayName,
 		Generation: g.Generation, Order: g.Order, VersionIDs: append([]int(nil), g.VersionIDs...),
 	}

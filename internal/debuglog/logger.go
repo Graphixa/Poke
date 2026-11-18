@@ -38,7 +38,7 @@ var (
 )
 
 func newDiscardLogger() *Logger {
-	return &Logger{out: io.Discard, log: slog.New(discardHandler{})}
+	return &Logger{out: io.Discard, log: slog.New(slog.DiscardHandler)}
 }
 
 // Global returns the process-wide logger (discard until Enable).
@@ -95,7 +95,7 @@ func (l *Logger) Close() error {
 	l.file = nil
 	l.out = io.Discard
 	l.enabled = false
-	l.log = slog.New(discardHandler{})
+	l.log = slog.New(slog.DiscardHandler)
 	return err
 }
 
@@ -157,16 +157,6 @@ func (h *fileHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *fileHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 
 func (h *fileHandler) WithGroup(string) slog.Handler { return h }
-
-type discardHandler struct{}
-
-func (discardHandler) Enabled(context.Context, slog.Level) bool { return false }
-
-func (discardHandler) Handle(context.Context, slog.Record) error { return nil }
-
-func (discardHandler) WithAttrs([]slog.Attr) slog.Handler { return discardHandler{} }
-
-func (discardHandler) WithGroup(string) slog.Handler { return discardHandler{} }
 
 func sanitize(msg string) string {
 	msg = strings.Map(func(r rune) rune {

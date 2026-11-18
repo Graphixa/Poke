@@ -81,14 +81,3 @@ type RenderOptions struct {
 	// SixelColors is the sixel palette limit (64 | 128 | 256); zero uses 64.
 	SixelColors int
 }
-
-// DefaultRenderOptions returns options suitable for the fixed sprite frame.
-func DefaultRenderOptions() RenderOptions {
-	return RenderOptions{
-		Width:          FrameWidth,
-		Height:         FrameHeight,
-		ColorMode:      ColorAuto,
-		AlphaThreshold: 16,
-		Source:         SourceArtwork,
-	}
-}

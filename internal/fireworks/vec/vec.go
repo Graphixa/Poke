@@ -17,10 +17,6 @@ func (v Vec) Sub(u Vec) Vec {
 	return Vec{v.X - u.X, v.Y - u.Y}
 }
 
-func (v Vec) Mul(u Vec) Vec {
-	return Vec{v.X * u.X, v.Y * u.Y}
-}
-
 func (v Vec) Scale(s float64) Vec {
 	return Vec{v.X * s, v.Y * s}
 }
@@ -45,12 +41,4 @@ func (v Vec) Normalize() Vec {
 
 func (v Vec) Dist2(u Vec) float64 {
 	return v.Sub(u).Length2()
-}
-
-func (v Vec) Dist(u Vec) float64 {
-	return math.Sqrt(v.Dist2(u))
-}
-
-func (v Vec) Angle() float64 {
-	return math.Atan2(v.Y, v.X)
 }

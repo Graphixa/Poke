@@ -24,13 +24,3 @@ func MkForces(gravity, drag, maxSpeed float64, applyForce func(p *particle.Parti
 		af: applyForce,
 	}
 }
-
-func DefaultForces() Forces {
-	return Forces{
-		g:   1.0,
-		ar:  0.28,
-		spd: 0,
-
-		af: nil,
-	}
-}

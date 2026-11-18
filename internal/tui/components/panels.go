@@ -233,11 +233,6 @@ func Header(name string, id int, width int) string {
 	return boldSty().Render(textwidth.PadRight(textwidth.Truncate(line, width), width))
 }
 
-// Footer renders the compact hint line (wireframe wording).
-func Footer(verbose bool, width int, warmHint string) string {
-	return FooterSplit(verbose, width, "", warmHint)
-}
-
 // FooterRightWidth is the fixed character width of the browse footer status segment.
 const FooterRightWidth = 42
 
@@ -267,7 +262,7 @@ func FooterSplit(verbose bool, width int, hint, rightStatus string) string {
 	if hint != "" {
 		leftText = " " + hint
 	} else {
-		// Fallback when callers omit FooterHint (warm-footer tests / Footer()).
+		// Fallback when callers omit a hint.
 		fallback := []key.Binding{
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "info")),
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "view")),

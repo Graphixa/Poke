@@ -16,16 +16,6 @@ func VersionGroupIDForVersion(versions map[int]DatasetVersion, versionID int) (i
 	return v.VersionGroupID, true
 }
 
-// VersionBySlug finds a catalog version by slug.
-func VersionBySlug(versions map[int]DatasetVersion, slug string) (DatasetVersion, bool) {
-	for _, v := range versions {
-		if v.Slug == slug {
-			return v, true
-		}
-	}
-	return DatasetVersion{}, false
-}
-
 // VersionsChronological returns catalog versions sorted by Order, then ID.
 func VersionsChronological(versions map[int]DatasetVersion) []DatasetVersion {
 	out := make([]DatasetVersion, 0, len(versions))

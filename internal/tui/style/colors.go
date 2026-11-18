@@ -120,13 +120,6 @@ func ErrorColor() color.Color {
 	return fg(active.Error)
 }
 
-// WarningColor is status / caution emphasis (theme warning).
-func WarningColor() color.Color {
-	mu.RLock()
-	defer mu.RUnlock()
-	return fg(active.Warning)
-}
-
 // SuccessColor is status / positive emphasis (theme success).
 func SuccessColor() color.Color {
 	mu.RLock()
@@ -134,18 +127,15 @@ func SuccessColor() color.Color {
 	return fg(active.Success)
 }
 
-func statusStyles() (err, warn, ok, muted, loading, activeTab, inactiveTab lipgloss.Style) {
+func statusStyles() (err, warn, muted, loading lipgloss.Style) {
 	mu.RLock()
 	p := active
 	mu.RUnlock()
 	err = lipgloss.NewStyle().Foreground(fg(p.Error)).Bold(true)
 	warn = lipgloss.NewStyle().Foreground(fg(p.Warning)).Bold(true)
-	ok = lipgloss.NewStyle().Foreground(fg(p.Success))
 	// Same ink as borders (BorderColor → Placeholders). No Faint: themes already set Placeholders muted.
 	muted = lipgloss.NewStyle().Foreground(fg(p.Placeholders))
 	loading = lipgloss.NewStyle().Foreground(fg(p.Secondary))
-	activeTab = lipgloss.NewStyle().Foreground(fg(p.Primary)).Bold(true).Underline(true)
-	inactiveTab = lipgloss.NewStyle().Foreground(fg(p.Placeholders))
 	return
 }
 
@@ -178,12 +168,12 @@ func TypeSummary(types []string) string {
 }
 
 func StatusError(msg string) string {
-	err, _, _, _, _, _, _ := statusStyles()
+	err, _, _, _ := statusStyles()
 	return err.Render("[ERROR] ") + msg
 }
 
 func StatusWarn(msg string) string {
-	_, warn, _, _, _, _, _ := statusStyles()
+	_, warn, _, _ := statusStyles()
 	return warn.Render("[!] ") + msg
 }
 
@@ -191,28 +181,13 @@ func StatusLoading(msg string) string {
 	if msg == "" {
 		msg = "Loading…"
 	}
-	_, _, _, _, loading, _, _ := statusStyles()
+	_, _, _, loading := statusStyles()
 	return loading.Render("… ") + msg
 }
 
-func StatusOK(msg string) string {
-	_, _, ok, _, _, _, _ := statusStyles()
-	return ok.Render("OK ") + msg
-}
-
 func StatusMuted(msg string) string {
-	_, _, _, muted, _, _, _ := statusStyles()
+	_, _, muted, _ := statusStyles()
 	return muted.Render(msg)
-}
-
-// TabToken styles an active or inactive tab label with underline (non-colour).
-func TabToken(label string, active bool) string {
-	token := "[" + label + "]"
-	_, _, _, _, _, activeTab, inactiveTab := statusStyles()
-	if active {
-		return activeTab.Render(token)
-	}
-	return inactiveTab.Render(token)
 }
 
 func title(s string) string {

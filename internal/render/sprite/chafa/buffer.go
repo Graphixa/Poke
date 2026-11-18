@@ -1,7 +1,6 @@
 package chafa
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"image/draw"
@@ -27,18 +26,6 @@ func LoadPNGAndExtractBuffer(filePath string) (*ImageData, error) {
 	img, _, err := image.Decode(file)
 	if err != nil {
 		return nil, err
-	}
-	return FromImage(img)
-}
-
-// FromPNG decodes PNG bytes into an RGBA pixel buffer.
-func FromPNG(png []byte) (*ImageData, error) {
-	if len(png) == 0 {
-		return nil, fmt.Errorf("chafa: empty png")
-	}
-	img, _, err := image.Decode(bytes.NewReader(png))
-	if err != nil {
-		return nil, fmt.Errorf("chafa: decode: %w", err)
 	}
 	return FromImage(img)
 }

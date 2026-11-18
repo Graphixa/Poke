@@ -204,13 +204,6 @@ func URLForTier(pokemon domain.Pokemon, tier AssetTier) string {
 	}
 }
 
-// TierForRenderer returns the asset tier for a logical renderer class.
-// Product path uses official artwork for both native and chafa.
-func TierForRenderer(name string) AssetTier {
-	_ = name
-	return AssetTierHD
-}
-
 // ValidatePNG reports whether data is a decodable PNG image.
 func ValidatePNG(data []byte) error {
 	if len(data) == 0 {

@@ -8,19 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 
 	"github.com/Graphixa/Poke/internal/debuglog"
 	"github.com/Graphixa/Poke/internal/domain"
 )
-
-var namedAssetMetaCalls atomic.Int64
-
-// NamedAssetMetaCount returns test-visible NamedAssetMeta invocations.
-func NamedAssetMetaCount() int64 { return namedAssetMetaCalls.Load() }
-
-// ResetNamedAssetMetaCount clears the NamedAssetMeta test counter.
-func ResetNamedAssetMetaCount() { namedAssetMetaCalls.Store(0) }
 
 // AssetMapping is the Pokémon → content-hash pointer (no PNG bytes).
 type AssetMapping struct {
@@ -44,7 +35,6 @@ func (s *Store) artworkMappingPath(pokemonID int, source string) string {
 
 // NamedAssetMeta returns hash/path for a named sprite without reading PNG bytes.
 func (s *Store) NamedAssetMeta(_ context.Context, id int, slug, kind string) (hash, path string, ready bool, err error) {
-	namedAssetMetaCalls.Add(1)
 	if id < 1 {
 		return "", "", false, nil
 	}

@@ -46,11 +46,6 @@ func DossierCoreMsgForTest(gen, speciesID int, dossier domain.Dossier, complete 
 	return dossierCoreMsg{gen: gen, speciesID: speciesID, dossier: dossier, complete: complete, err: err}
 }
 
-// DossierExtrasMsgForTest builds an extras-loaded message for tests.
-func DossierExtrasMsgForTest(gen, speciesID int, dossier domain.Dossier, err error) dossierExtrasMsg {
-	return dossierExtrasMsg{gen: gen, speciesID: speciesID, dossier: dossier, err: err}
-}
-
 // ExtrasReadyForTest reports whether speciesID has all dossier extras loaded.
 func (m Model) ExtrasReadyForTest(speciesID int) bool {
 	r := m.resources[speciesID]
@@ -88,11 +83,6 @@ func SpriteMsgKindForTest(reqID, gen, speciesID, cells int, ansi, kind string, p
 func SpriteMsgNativeForTest(msg spriteMsg) spriteMsg {
 	msg.native = true
 	return msg
-}
-
-// WarmProgressMsgForTest builds a warm-progress update for overlay debounce tests.
-func WarmProgressMsgForTest(done, total int) warmProgressMsg {
-	return warmProgressMsg{Done: done, Total: total, Message: "warming"}
 }
 
 // WarmProgressSpeciesMsgForTest builds a warm tick for a finished species.

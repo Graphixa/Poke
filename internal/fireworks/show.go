@@ -31,7 +31,7 @@ type Show struct {
 	sinceSpawn int
 }
 
-// Radial shells only — willow/palm read as rain, not starbursts.
+// Radial shells only.
 var mixedNews = []fw.NewFirework{
 	shells.NewPeony,
 	shells.NewPeony,

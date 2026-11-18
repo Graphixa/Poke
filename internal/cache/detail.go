@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/Graphixa/Poke/internal/debuglog"
 	"github.com/Graphixa/Poke/internal/domain"
@@ -186,16 +185,4 @@ func (s *Service) getMove(ctx context.Context, id int) (domain.Move, error) {
 
 func (s *Service) datasetReadsOnly() bool {
 	return s.localOnly.Load() || s.store.HasActiveDataset()
-}
-
-// ReadSpriteBytes downloads sprite bytes through the API client.
-func ReadSpriteBytes(ctx context.Context, api interface {
-	GetSprite(context.Context, string) (io.ReadCloser, error)
-}, url string) ([]byte, error) {
-	rc, err := api.GetSprite(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-	return io.ReadAll(rc)
 }
