@@ -8,6 +8,8 @@ before:
     - go mod tidy
     # .syso must land in cmd/poke (single binary; pokedex is an install-time alias).
     - go run github.com/tc-hib/go-winres@v0.3.3 make --in build/winres.json --out cmd/poke/rsrc --arch amd64,arm64 --file-version {{.Major}}.{{.Minor}}.{{.Patch}}.0 --product-version {{.Major}}.{{.Minor}}.{{.Patch}}.0
+    # Repack when POKE_DATASET_DIR is set, then refuse a fixture snapshot.
+    - go run ./scripts/pack_dataset.go -release
 
 builds:
   - id: poke
