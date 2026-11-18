@@ -13,7 +13,7 @@ import (
 
 type stubCacheCommands struct {
 	clear   func() error
-	refresh func(context.Context) error
+	refresh func(context.Context, bool) error
 }
 
 func (s stubCacheCommands) Clear() error {
@@ -23,9 +23,9 @@ func (s stubCacheCommands) Clear() error {
 	return nil
 }
 
-func (s stubCacheCommands) Refresh(ctx context.Context) error {
+func (s stubCacheCommands) Refresh(ctx context.Context, fromPokeAPI bool) error {
 	if s.refresh != nil {
-		return s.refresh(ctx)
+		return s.refresh(ctx, fromPokeAPI)
 	}
 	return nil
 }
@@ -70,7 +70,7 @@ func (s stubUpdater) CheckIntervalHours() int {
 }
 
 func TestRefreshAndCacheCommands(t *testing.T) {
-	var refreshed, cleared int
+	var refreshed, cleared, fromAPI int
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	root := cli.NewRoot(cli.Options{
@@ -82,8 +82,14 @@ func TestRefreshAndCacheCommands(t *testing.T) {
 		Stdout: stdout,
 		Stderr: stderr,
 		Cache: stubCacheCommands{
-			clear:   func() error { cleared++; return nil },
-			refresh: func(context.Context) error { refreshed++; return nil },
+			clear: func() error { cleared++; return nil },
+			refresh: func(_ context.Context, fromPokeAPI bool) error {
+				refreshed++
+				if fromPokeAPI {
+					fromAPI++
+				}
+				return nil
+			},
 		},
 	})
 
@@ -99,8 +105,12 @@ func TestRefreshAndCacheCommands(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if refreshed != 1 || cleared != 1 {
-		t.Fatalf("refreshed=%d cleared=%d want 1,1", refreshed, cleared)
+	root.SetArgs([]string{"refresh", "--pokeapi"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if refreshed != 2 || fromAPI != 1 || cleared != 1 {
+		t.Fatalf("refreshed=%d fromAPI=%d cleared=%d", refreshed, fromAPI, cleared)
 	}
 	if !strings.Contains(stdout.String(), "cache") {
 		t.Fatalf("stdout = %q", stdout.String())

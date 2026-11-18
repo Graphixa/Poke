@@ -88,7 +88,7 @@ func (c cacheCommands) Clear() error {
 	return nil
 }
 
-func (c cacheCommands) Refresh(ctx context.Context) error {
+func (c cacheCommands) Refresh(ctx context.Context, fromPokeAPI bool) error {
 	svc, err := c.services()
 	if err != nil {
 		return err
@@ -105,7 +105,13 @@ func (c cacheCommands) Refresh(ctx context.Context) error {
 				})
 			}
 		}
-		if err := svc.Cache.RefreshDataset(ctx, datasetProgress); err != nil {
+		var err error
+		if fromPokeAPI {
+			err = svc.Cache.BootstrapDataset(ctx, datasetProgress)
+		} else {
+			err = svc.Cache.RefreshSnapshot(ctx, datasetProgress)
+		}
+		if err != nil {
 			return err
 		}
 		index, _, err := svc.Cache.EnsureIndex(ctx, nil)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,7 +74,14 @@ func TestUpdateDataOnlyNoNativeCache(t *testing.T) {
 		stdout: &stdout,
 		stderr: &stderr,
 	}
-	if err := cmds.Refresh(context.Background()); err != nil {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+	prev := cache.SnapshotOverride
+	cache.SnapshotOverride = srv.URL
+	t.Cleanup(func() { cache.SnapshotOverride = prev })
+	if err := cmds.Refresh(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(stderr.String(), "Building image cache") {

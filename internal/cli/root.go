@@ -47,7 +47,7 @@ type Options struct {
 // CacheCommands handles cache maintenance subcommands.
 type CacheCommands interface {
 	Clear() error
-	Refresh(context.Context) error
+	Refresh(context.Context, bool) error
 }
 
 // Updater installs poke binary updates from GitHub Releases.
@@ -254,18 +254,21 @@ func newCacheCommand(options Options) *cobra.Command {
 }
 
 func newRefreshCommand(options Options) *cobra.Command {
-	return &cobra.Command{
+	var fromPokeAPI bool
+	cmd := &cobra.Command{
 		Use:   "refresh",
 		Short: "Refresh local dataset and sync official artwork",
-		Long:  "Rebuilds the species dataset snapshot and downloads new or changed official artwork into the app cache. Native Kitty/iTerm/Sixel frame caches are built in the background while browsing, not during refresh.",
+		Long:  "Downloads the dataset snapshot from the Poke repository when it has changed, then syncs official artwork. The current snapshot stays in place when that download fails.\n\n--pokeapi rebuilds the dataset from PokeAPI instead. That is the slow path.\n\nNative Kitty/iTerm/Sixel frame caches are built in the background while browsing, not during refresh.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if options.Cache == nil {
 				return fmt.Errorf("poke refresh is unavailable")
 			}
-			return options.Cache.Refresh(cmd.Context())
+			return options.Cache.Refresh(cmd.Context(), fromPokeAPI)
 		},
 	}
+	cmd.Flags().BoolVar(&fromPokeAPI, "pokeapi", false, "Rebuild the dataset from PokeAPI instead of the repository snapshot")
+	return cmd
 }
 
 func newUpdateCommand(options Options) *cobra.Command {

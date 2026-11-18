@@ -27,7 +27,7 @@ Measured on this machine (`%LocalAppData%\pokedex\datasets\2026-11-18T064106`, 1
 2. `manifest.json` stays a short header. Add `source_sha` (the api-data commit, or a hash of the packed bytes when the pack was built from a local dataset).
 3. Ship the gzip inside the exe with `//go:embed`, so install.ps1, Winget, Chocolatey, and Homebrew keep installing one binary.
 4. The gzip is produced in the release workflow before Goreleaser. Do not commit the real ~20 MiB blob. A tiny committed fixture gzip exists only so `go test` compiles. Release builds overwrite `internal/bundled/dataset.tar.gz` before `go build`.
-5. `poke refresh` and first launch try the embedded snapshot first. They call `BootstrapDataset` only when the unpack fails.
+5. First launch unpacks the embedded snapshot and calls `BootstrapDataset` only when that unpack fails. `poke refresh` downloads the repository gzip and does not crawl. `poke refresh --pokeapi` is the crawl.
 6. Artwork stays a CDN download into `sprites/` and `official-artwork/`. It is not in the gzip.
 7. Include PokeAPI's BSD-3-Clause `LICENSE.txt` inside the gzip. Keep the README credit and the Nintendo trademark line. Do not bundle PNGs.
 
@@ -75,7 +75,8 @@ Rules:
 - A failed unpack leaves any previous active snapshot in place. `ActivateDataset` already works this way. Do not delete the active id first.
 - Unpack writes a new dataset id, then activates. Same staging rule as bootstrap.
 - `source_sha` on the embedded manifest is compared to the active manifest. Equal and complete: skip the data stage.
-- `poke refresh` on the same binary is a no-op for JSON. A newer binary carries a new sha and unpacks beside the old snapshot.
+- `poke refresh` downloads `internal/bundled/dataset.tar.gz` from the default branch (ETag). 304 or the same `source_sha` skips the data step. A failed download or a rejected snapshot keeps the active dataset and does not crawl. `poke refresh --pokeapi` runs `BootstrapDataset`.
+- A newer binary's embedded snapshot applies on first launch, or on `poke refresh` when the repository file's `source_sha` differs.
 
 ## Gzip layout
 

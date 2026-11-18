@@ -64,9 +64,12 @@ Open the theme selector with live preview. Use **↑ / ↓** to preview, **Enter
 
 ```bash
 poke refresh
+poke refresh --pokeapi
 ```
 
-Rebuild the local Pokémon dataset and sync official artwork. This needs an internet connection and may take time on the first run. If the dataset rebuild fails, the previous complete snapshot remains available.
+`poke refresh` downloads the dataset snapshot from this repository when it has changed, then syncs official artwork. A matching snapshot skips the data download. If the download fails, the current snapshot stays.
+
+`--pokeapi` rebuilds the dataset from PokeAPI. That is the slow path. A failed rebuild leaves the previous complete snapshot in place.
 
 This command updates Pokémon data; it does not install a newer app version. Artwork rendering caches are prepared separately while browsing.
 

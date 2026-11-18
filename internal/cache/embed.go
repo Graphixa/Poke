@@ -154,7 +154,8 @@ func readTarGz(gz []byte) (map[string][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
+		// 0 is a regular file in archives that left Typeflag unset.
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != 0 {
 			continue
 		}
 		name := path.Clean(hdr.Name)
