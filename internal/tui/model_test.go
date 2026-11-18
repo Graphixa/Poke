@@ -468,6 +468,9 @@ func TestEmptyResultsAndTooSmall(t *testing.T) {
 	if !strings.Contains(view, "No matches") {
 		t.Fatalf("expected empty results cue:\n%s", view)
 	}
+	if strings.Contains(view, "Select a Pokémon") {
+		t.Fatalf("empty search should leave the right pane blank:\n%s", view)
+	}
 
 	m = apply(t, m, tea.WindowSizeMsg{Width: 30, Height: 10})
 	view = m.View().Content

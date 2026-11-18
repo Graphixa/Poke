@@ -633,7 +633,9 @@ func (m *Model) syncSelectionLoads() tea.Cmd {
 	}
 	m.trackedID = id
 	m.bumpSelection()
-	if displayed > 0 && displayed != id {
+	if id == 0 {
+		m.glanceHoldID = 0
+	} else if displayed > 0 && displayed != id {
 		m.glanceHoldID = displayed
 	}
 	m.notifyWarmer()

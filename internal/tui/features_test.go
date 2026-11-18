@@ -590,6 +590,43 @@ func TestFeatureOverlaysSuppressNativePainting(t *testing.T) {
 	}
 }
 
+func TestNoMatchDropsLastArtwork(t *testing.T) {
+	m := featureModel()
+	m.layoutTh.DisableSprite = false
+	m.width, m.height = 120, 52
+	m.search.SetValue("char")
+	m.refilter()
+	if len(m.filtered) == 0 {
+		t.Fatal("expected matches")
+	}
+	m.imageNative = true
+	m.imageANSI = "\x1bP0;0;8q#1~~~\x1b\\"
+	m.imageSpeciesID = m.filtered[m.cursor].ID
+	m.imageCells = m.currentSpriteCells()
+	m.imageState = ImageReady
+	m.nativePaintCells = m.imageCells
+	m.nativePaintANSI = m.imageANSI
+	m.nativePaintSpecies = m.imageSpeciesID
+	m.trackedID = m.imageSpeciesID
+	if m.nativePaintCells < 1 {
+		t.Fatal("fixture has no sprite box")
+	}
+
+	m.search.SetValue("declan")
+	m.refilter()
+	_ = m.syncSelectionLoads()
+	m.maybeCommitGlanceHold()
+	m.markNativeOverlayDirty()
+	next, _ := m.scheduleNativeOverlay()
+	view := next.View().Content
+	if !strings.Contains(view, "No matches") || strings.Contains(view, "Select a Pokémon") {
+		t.Fatalf("right pane:\n%s", view)
+	}
+	if next.nativePaintSpecies != 0 || next.nativePaintCells != 0 || next.nativePaintANSI != "" {
+		t.Fatal("last artwork still painted")
+	}
+}
+
 func TestBrowseHelpOrder(t *testing.T) {
 	var labels []string
 	for _, b := range defaultKeyMap().ShortHelp() {

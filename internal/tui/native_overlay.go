@@ -79,7 +79,9 @@ func (m Model) scheduleNativeOverlay() (Model, tea.Cmd) {
 		// Glance almost always cache-hits and overwrites in place (no clear).
 		// Art 40 often misses; the Glance miss path (space-clear then DCS) is
 		// what overpaints the hero card. Same bucket: keep last sixel.
-		if m.nativePaintCells > 0 && m.nativePaintCells == m.currentSpriteCells() && !m.imagePlaceholder {
+		// Same-size scroll keeps the last frame until the next one is ready.
+		// An empty list has nothing to keep, so the picture has to go.
+		if _, ok := m.selected(); ok && m.nativePaintCells > 0 && m.nativePaintCells == m.currentSpriteCells() && !m.imagePlaceholder {
 			return m, nil
 		}
 		return m.emitNativeClear()

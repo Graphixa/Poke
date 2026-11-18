@@ -1115,6 +1115,10 @@ func moveColumnFlags(bodyW int) (showAcc, showPP bool) {
 
 const moveNameColPref = 16
 
+// gameLead is the gap before Game. Pow→Acc is one separator plus the two-column
+// pad of a 3-digit Acc value in a 5-wide field ("100"), so three spaces.
+const gameLead = "   "
+
 // moveColWidths: Move stays near pref width; leftover goes to Game (fixes cramped Game).
 func moveColWidths(bodyW int, showAcc, showPP bool) (moveW, gameW int) {
 	// Lvl(5)+sp + [Move] + sp + Type(8)+sp + Cat(8)+sp + Pow(5) [+Acc][+PP] + sp + [Game]
@@ -1125,7 +1129,7 @@ func moveColWidths(bodyW int, showAcc, showPP bool) (moveW, gameW int) {
 	if showPP {
 		fixed += 1 + 4
 	}
-	fixed += 1 // space before Game
+	fixed += len(gameLead) // same visible gap as Pow→Acc
 	remain := bodyW - fixed
 	if remain < 14 {
 		remain = 14
@@ -1219,9 +1223,9 @@ func moveTableHeader(method string, moveW, gameW int, showAcc, showPP bool) stri
 	}
 	var header string
 	if method == "level-up" {
-		header = fmt.Sprintf("%-5s %-*s %-8s %-8s %5s", "Lvl", moveW, "Move", "Type", "Cat", "Pow")
+		header = fmt.Sprintf("%-5s %-*s %-8s %-8s %5s", "Lvl", moveW, "Move", "Type", "Category", "Pow")
 	} else {
-		header = fmt.Sprintf("%-5s %-*s %-8s %-8s %5s", "", moveW, "Move", "Type", "Cat", "Pow")
+		header = fmt.Sprintf("%-5s %-*s %-8s %-8s %5s", "", moveW, "Move", "Type", "Category", "Pow")
 	}
 	if showAcc {
 		header += fmt.Sprintf(" %5s", "Acc")
@@ -1229,7 +1233,7 @@ func moveTableHeader(method string, moveW, gameW int, showAcc, showPP bool) stri
 	if showPP {
 		header += fmt.Sprintf(" %4s", "PP")
 	}
-	header += fmt.Sprintf(" %-*s", gameW, "Game")
+	header += gameLead + fmt.Sprintf("%-*s", gameW, "Game")
 	return header
 }
 
@@ -1278,7 +1282,7 @@ func formatMoveTableRow(row domain.LevelUpMove, method string, moveW, gameW int,
 	if showPP {
 		line += fmt.Sprintf(" %4d", row.Move.PP)
 	}
-	line += fmt.Sprintf(" %-*s", gameW, truncate(label, gameW))
+	line += gameLead + fmt.Sprintf("%-*s", gameW, truncate(label, gameW))
 	return line
 }
 

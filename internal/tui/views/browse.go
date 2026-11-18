@@ -250,7 +250,7 @@ func renderSearch(d BrowseData, width int) string {
 
 func renderRight(d BrowseData, width, height int) string {
 	if !d.HasSelected {
-		return lipgloss.NewStyle().Width(width).Height(height).Render("Select a Pokémon")
+		return lipgloss.NewStyle().Width(width).Height(height).Render("")
 	}
 
 	header := renderHeader(d, width)

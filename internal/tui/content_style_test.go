@@ -98,6 +98,30 @@ func TestMoveHeaderIncludesPP(t *testing.T) {
 	if !strings.Contains(dataRow, "25") {
 		t.Fatalf("move row should include PP: %q", dataRow)
 	}
+	plainHeader := stripANSIForFocus(header)
+	plainRow := stripANSIForFocus(dataRow)
+	if !strings.Contains(plainHeader, "Category") {
+		t.Fatalf("category header should not be clipped: %q", plainHeader)
+	}
+	if gapBetween(plainHeader, "Pow", "Acc") != gapBetween(plainHeader, "PP", "Game") {
+		t.Fatalf("PP→Game header gap != Pow→Acc: %q", plainHeader)
+	}
+	if gapBetween(plainRow, "40", "100") != gapBetween(plainRow, "25", "All") {
+		t.Fatalf("PP→Game row gap != Pow→Acc: %q", plainRow)
+	}
+}
+
+func gapBetween(s, left, right string) int {
+	i := strings.Index(s, left)
+	if i < 0 {
+		return -1
+	}
+	rest := s[i+len(left):]
+	j := strings.Index(rest, right)
+	if j < 0 {
+		return -1
+	}
+	return j
 }
 
 func TestMoveColumnsDropAccThenPPWhenNarrow(t *testing.T) {
