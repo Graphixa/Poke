@@ -403,6 +403,51 @@ func TestMoveDetailFactLayoutAndSideList(t *testing.T) {
 	requireANSI(t, joined) // type colour on Type value
 }
 
+func TestMoveDetailGroupsByGame(t *testing.T) {
+	rows := []domain.LevelUpMove{
+		{Game: "Red (Japan)", Move: domain.Move{DisplayName: "Growl"}},
+		{Game: "Red (Japan)", Move: domain.Move{DisplayName: "Leech Seed"}},
+		{Game: "Red (Japan)", Move: domain.Move{DisplayName: "Tackle"}},
+		{Game: "Emerald", Move: domain.Move{DisplayName: "Growl"}},
+		{Game: "Emerald", Move: domain.Move{DisplayName: "Tackle"}},
+	}
+	lines := moveDetailSideList(rows, 1, 24)
+	var plain []string
+	for _, l := range lines {
+		plain = append(plain, stripANSIForFocus(l))
+	}
+	joined := strings.Join(plain, "\n")
+	if !strings.Contains(joined, "Red (Japan)") || !strings.Contains(joined, "Emerald") {
+		t.Fatalf("game dividers missing:\n%s", joined)
+	}
+	var sawCursor bool
+	for i, l := range plain {
+		trim := strings.TrimSpace(l)
+		if trim == "Red (Japan)" || trim == "Emerald" {
+			if strings.Contains(l, ">") {
+				t.Fatalf("cursor landed on game header %q", l)
+			}
+			if lines[i] == boldPrimary(trim) {
+				t.Fatalf("game header should stay placeholder ink: %q", lines[i])
+			}
+			continue
+		}
+		if strings.Contains(l, "Leech Seed") {
+			if !strings.Contains(l, "> Leech Seed") {
+				t.Fatalf("focused move wants > cursor: %q", l)
+			}
+			sawCursor = true
+		}
+	}
+	if !sawCursor {
+		t.Fatalf("missing Leech Seed cursor:\n%s", joined)
+	}
+	// Up/down still walks moves, so a header between games is not a row.
+	if strings.Contains(plain[0], ">") {
+		t.Fatalf("Move List title is not a cursor row: %q", plain[0])
+	}
+}
+
 func TestEncounterSortFollowsGameOrder(t *testing.T) {
 	rows := []domain.Encounter{
 		{VersionID: 3, Version: "yellow", Area: "a", Method: "walk"},

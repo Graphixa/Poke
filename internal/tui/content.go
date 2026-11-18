@@ -907,6 +907,9 @@ func moveDetailSideList(rows []domain.LevelUpMove, idx, width int) []string {
 	if width < 8 || len(rows) == 0 {
 		return nil
 	}
+	if moveListGrouped(rows) {
+		return moveDetailGroupedSideList(rows, idx, width)
+	}
 	const window = 12
 	start := idx - window/2
 	if start < 0 {
@@ -942,6 +945,103 @@ func moveDetailSideList(rows []domain.LevelUpMove, idx, width int) []string {
 		}
 	}
 	if end < len(rows) {
+		out = append(out, tuistyle.StatusMuted("  …"))
+	}
+	return out
+}
+
+// moveListGrouped is the All-games learnset: each row is tagged with a game label.
+func moveListGrouped(rows []domain.LevelUpMove) bool {
+	for _, r := range rows {
+		if r.Game != "" {
+			return true
+		}
+	}
+	return false
+}
+
+type moveSideItem struct {
+	header bool
+	game   string
+	row    int
+}
+
+func moveDetailGroupedSideList(rows []domain.LevelUpMove, idx, width int) []string {
+	const window = 12
+	items := make([]moveSideItem, 0, len(rows)+8)
+	prev := ""
+	for i, r := range rows {
+		if r.Game != prev {
+			items = append(items, moveSideItem{header: true, game: r.Game})
+			prev = r.Game
+		}
+		items = append(items, moveSideItem{row: i})
+	}
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(rows) {
+		idx = len(rows) - 1
+	}
+	focusAt := 0
+	for i, it := range items {
+		if !it.header && it.row == idx {
+			focusAt = i
+			break
+		}
+	}
+	start := focusAt - window/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + window
+	if end > len(items) {
+		end = len(items)
+		start = end - window
+		if start < 0 {
+			start = 0
+		}
+	}
+	// Window can open mid-group; pin that group's title so the cursor still has a divider.
+	var pin string
+	if start < len(items) && !items[start].header {
+		for h := start - 1; h >= 0; h-- {
+			if items[h].header {
+				pin = items[h].game
+				break
+			}
+		}
+	}
+	nameW := width - 2
+	if nameW < 1 {
+		nameW = 1
+	}
+	out := make([]string, 0, window+4)
+	out = append(out, boldPrimary(truncate("Move List", width)))
+	if start > 0 {
+		out = append(out, tuistyle.StatusMuted("  …"))
+	}
+	if pin != "" {
+		out = append(out, tuistyle.StatusMuted(truncate(pin, width)))
+	}
+	for i := start; i < end; i++ {
+		it := items[i]
+		if it.header {
+			out = append(out, tuistyle.StatusMuted(truncate(it.game, width)))
+			continue
+		}
+		name := rows[it.row].Move.DisplayName
+		if name == "" {
+			name = output.TitleFromSlug(rows[it.row].Move.Slug)
+		}
+		name = truncate(name, nameW)
+		if it.row == idx {
+			out = append(out, boldPrimary("> "+name))
+		} else {
+			out = append(out, "  "+name)
+		}
+	}
+	if end < len(items) {
 		out = append(out, tuistyle.StatusMuted("  …"))
 	}
 	return out
