@@ -15,7 +15,7 @@ go build -o poke ./cmd/poke
 ## Checks
 
 ```bash
-make check          # fmt-check, vet, staticcheck, gosec, race, cross-build
+make check          # fmt-check, vet, staticcheck, gosec, govulncheck, race, cross-build
 make release-check  # goreleaser check + snapshot + archive verify
 ```
 

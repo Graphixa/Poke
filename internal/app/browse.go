@@ -161,13 +161,7 @@ func (h *Handler) runBrowse(ctx context.Context, req BrowseRequest) error {
 		return err
 	}
 
-	if !svc.Cache.HasActiveDataset() {
-		if err := h.runDatasetBootstrap(ctx, svc); err != nil {
-			return err
-		}
-	}
-
-	cfg, startBgArtwork, err := h.runSetupIfNeeded(ctx, svc)
+	cfg, startBgArtwork, err := h.runSetupIfNeeded(ctx, svc, req.ForceSetup)
 	if err != nil {
 		return err
 	}

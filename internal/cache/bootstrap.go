@@ -188,12 +188,18 @@ func (s *Service) bootstrapDatasetFromIndex(ctx context.Context, summaries []dom
 	}
 
 	rep.EvolutionWanted = len(evoIDs)
+	if len(evoIDs) == 0 {
+		report(progress, DatasetProgress{Stage: DatasetStageEvolution})
+	}
 	if err := s.parallelEvolutionFetch(ctx, intSetKeys(evoIDs), progress, &rep, builder); err != nil {
 		s.finalizeIncomplete(id, staging, rep, err)
 		return err
 	}
 
 	rep.MoveWanted = len(moveIDs)
+	if len(moveIDs) == 0 {
+		report(progress, DatasetProgress{Stage: DatasetStageMoves})
+	}
 	if err := s.parallelMoveFetch(ctx, intSetKeys(moveIDs), progress, &rep, builder); err != nil {
 		s.finalizeIncomplete(id, staging, rep, err)
 		return err
@@ -478,15 +484,27 @@ func (s *Service) parallelMoveFetch(ctx context.Context, ids []int, progress Dat
 	}()
 
 	done := 0
+	var missing []int
 	for res := range results {
 		done++
 		report(progress, DatasetProgress{Stage: DatasetStageMoves, Done: done, Total: total})
 		if res.err != nil {
+			// PokeAPI can name a move on a learnset and 404 the move itself
+			// (zygarde-mega → nihil-light, id 920). That is not a failed download.
+			if errors.Is(res.err, pokeapi.ErrNotFound) {
+				rep.add("move", res.id, res.err, false)
+				missing = append(missing, res.id)
+				continue
+			}
 			rep.add("move", res.id, res.err, true)
 			continue
 		}
 		builder.Moves[res.id] = dataset.MoveFromDomain(res.move)
 		rep.MoveOK++
+	}
+	if n := dataset.DropMoves(builder, missing); n > 0 {
+		rep.MoveWanted -= n
+		debuglog.Cachef("dataset.bootstrap.moves omitted_missing=%d", n)
 	}
 	return ctx.Err()
 }
@@ -596,10 +614,11 @@ func (s *Service) parallelFormFetch(ctx context.Context, ids []int, progress Dat
 }
 
 // parallelMetaFetch downloads optional metadata ids with worker pool + progress.
-// Runs under DatasetStageDataset so the TUI leaves the moves rail and shows ready work.
+// kind is the progress part ("form", "ability"), not a label on screen.
 func (s *Service) parallelMetaFetch(ctx context.Context, ids []int, kind string, progress DatasetProgressFunc, work func(context.Context, int) error) error {
 	total := len(ids)
 	if total == 0 {
+		report(progress, DatasetProgress{Stage: DatasetStage(kind)})
 		return nil
 	}
 	workers := s.datasetWorkers()
@@ -643,7 +662,7 @@ func (s *Service) parallelMetaFetch(ctx context.Context, ids []int, kind string,
 	for err := range results {
 		done++
 		report(progress, DatasetProgress{
-			Stage: DatasetStageDataset, Done: done, Total: total, Message: kind,
+			Stage: DatasetStage(kind), Done: done, Total: total,
 		})
 		if err != nil && firstErr == nil && !errors.Is(err, context.Canceled) {
 			firstErr = err

@@ -1,73 +1,83 @@
-// Package setup implements the first-run Bubble Tea wizard: index fetch and
-// optional official-artwork warm (artwork is the only product sprite source).
+// Package setup is the first-run flow: a theme, an update check, and a
+// preloader if the Pokédex or pictures are still downloading.
 package setup
 
 import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/Graphixa/Poke/internal/config"
-	"github.com/Graphixa/Poke/internal/domain"
+	"github.com/Graphixa/Poke/internal/theme"
+	"github.com/Graphixa/Poke/internal/tui/components"
+	"github.com/Graphixa/Poke/internal/tui/preload"
 	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
-const artworkSizeThreshold int64 = 100 * 1024 * 1024 // 100 MiB
-
-// Step is the wizard phase.
-type Step int
+const lineEvery = preload.LineEvery
 
 const (
-	StepWelcome Step = iota
-	StepIndex
-	StepArtPrompt
-	StepModePrompt
-	StepArtWarm
-	StepDone
+	stepTheme = iota
+	stepUpdates
+	stepWait
 )
 
-// Deps are injected setup capabilities (app layer wires real services).
-type Deps struct {
-	Config     config.Config
-	ConfigPath string
-	Native     bool
-	Protocol   string // kitty|iterm|sixel|chafa
-
-	EnsureIndex func(ctx context.Context, progress ProgressFunc) ([]domain.SpeciesSummary, error)
-	EstimateHD  func(ctx context.Context, index []domain.SpeciesSummary) int64
-	WarmArtwork func(ctx context.Context, index []domain.SpeciesSummary, progress ProgressFunc) error
-	SaveConfig  func(cfg config.Config) error
+// Progress is a download tick (dataset or pictures).
+type Progress struct {
+	Done    int
+	Total   int
+	Message string
 }
 
-// Result is returned after the wizard exits successfully.
+// ProgressFunc receives download progress.
+type ProgressFunc func(Progress)
+
+// Deps are injected by the app layer.
+type Deps struct {
+	Config    config.Config
+	ThemesDir string
+	// Ask shows the theme and update questions. False is the cache-clear preloader.
+	Ask bool
+	// RunWork downloads whatever is missing. Nil when nothing is missing.
+	RunWork    func(ctx context.Context, progress ProgressFunc) error
+	SaveConfig func(cfg config.Config) error
+}
+
+// Result is returned after setup exits.
 type Result struct {
 	Config                 config.Config
 	StartBackgroundArtwork bool
 	Aborted                bool
 }
 
-// Model is the fullscreen setup wizard.
+// Model is the setup program.
 type Model struct {
 	deps   Deps
 	result Result
 
-	step   Step
+	step   int
 	width  int
 	height int
 
-	prog progress.Model
+	themes   []theme.Option
+	themeIdx int
+	yes      bool
 
-	status   string
-	errMsg   string
+	prog     progress.Model
+	barWidth int
+	lines    []string
+	lineIdx  int
 	done     int
 	total    int
 	percent  float64
-	estimate int64
-	index    []domain.SpeciesSummary
+	detail   string
+	errMsg   string
+	workDone bool
 
 	events <-chan tea.Msg
 	cancel context.CancelFunc
@@ -75,62 +85,91 @@ type Model struct {
 	quitting bool
 }
 
-type indexDoneMsg struct {
-	index []domain.SpeciesSummary
-	err   error
-}
-type warmDoneMsg struct {
-	err error
-}
-type estimateDoneMsg struct {
-	bytes int64
-}
-
-// Progress is setup-wizard download/index progress (not cache.DatasetProgress).
-type Progress struct {
-	Done    int
-	Total   int
-	Message string
-}
-
-// ProgressFunc receives setup progress. App adapts cache/warmer progress into this.
-type ProgressFunc func(Progress)
-
+type startMsg struct{}
+type lineTick struct{}
 type progressMsg struct {
 	done, total int
 	message     string
 }
+type workDoneMsg struct{ err error }
 
-// New builds the wizard model.
+// New builds the setup model. Call Init via the tea program.
 func New(deps Deps) Model {
+	m := Model{
+		deps:     deps,
+		result:   Result{Config: deps.Config},
+		barWidth: 48,
+		lines:    preload.Shuffle(),
+		yes:      deps.Config.Update.CheckForUpdates,
+		workDone: deps.RunWork == nil,
+	}
+	if !deps.Ask {
+		m.step = stepWait
+	}
+	m.themes, _ = theme.ListOptions(deps.ThemesDir, deps.Config.Theme.Name)
+	if deps.Ask && len(m.themes) == 0 {
+		m.step = stepUpdates
+	}
+	for i, o := range m.themes {
+		if o.Name == themeName(deps.Config.Theme.Name) {
+			m.themeIdx = i
+			break
+		}
+	}
+	m.applyTheme()
+	return m
+}
+
+func (m *Model) paintBar() {
 	pal := style.CurrentPalette()
 	p := progress.New(
 		progress.WithDefaultBlend(),
 		progress.WithScaled(true),
 		progress.WithColors(lipgloss.Color(pal.Primary), lipgloss.Color(pal.Secondary)),
 	)
-	p.SetWidth(48)
-	p.ShowPercentage = true
-	cfg := deps.Config
-	return Model{
-		deps:   deps,
-		result: Result{Config: cfg},
-		step:   StepWelcome,
-		prog:   p,
-		status: "Welcome to poke",
+	w := m.barWidth
+	if w < 20 {
+		w = 20
 	}
+	p.SetWidth(w)
+	p.ShowPercentage = true
+	m.prog = p
 }
 
-// Outcome returns the wizard result (valid after Run / quit).
+func themeName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "dracula"
+	}
+	return name
+}
+
+// Outcome returns the result after Run / quit.
 func (m Model) Outcome() Result { return m.result }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	return func() tea.Msg { return startMsg{} }
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case startMsg:
+		if m.quitting {
+			return m, nil
+		}
+		var cmds []tea.Cmd
+		if m.deps.RunWork != nil && !m.workDone {
+			var cmd tea.Cmd
+			m, cmd = m.startWork()
+			cmds = append(cmds, cmd)
+		}
+		if m.step == stepWait {
+			cmds = append(cmds, tickLine())
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.width, m.height = msg.Width, msg.Height
 		w := msg.Width - 8
 		if w < 20 {
 			w = 20
@@ -138,86 +177,83 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if w > 64 {
 			w = 64
 		}
+		m.barWidth = w
 		m.prog.SetWidth(w)
 		return m, nil
 
 	case tea.KeyPressMsg:
 		key := msg.String()
-		if key == "ctrl+c" {
-			m.stopWork()
-			m.quitting = true
-			m.result.Aborted = true
-			return m, tea.Quit
+		if key == "ctrl+c" || key == "esc" {
+			return m.abort()
 		}
 		switch m.step {
-		case StepWelcome:
-			if key == "enter" || key == " " {
-				return m.loadIndexForArtwork()
-			}
-		case StepArtPrompt:
+		case stepTheme:
 			switch key {
-			case "y", "Y", "enter":
-				return m.beginEstimate()
-			case "n", "N":
-				return m.finishDeclined()
+			case "up":
+				if m.themeIdx > 0 {
+					m.themeIdx--
+					return m, m.applyTheme()
+				}
+			case "down":
+				if m.themeIdx < len(m.themes)-1 {
+					m.themeIdx++
+					return m, m.applyTheme()
+				}
+			case "enter":
+				m.step = stepUpdates
 			}
-		case StepModePrompt:
+		case stepUpdates:
 			switch key {
-			case "1", "enter":
-				return m.beginArtworkWarm()
-			case "2", "b", "B":
-				return m.finishBackground()
+			case "up", "down", "left", "right":
+				m.yes = !m.yes
+			case "y", "Y":
+				m.yes = true
 			case "n", "N":
-				return m.finishDeclined()
-			}
-		case StepDone:
-			if key == "enter" || key == " " {
-				m.quitting = true
-				return m, tea.Quit
+				m.yes = false
+			case "enter":
+				if m.errMsg != "" && !m.workDone {
+					return m, nil
+				}
+				if m.workDone {
+					return m.finish()
+				}
+				m.step = stepWait
+				return m, tickLine()
 			}
 		}
 
-	case progressMsg:
-		m.done = msg.done
-		m.total = msg.total
-		if msg.message != "" {
-			m.status = msg.message
+	case lineTick:
+		if len(m.lines) > 0 {
+			m.lineIdx = (m.lineIdx + 1) % len(m.lines)
 		}
+		if m.quitting || m.step != stepWait {
+			return m, nil
+		}
+		return m, tickLine()
+
+	case progressMsg:
+		m.done, m.total = msg.done, msg.total
+		m.detail = msg.message
 		if msg.total > 0 {
 			m.percent = float64(msg.done) / float64(msg.total)
 		}
 		return m, tea.Batch(m.prog.SetPercent(m.percent), listenEvents(m.events))
 
-	case indexDoneMsg:
-		if msg.err != nil {
-			m.errMsg = msg.err.Error()
-			m.status = "Index failed"
-			return m, nil
-		}
-		m.index = msg.index
-		m.step = StepArtPrompt
-		m.status = "Official artwork"
-		return m, nil
-
-	case warmDoneMsg:
+	case workDoneMsg:
 		m.stopWork()
 		if msg.err != nil && msg.err != context.Canceled {
 			m.errMsg = msg.err.Error()
-			m.status = "Download failed"
 			return m, nil
 		}
-		if m.step == StepArtWarm {
-			return m.finishAccepted(config.ArtworkModeBlocking, false)
-		}
-
-	case estimateDoneMsg:
-		m.estimate = msg.bytes
-		if needsModePrompt(msg.bytes) {
-			m.step = StepModePrompt
-			m.status = "Large download"
+		if m.quitting {
 			return m, nil
 		}
-		return m.beginArtworkWarm()
+		m.workDone = true
+		m.errMsg = ""
+		if m.step == stepWait {
+			return m.finish()
+		}
+		return m, nil
 
 	case progress.FrameMsg:
 		var cmd tea.Cmd
@@ -231,128 +267,157 @@ func (m Model) View() tea.View {
 	if m.quitting {
 		return tea.NewView("")
 	}
-	pal := style.CurrentPalette()
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("poke")
-	sub := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
-	body := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Components))
-	ok := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Success))
-	warn := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Warning))
-	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "\n  %s  setup\n\n", title)
-
-	proto := m.deps.Protocol
-	if proto == "" {
-		if m.deps.Native {
-			proto = "native"
-		} else {
-			proto = "chafa"
-		}
-	}
-	fmt.Fprintf(&b, "  %s\n\n", sub.Render("Sprite path: "+proto))
-
+	w, h := m.width, m.height
+	var body string
 	switch m.step {
-	case StepWelcome:
-		fmt.Fprintf(&b, "  %s\n", body.Render("Welcome! The Pokédex dataset is ready."))
-		fmt.Fprintf(&b, "  %s\n", body.Render("You can optionally download official artwork for every species."))
-		fmt.Fprintf(&b, "\n  %s\n", ok.Render("Press Enter to continue"))
-	case StepIndex:
-		fmt.Fprintf(&b, "  %s\n\n", body.Render(m.status))
-		fmt.Fprintf(&b, "  %s\n", m.prog.View())
-		if m.total > 0 {
-			fmt.Fprintf(&b, "  %s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
-		}
-	case StepArtPrompt:
-		fmt.Fprintf(&b, "  %s\n", body.Render("Official artwork is used for sprites (native or chafa)."))
-		fmt.Fprintf(&b, "  %s\n\n", body.Render("Download the full artwork pack now?"))
-		fmt.Fprintf(&b, "  %s\n", ok.Render("[Y] Yes   [N] Skip — download on demand while browsing"))
-	case StepModePrompt:
-		fmt.Fprintf(&b, "  %s\n", warn.Render(fmt.Sprintf("Estimated download ≈ %s (over %s).",
-			formatBytes(m.estimate), formatBytes(artworkSizeThreshold))))
-		fmt.Fprintf(&b, "  %s\n\n", body.Render("Choose how to fetch official artwork:"))
-		fmt.Fprintf(&b, "  %s\n", ok.Render("[1] Download now (blocking)"))
-		fmt.Fprintf(&b, "  %s\n", body.Render("[2] Background — open browse; art fills in over time"))
-		fmt.Fprintf(&b, "  %s\n", sub.Render("[N] Skip bulk download"))
-	case StepArtWarm:
-		fmt.Fprintf(&b, "  %s\n\n", body.Render(m.status))
-		fmt.Fprintf(&b, "  %s\n", m.prog.View())
-		fmt.Fprintf(&b, "  %s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
-	case StepDone:
-		fmt.Fprintf(&b, "  %s\n\n", ok.Render("Ready — press Enter to open the Pokédex"))
+	case stepWait:
+		body = preload.Screen(w, h, m.prog.View(), m.headline(), preload.Count(m.done, m.total), m.detail, m.errMsg)
+	default:
+		body = m.questionView(w, h)
 	}
-
-	if m.errMsg != "" {
-		fmt.Fprintf(&b, "\n  %s\n", errSt.Render(m.errMsg))
-	}
-	fmt.Fprintf(&b, "\n  %s\n", sub.Render("Ctrl+C quit"))
-	v := tea.NewView(b.String())
+	v := tea.NewView(body)
 	v.AltScreen = true
 	return v
 }
 
-func needsModePrompt(estimatedBytes int64) bool {
-	return estimatedBytes >= artworkSizeThreshold
-}
+func (m Model) questionView(width, height int) string {
+	pal := style.CurrentPalette()
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("Poke")
+	head := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Components))
+	muted := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
+	sel := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Primary)).Bold(true)
+	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
 
-func formatBytes(n int64) string {
-	const (
-		kb = 1024.0
-		mb = 1024.0 * kb
-	)
-	switch {
-	case float64(n) >= mb:
-		return fmt.Sprintf("%.1f MB", float64(n)/mb)
-	case float64(n) >= kb:
-		return fmt.Sprintf("%.0f KB", float64(n)/kb)
-	default:
-		return fmt.Sprintf("%d B", n)
+	var b strings.Builder
+	if m.step == stepTheme {
+		fmt.Fprintf(&b, "%s\n\n%s\n\n", title, head.Render("Pick a theme"))
+		b.WriteString(m.themeLines(sel, muted))
+	} else {
+		active := 0
+		if m.yes {
+			active = 1
+		}
+		b.WriteString(lipgloss.JoinVertical(lipgloss.Center,
+			title,
+			"",
+			head.Render("Check for updates when you open Poke?"),
+			"",
+			components.ViewSwitcher(active, []string{"No", "Yes"}, 0),
+		))
 	}
-}
-
-func (m Model) loadIndexForArtwork() (tea.Model, tea.Cmd) {
-	m.status = "Loading index"
-	m.errMsg = ""
-	deps := m.deps
-	return m, func() tea.Msg {
-		index, err := deps.EnsureIndex(context.Background(), nil)
-		return indexDoneMsg{index: index, err: err}
+	if m.errMsg != "" {
+		fmt.Fprintf(&b, "\n%s\n", errSt.Render(m.errMsg))
 	}
-}
-
-func (m Model) beginEstimate() (tea.Model, tea.Cmd) {
-	m.status = "Estimating artwork size…"
-	m.errMsg = ""
-	index := m.index
-	deps := m.deps
-	return m, func() tea.Msg {
-		return estimateDoneMsg{bytes: deps.EstimateHD(context.Background(), index)}
+	if width < 1 {
+		width = 80
 	}
+	if height < 1 {
+		height = 24
+	}
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, b.String())
 }
 
-func (m Model) beginArtworkWarm() (tea.Model, tea.Cmd) {
-	m.step = StepArtWarm
-	m.status = "Downloading official artwork"
-	m.done, m.total, m.percent = 0, len(m.index), 0
-	m.errMsg = ""
+func (m Model) themeLines(sel, muted lipgloss.Style) string {
+	const window = 9
+	start := m.themeIdx - window/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + window
+	if end > len(m.themes) {
+		end = len(m.themes)
+		start = max(0, end-window)
+	}
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		label := m.themes[i].DisplayName
+		if label == "" {
+			label = m.themes[i].Name
+		}
+		line := "  " + label
+		if i == m.themeIdx {
+			line = sel.Render("> " + label)
+		} else {
+			line = muted.Render(line)
+		}
+		fmt.Fprintf(&b, "%s\n", line)
+	}
+	return b.String()
+}
+
+func (m Model) headline() string {
+	if len(m.lines) == 0 {
+		return "Loading"
+	}
+	return m.lines[m.lineIdx%len(m.lines)]
+}
+
+func (m *Model) applyTheme() tea.Cmd {
+	if m.themeIdx >= 0 && m.themeIdx < len(m.themes) {
+		if f, _, err := theme.Resolve(m.deps.ThemesDir, m.themes[m.themeIdx].Name); err == nil {
+			theme.Apply(f)
+		}
+	}
+	m.paintBar()
+	return m.prog.SetPercent(m.percent)
+}
+
+func (m Model) chosenTheme() string {
+	if m.themeIdx >= 0 && m.themeIdx < len(m.themes) {
+		return m.themes[m.themeIdx].Name
+	}
+	return themeName(m.deps.Config.Theme.Name)
+}
+
+func (m Model) abort() (tea.Model, tea.Cmd) {
 	m.stopWork()
+	m.quitting = true
+	m.result.Aborted = true
+	return m, tea.Quit
+}
+
+func (m Model) finish() (tea.Model, tea.Cmd) {
+	cfg := m.deps.Config
+	if m.deps.Ask {
+		cfg.Theme.Name = m.chosenTheme()
+		cfg.Update.CheckForUpdates = m.yes
+		cfg.MarkSetupComplete()
+	}
+	cfg.ApplyArtworkConsent(config.ArtworkConsentAccepted, config.ArtworkModeBackground)
+	m.result.Config = cfg
+	m.result.StartBackgroundArtwork = true
+	if m.deps.SaveConfig != nil {
+		if err := m.deps.SaveConfig(cfg); err != nil {
+			m.errMsg = err.Error()
+			return m, nil
+		}
+	}
+	m.quitting = true
+	return m, tea.Quit
+}
+
+func (m Model) startWork() (Model, tea.Cmd) {
+	m.errMsg = ""
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	ch := make(chan tea.Msg, 16)
 	m.events = ch
-	deps := m.deps
-	index := m.index
+	run := m.deps.RunWork
 	go func() {
-		err := deps.WarmArtwork(ctx, index, func(p Progress) {
+		err := run(ctx, func(p Progress) {
 			select {
 			case ch <- progressMsg{done: p.Done, total: p.Total, message: p.Message}:
 			default:
 			}
 		})
-		ch <- warmDoneMsg{err: err}
+		ch <- workDoneMsg{err: err}
 		close(ch)
 	}()
-	return m, tea.Batch(m.prog.SetPercent(0), listenEvents(ch))
+	return m, listenEvents(ch)
+}
+
+func tickLine() tea.Cmd {
+	return tea.Tick(lineEvery, func(time.Time) tea.Msg { return lineTick{} })
 }
 
 func listenEvents(ch <-chan tea.Msg) tea.Cmd {
@@ -375,36 +440,7 @@ func (m *Model) stopWork() {
 	}
 }
 
-func (m Model) finishDeclined() (tea.Model, tea.Cmd) {
-	return m.persistAndDone(config.ArtworkConsentDeclined, config.ArtworkModeOff, false)
-}
-
-func (m Model) finishAccepted(mode string, background bool) (tea.Model, tea.Cmd) {
-	return m.persistAndDone(config.ArtworkConsentAccepted, mode, background)
-}
-
-func (m Model) finishBackground() (tea.Model, tea.Cmd) {
-	return m.finishAccepted(config.ArtworkModeBackground, true)
-}
-
-func (m Model) persistAndDone(consent, mode string, background bool) (tea.Model, tea.Cmd) {
-	cfg := m.result.Config
-	cfg.ApplyArtworkConsent(consent, mode)
-	cfg.MarkSetupComplete()
-	m.result.Config = cfg
-	m.result.StartBackgroundArtwork = background
-	if m.deps.SaveConfig != nil {
-		if err := m.deps.SaveConfig(cfg); err != nil {
-			m.errMsg = err.Error()
-			return m, nil
-		}
-	}
-	m.step = StepDone
-	m.status = "Setup complete"
-	return m, nil
-}
-
-// Run launches the setup wizard and returns the outcome.
+// Run launches setup and returns the outcome.
 func Run(ctx context.Context, deps Deps) (Result, error) {
 	m := New(deps)
 	p := tea.NewProgram(m, tea.WithContext(ctx))

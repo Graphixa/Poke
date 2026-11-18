@@ -76,6 +76,22 @@ func TestLevelUpMovesFromLearnsetFiltersVersionGroup(t *testing.T) {
 	}
 }
 
+func TestDropMovesOmitsMissingOnly(t *testing.T) {
+	t.Parallel()
+	b := dataset.NewBuilder()
+	b.Learnsets[10301] = []dataset.DatasetLearn{
+		{PokemonID: 10301, MoveID: 34, LearnMethod: "machine"},
+		{PokemonID: 10301, MoveID: 920, LearnMethod: "machine"},
+	}
+	if n := dataset.DropMoves(b, []int{920}); n != 1 {
+		t.Fatalf("dropped %d", n)
+	}
+	rows := b.Learnsets[10301]
+	if len(rows) != 1 || rows[0].MoveID != 34 {
+		t.Fatalf("rows=%+v", rows)
+	}
+}
+
 func TestReferencedMoveIDsIncludesMachine(t *testing.T) {
 	t.Parallel()
 	p := domain.Pokemon{Moves: []domain.LearnedMove{

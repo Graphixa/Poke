@@ -27,6 +27,7 @@ type RootRequest struct {
 	Target     string
 	InlineMode InlineMode
 	Invocation string
+	Setup      bool
 }
 
 type Options struct {
@@ -73,15 +74,16 @@ func NewRoot(options Options) *cobra.Command {
 	cmd.SetOut(options.Stdout)
 	cmd.SetErr(options.Stderr)
 
-	var info, stats, evolution bool
+	var info, stats, evolution, setup bool
 	var debugFlag string
 	cmd.Flags().BoolVar(&info, "info", false, "print compact Pokémon information")
 	cmd.Flags().BoolVar(&stats, "stats", false, "print base stats")
 	cmd.Flags().BoolVar(&evolution, "evolution", false, "print the evolution tree")
+	cmd.Flags().BoolVar(&setup, "setup", false, "run setup again, then browse")
 	cmd.PersistentFlags().StringVar(&debugFlag, "debug", "", "write request/cache/render diagnostics to a file (optional path)")
 	// Allow --debug with no value → default log path under the OS temp directory.
 	cmd.PersistentFlags().Lookup("debug").NoOptDefVal = " "
-	cmd.MarkFlagsMutuallyExclusive("info", "stats", "evolution")
+	cmd.MarkFlagsMutuallyExclusive("info", "stats", "evolution", "setup")
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		flag := cmd.Flags().Lookup("debug")
 		if flag == nil || !flag.Changed {
@@ -114,7 +116,7 @@ func NewRoot(options Options) *cobra.Command {
 			return nil
 		}
 		return options.App.RunRoot(cmd.Context(), RootRequest{
-			Target: target, InlineMode: mode, Invocation: invocation,
+			Target: target, InlineMode: mode, Invocation: invocation, Setup: setup,
 		})
 	}
 

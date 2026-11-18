@@ -1044,12 +1044,6 @@ func moveColWidths(bodyW int, showAcc, showPP bool) (moveW, gameW int) {
 	return moveW, gameW
 }
 
-// moveNameWidth is the Move column width (tests / callers that only need Move).
-func moveNameWidth(bodyW int, showAcc, showPP bool) int {
-	moveW, _ := moveColWidths(bodyW, showAcc, showPP)
-	return moveW
-}
-
 func moveStickyLines(rows []domain.LevelUpMove, bodyW int, method, gameLabel string) []string {
 	if method == "" {
 		method = "level-up"
@@ -1186,45 +1180,6 @@ func formatMoveTableRow(row domain.LevelUpMove, method string, moveW, gameW int,
 	}
 	line += fmt.Sprintf(" %-*s", gameW, truncate(label, gameW))
 	return line
-}
-
-func formatFlavourLines(s domain.Species) []string {
-	type entry struct {
-		order int
-		ver   string
-		text  string
-	}
-	var entries []entry
-	for _, f := range s.FlavorTextEntries {
-		if f.Language != "en" {
-			continue
-		}
-		entries = append(entries, entry{
-			order: f.VersionOrder,
-			ver:   f.Version,
-			text:  output.CleanFlavor(f.Text),
-		})
-	}
-	sort.SliceStable(entries, func(i, j int) bool {
-		return entries[i].order > entries[j].order
-	})
-	if len(entries) == 0 {
-		return []string{"No flavour text available."}
-	}
-	var lines []string
-	for _, e := range entries {
-		ver := e.ver
-		if ver == "" {
-			ver = "unknown"
-		}
-		lines = append(lines, primaryText(output.TitleFromSlug(ver)))
-		lines = append(lines, wrapWords(e.text, 56)...)
-		lines = append(lines, "")
-	}
-	if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return lines
 }
 
 func formatGenderRate(rate int) string {

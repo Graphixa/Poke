@@ -201,7 +201,7 @@ Renderer fallback: Kitty / iTerm2 native → Sixel → Chafa (optional binary, e
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup. Short version:
 
 ```bash
-make check          # fmt-check, vet, staticcheck, gosec, race, cross-build
+make check          # fmt-check, vet, staticcheck, gosec, govulncheck, race, cross-build
 make release-check  # goreleaser check + snapshot + archive name verification
 ```
 
@@ -211,7 +211,7 @@ On Windows without `bash` on `PATH`:
 pwsh -File scripts/verify-release-archives.ps1
 ```
 
-CI runs format, vet, staticcheck, gosec, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser, publishes GitHub Release assets with checksums, updates the Homebrew tap, and opens a Winget PR. Chocolatey packs from a separate Windows workflow after the release.
+CI runs format, vet, staticcheck, gosec, govulncheck, race tests, cross-build smoke, and a Goreleaser snapshot archive check on every push/PR. Pushing a version tag (`v*`) runs GoReleaser, publishes GitHub Release assets with checksums, updates the Homebrew tap, and opens a Winget PR. Chocolatey packs from a separate Windows workflow after the release.
 
 Release notes are grouped from conventional commit subjects (`feat`, `fix`, `docs`, …).
 

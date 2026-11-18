@@ -86,6 +86,8 @@ func TestRootFlagRouting(t *testing.T) {
 		{name: "target", args: []string{"25"}, want: RootRequest{Target: "25", Invocation: "poke"}},
 		{name: "info", args: []string{"eevee", "--info"}, want: RootRequest{Target: "eevee", InlineMode: InlineInfo, Invocation: "poke"}},
 		{name: "evolution", args: []string{"eevee", "--evolution"}, want: RootRequest{Target: "eevee", InlineMode: InlineEvolution, Invocation: "poke"}},
+		{name: "setup", args: []string{"--setup"}, want: RootRequest{Setup: true, Invocation: "poke"}},
+		{name: "setup target", args: []string{"--setup", "pikachu"}, want: RootRequest{Target: "pikachu", Setup: true, Invocation: "poke"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -110,6 +112,11 @@ func TestRootRejectsInvalidInlineRouting(t *testing.T) {
 	_, _, execute = commandForTest(t, "poke", &recordingHandler{})
 	if err := execute("pikachu", "--stats", "--info"); err == nil {
 		t.Fatal("mutually exclusive flags succeeded")
+	}
+
+	_, _, execute = commandForTest(t, "poke", &recordingHandler{})
+	if err := execute("--setup", "--info", "eevee"); err == nil {
+		t.Fatal("--setup with --info succeeded")
 	}
 }
 

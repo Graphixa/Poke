@@ -5,28 +5,6 @@ import (
 	"testing"
 )
 
-func TestDownloadLabel(t *testing.T) {
-	t.Parallel()
-	cases := map[Stage]string{
-		StageIndex:     "Downloading Generating index",
-		StageEnrich:    "Downloading Configuring types",
-		StageRecords:   "Downloading Fetching records",
-		StageEvolution: "Downloading Building evolutions",
-		StageMoves:     "Downloading Fetching moves",
-		StageDataset:   "Downloading Finalizing dataset",
-		StageArtwork:   "Downloading Artwork",
-		"":             "Downloading…",
-	}
-	for stage, want := range cases {
-		if got := downloadLabel(stage); got != want {
-			t.Fatalf("downloadLabel(%q)=%q want %q", stage, got, want)
-		}
-	}
-	if got := downloadLabel("unknown"); got != "Downloading unknown" {
-		t.Fatalf("unknown stage=%q", got)
-	}
-}
-
 func TestProgressMsgUpdatesPercent(t *testing.T) {
 	m := New(Deps{})
 	updated, _ := m.Update(progressMsg{stage: "records", done: 5, total: 10, message: "Bulbasaur"})
@@ -45,23 +23,23 @@ func TestProgressMsgUpdatesPercent(t *testing.T) {
 	}
 }
 
-func TestViewShowsTitleAndPhase(t *testing.T) {
+func TestViewShowsJokeAndCount(t *testing.T) {
 	m := New(Deps{})
 	m.width, m.height = 80, 24
-	m.stage = StageRecords
+	m.lines = []string{"Convincing Psyduck the headache is normal"}
 	m.done, m.total = 389, 1025
 	m.status = "Chimchar"
 	got := m.View().Content
-	if !strings.Contains(got, "Poke - The terminal based Pokedex") {
+	if !strings.Contains(got, "Poke") {
 		t.Fatalf("view missing title:\n%s", got)
 	}
-	if !strings.Contains(got, "Downloading Fetching records") {
-		t.Fatalf("view missing phase line:\n%s", got)
+	if !strings.Contains(got, "Convincing Psyduck the headache is normal") {
+		t.Fatalf("view missing headline:\n%s", got)
 	}
-	if strings.Contains(got, "index ·") || strings.Contains(got, "records ·") {
-		t.Fatalf("old stage rail still present:\n%s", got)
+	if strings.Contains(got, "Downloading Fetching") {
+		t.Fatalf("stage label still present:\n%s", got)
 	}
-	if !strings.Contains(got, "Chimchar") {
-		t.Fatalf("view missing status:\n%s", got)
+	if !strings.Contains(got, "389 of 1,025") || !strings.Contains(got, "Chimchar") {
+		t.Fatalf("view missing count or status:\n%s", got)
 	}
 }

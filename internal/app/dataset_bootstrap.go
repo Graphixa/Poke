@@ -11,45 +11,8 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Graphixa/Poke/internal/cache"
-	"github.com/Graphixa/Poke/internal/debuglog"
 	"github.com/Graphixa/Poke/internal/tui/bootstrap"
 )
-
-// runDatasetBootstrap shows a progress TUI when stderr is a terminal, otherwise
-// prints throttled progress lines.
-func (h *Handler) runDatasetBootstrap(ctx context.Context, svc *Services) error {
-	debuglog.StartupMark("startup.bootstrap_begin")
-	run := func(ctx context.Context, progress cache.DatasetProgressFunc) error {
-		return svc.Cache.BootstrapDataset(ctx, progress)
-	}
-	if isTerminal(h.Stderr) {
-		result, err := bootstrap.Run(ctx, bootstrap.Deps{Run: adaptBootstrapRun(run)})
-		if err != nil {
-			return err
-		}
-		if result.Aborted {
-			return context.Canceled
-		}
-		return nil
-	}
-	return run(ctx, throttledCLIProgress(h.Stderr))
-}
-
-func adaptBootstrapRun(run func(context.Context, cache.DatasetProgressFunc) error) func(context.Context, bootstrap.ProgressFunc) error {
-	return func(ctx context.Context, progress bootstrap.ProgressFunc) error {
-		return run(ctx, func(p cache.DatasetProgress) {
-			if progress == nil {
-				return
-			}
-			progress(bootstrap.Progress{
-				Stage:   bootstrapStageFromDataset(p.Stage),
-				Done:    p.Done,
-				Total:   p.Total,
-				Message: p.Message,
-			})
-		})
-	}
-}
 
 func bootstrapStageFromDataset(stage cache.DatasetStage) bootstrap.Stage {
 	switch stage {

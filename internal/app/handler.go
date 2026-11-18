@@ -32,9 +32,10 @@ type Handler struct {
 
 // BrowseRequest carries resolved selection or search prefill for the TUI.
 type BrowseRequest struct {
-	Target   string
-	Selected *domain.SpeciesSummary
-	Prefill  string
+	Target     string
+	Selected   *domain.SpeciesSummary
+	Prefill    string
+	ForceSetup bool
 }
 
 func (h *Handler) RunRoot(ctx context.Context, request cli.RootRequest) error {
@@ -62,7 +63,7 @@ func (h *Handler) RunRoot(ctx context.Context, request cli.RootRequest) error {
 		return h.printInline(ctx, sum, request.InlineMode)
 	}
 
-	browse := BrowseRequest{Target: target}
+	browse := BrowseRequest{Target: target, ForceSetup: request.Setup}
 	if !needsBootstrap && target != "" {
 		if sum, ok := idx.Resolve(target); ok {
 			browse.Selected = &sum

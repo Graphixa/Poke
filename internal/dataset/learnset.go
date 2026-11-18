@@ -155,6 +155,33 @@ func methodOrder(m string) int {
 	}
 }
 
+// DropMoves removes learnset rows for move IDs PokeAPI names but does not serve.
+// Returns how many of those ids were actually referenced.
+func DropMoves(b *Builder, ids []int) int {
+	if b == nil || len(ids) == 0 {
+		return 0
+	}
+	drop := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			drop[id] = struct{}{}
+		}
+	}
+	used := map[int]struct{}{}
+	for pokeID, rows := range b.Learnsets {
+		kept := rows[:0]
+		for _, row := range rows {
+			if _, ok := drop[row.MoveID]; ok {
+				used[row.MoveID] = struct{}{}
+				continue
+			}
+			kept = append(kept, row)
+		}
+		b.Learnsets[pokeID] = kept
+	}
+	return len(used)
+}
+
 // ReferencedMoveIDs returns unique move IDs across all learn methods.
 func ReferencedMoveIDs(p domain.Pokemon) []int {
 	seen := map[int]struct{}{}

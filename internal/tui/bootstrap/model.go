@@ -3,12 +3,13 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/Graphixa/Poke/internal/tui/preload"
 	"github.com/Graphixa/Poke/internal/tui/style"
 )
 
@@ -62,6 +63,8 @@ type Model struct {
 	done    int
 	total   int
 	percent float64
+	lines   []string
+	lineIdx int
 
 	events <-chan tea.Msg
 	cancel context.CancelFunc
@@ -78,6 +81,7 @@ type doneMsg struct {
 	err error
 }
 type bootstrapStartMsg struct{}
+type lineTick struct{}
 
 // New builds the bootstrap progress model.
 func New(deps Deps) Model {
@@ -90,9 +94,9 @@ func New(deps Deps) Model {
 	p.SetWidth(48)
 	p.ShowPercentage = true
 	return Model{
-		deps:   deps,
-		prog:   p,
-		status: "Starting…",
+		deps:  deps,
+		prog:  p,
+		lines: preload.Shuffle(),
 	}
 }
 
@@ -106,7 +110,17 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case bootstrapStartMsg:
-		return m.attachBootstrap()
+		next, cmd := m.attachBootstrap()
+		return next, tea.Batch(cmd, tickLine())
+
+	case lineTick:
+		if len(m.lines) > 0 {
+			m.lineIdx = (m.lineIdx + 1) % len(m.lines)
+		}
+		if m.quitting {
+			return m, nil
+		}
+		return m, tickLine()
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -165,61 +179,20 @@ func (m Model) View() tea.View {
 	if m.quitting && m.errMsg == "" {
 		return tea.NewView("")
 	}
-	pal := style.CurrentPalette()
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Primary)).Render("Poke - The terminal based Pokedex")
-	phase := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(pal.Components)).Render(downloadLabel(m.stage))
-	sub := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Placeholders))
-	body := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Components))
-	errSt := lipgloss.NewStyle().Foreground(lipgloss.Color(pal.Error))
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", title)
-	fmt.Fprintf(&b, "%s\n\n", phase)
-	fmt.Fprintf(&b, "%s\n", m.prog.View())
-	if m.total > 0 {
-		fmt.Fprintf(&b, "%s\n", sub.Render(fmt.Sprintf("%d / %d", m.done, m.total)))
-	}
-	if m.status != "" {
-		fmt.Fprintf(&b, "%s\n", body.Render(m.status))
-	}
-	if m.errMsg != "" {
-		fmt.Fprintf(&b, "\n%s\n", errSt.Render(m.errMsg))
-	}
-	fmt.Fprintf(&b, "\n%s", sub.Render("Ctrl+C cancel"))
-
-	w, h := m.width, m.height
-	if w < 1 {
-		w = 80
-	}
-	if h < 1 {
-		h = 24
-	}
-	v := tea.NewView(lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, b.String()))
+	v := tea.NewView(preload.Screen(m.width, m.height, m.prog.View(), m.headline(), preload.Count(m.done, m.total), m.status, m.errMsg))
 	v.AltScreen = true
 	return v
 }
 
-func downloadLabel(stage Stage) string {
-	switch stage {
-	case StageIndex:
-		return "Downloading Generating index"
-	case StageEnrich:
-		return "Downloading Configuring types"
-	case StageRecords:
-		return "Downloading Fetching records"
-	case StageEvolution:
-		return "Downloading Building evolutions"
-	case StageMoves:
-		return "Downloading Fetching moves"
-	case StageDataset:
-		return "Downloading Finalizing dataset"
-	case StageArtwork:
-		return "Downloading Artwork"
-	case "":
-		return "Downloading…"
-	default:
-		return "Downloading " + string(stage)
+func (m Model) headline() string {
+	if len(m.lines) == 0 {
+		return "Loading"
 	}
+	return m.lines[m.lineIdx%len(m.lines)]
+}
+
+func tickLine() tea.Cmd {
+	return tea.Tick(preload.LineEvery, func(time.Time) tea.Msg { return lineTick{} })
 }
 
 func (m Model) attachBootstrap() (tea.Model, tea.Cmd) {

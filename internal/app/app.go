@@ -155,6 +155,8 @@ func ExitCode(err error) int {
 }
 
 func Main(ctx context.Context, runtime Runtime) int {
+	restoreConsole()
+	defer endConsoleLine()
 	err := Execute(ctx, runtime)
 	if err == nil {
 		return 0

@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check vet staticcheck gosec test race build cross-build check release-check verify-archives
+.PHONY: fmt fmt-check vet staticcheck gosec govulncheck test race build cross-build check release-check verify-archives
 
 GO ?= go
 PKGS := ./...
@@ -6,8 +6,10 @@ CROSS_DIR := .cross-build
 GORELEASER ?= goreleaser
 STATICCHECK ?= staticcheck
 GOSEC ?= gosec
+GOVULNCHECK ?= govulncheck
 STATICCHECK_VERSION := 2026.2.1
 GOSEC_VERSION := v2.29.0
+GOVULNCHECK_VERSION := v1.10.0
 GO_SRC := $$(find cmd internal pkg scripts -name '*.go' -type f)
 
 # Prefer Git Bash on Windows when `bash` is not on PATH.
@@ -32,6 +34,10 @@ gosec:
 	@$(GO) install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
 	$(GOSEC) -exclude=G104,G115,G301,G304,G306,G404 $(PKGS)
 
+govulncheck:
+	@$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	$(GOVULNCHECK) $(PKGS)
+
 test:
 	$(GO) test $(PKGS)
 
@@ -49,7 +55,7 @@ cross-build:
 	GOOS=darwin GOARCH=arm64 $(GO) build -o $(CROSS_DIR)/poke-darwin-arm64 ./cmd/poke
 	GOOS=windows GOARCH=amd64 $(GO) build -o $(CROSS_DIR)/poke-windows-amd64.exe ./cmd/poke
 
-check: fmt-check vet staticcheck gosec race cross-build
+check: fmt-check vet staticcheck gosec govulncheck race cross-build
 
 # Validates Goreleaser config, builds snapshot archives (no publish), checks poke+pokedex names.
 release-check:
