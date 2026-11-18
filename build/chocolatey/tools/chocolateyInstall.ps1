@@ -19,13 +19,17 @@ $packageArgs = @{
 }
 Install-ChocolateyZipPackage @packageArgs
 
-# Zip contains poke.exe and pokedex.exe; copy both to tools for shims
+# Zip contains poke.exe only; install poke and a pokedex hardlink/shim alias.
 $pokeExe = Get-ChildItem -Path $unzipLocation -Filter "poke.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-$aliasExe = Get-ChildItem -Path $unzipLocation -Filter "pokedex.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($pokeExe) {
-  Copy-Item $pokeExe.FullName -Destination (Join-Path $toolsDir "poke.exe") -Force
-}
-if ($aliasExe) {
-  Copy-Item $aliasExe.FullName -Destination (Join-Path $toolsDir "pokedex.exe") -Force
+  $dest = Join-Path $toolsDir "poke.exe"
+  Copy-Item $pokeExe.FullName -Destination $dest -Force
+  $alias = Join-Path $toolsDir "pokedex.exe"
+  if (Test-Path $alias) { Remove-Item $alias -Force }
+  try {
+    New-Item -ItemType HardLink -Path $alias -Target $dest -Force | Out-Null
+  } catch {
+    Copy-Item $dest $alias -Force
+  }
 }
 Remove-Item $unzipLocation -Recurse -Force -ErrorAction SilentlyContinue

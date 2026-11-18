@@ -152,7 +152,7 @@ func (m Model) dialogChrome(bodyW, scrollH, scrollOff int) (sticky []string, hin
 			return nil, ""
 		}
 		if !m.moveDetailOpen {
-			sticky = moveStickyLines(rows, bodyW, m.dialogMoveMethod, m.gameFilterLabel())
+			sticky = moveStickyLines(bodyW, m.dialogMoveMethod)
 		}
 		right := ""
 		if m.moveFocusIdx >= 0 {
@@ -1128,7 +1128,7 @@ func moveColWidths(bodyW int, showAcc, showPP bool) (moveW, gameW int) {
 	return moveW, gameW
 }
 
-func moveStickyLines(rows []domain.LevelUpMove, bodyW int, method, gameLabel string) []string {
+func moveStickyLines(bodyW int, method string) []string {
 	if method == "" {
 		method = "level-up"
 	}
@@ -1150,7 +1150,7 @@ func formatMoveLinesGame(rows []domain.LevelUpMove, bodyW int, gameLabel string)
 	if method == "" {
 		method = "level-up"
 	}
-	out := moveStickyLines(rows, bodyW, method, gameLabel)
+	out := moveStickyLines(bodyW, method)
 	out = append(out, formatMoveDataRows(rows, bodyW, gameLabel)...)
 	return out
 }

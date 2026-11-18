@@ -2,7 +2,7 @@
 
 [← Poke](../README.md) · [User guide](USER_GUIDE.md) · [Configuration](CONFIGURATION.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
-The main command is `poke`. Release archives also include `pokedex`, an equivalent alias with the same commands and flags.
+The main command is `poke`. Installers also create a `pokedex` alias (same program) on your `PATH`.
 
 Run `poke --help` for built-in help, or add `--help` to a command, such as `poke update --help`.
 

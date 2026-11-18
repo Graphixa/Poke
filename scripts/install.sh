@@ -173,7 +173,6 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 LOCAL_ARCHIVE="${TMP_DIR}/${ARCHIVE_NAME}"
 EXTRACT_DIR="${TMP_DIR}/extract"
 LOCAL_BIN="${EXTRACT_DIR}/poke"
-LOCAL_ALIAS="${EXTRACT_DIR}/pokedex"
 
 echo "${BLUE}Downloading poke...${NC}"
 if ! curl -fsSL "$DOWNLOAD_URL" -o "$LOCAL_ARCHIVE"; then
@@ -225,12 +224,8 @@ if [ ! -f "$LOCAL_BIN" ]; then
     echo "${RED}Error: poke binary not found in archive${NC}" >&2
     exit 1
 fi
-if [ ! -f "$LOCAL_ALIAS" ]; then
-    echo "${RED}Error: pokedex binary not found in archive${NC}" >&2
-    exit 1
-fi
 
-chmod +x "$LOCAL_BIN" "$LOCAL_ALIAS"
+chmod +x "$LOCAL_BIN"
 
 if ! "$LOCAL_BIN" version >/dev/null 2>&1; then
     echo "${RED}Error: Downloaded binary appears to be invalid${NC}" >&2
@@ -239,7 +234,8 @@ fi
 
 echo "${BLUE}Installing to ${INSTALL_DIR}...${NC}"
 mv "$LOCAL_BIN" "$INSTALLED_BIN"
-mv "$LOCAL_ALIAS" "$INSTALLED_ALIAS"
+# pokedex is a PATH alias (symlink), not a second binary in the archive
+ln -sfn "$INSTALLED_BIN" "$INSTALLED_ALIAS"
 
 INSTALLED_VERSION=$("$INSTALLED_BIN" version 2>/dev/null | head -n1 || echo "poke")
 echo ""

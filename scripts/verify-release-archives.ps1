@@ -1,4 +1,4 @@
-# Verify GoReleaser dist archives contain both poke and pokedex executables.
+# Verify GoReleaser dist archives contain poke (pokedex is an install-time alias).
 # Used on Windows hosts without bash; CI uses scripts/verify-release-archives.sh.
 param(
     [string]$DistDir = ""
@@ -40,20 +40,16 @@ try {
         if ($archive.Name -like "*.tar.gz") {
             tar -xzf $archive.FullName -C $extract
             $wantPoke = "poke"
-            $wantAlias = "pokedex"
         } elseif ($archive.Name -like "*.zip") {
             [System.IO.Compression.ZipFile]::ExtractToDirectory($archive.FullName, $extract)
             $wantPoke = "poke.exe"
-            $wantAlias = "pokedex.exe"
         } else {
             continue
         }
 
         $foundPoke = Get-ChildItem -Path $extract -Recurse -File -Filter $wantPoke -ErrorAction SilentlyContinue
-        $foundAlias = Get-ChildItem -Path $extract -Recurse -File -Filter $wantAlias -ErrorAction SilentlyContinue
-        if (-not $foundAlias) {
-            $foundAlias = Get-ChildItem -Path $extract -Recurse -File -Filter "pokedex" -ErrorAction SilentlyContinue
-        }
+        $foundAlias = Get-ChildItem -Path $extract -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq "pokedex" -or $_.Name -eq "pokedex.exe" }
 
         if ($foundPoke) {
             Write-Host "  found $($foundPoke[0].Name)"
@@ -62,10 +58,10 @@ try {
             $fail = $true
         }
         if ($foundAlias) {
-            Write-Host "  found $($foundAlias[0].Name)"
-        } else {
-            Write-Host "  missing $wantAlias" -ForegroundColor Red
+            Write-Host "  unexpected pokedex binary in archive (should be install-time alias only)" -ForegroundColor Red
             $fail = $true
+        } else {
+            Write-Host "  ok: no duplicate pokedex binary"
         }
     }
 } finally {
@@ -77,7 +73,7 @@ if ($checked -eq 0) {
 }
 
 if ($fail) {
-    Write-Error "one or more archives are missing poke/pokedex"
+    Write-Error "one or more archives failed poke verification"
 }
 
-Write-Host "ok: verified $checked archive(s) contain poke and pokedex"
+Write-Host "ok: verified $checked archive(s) contain poke only"

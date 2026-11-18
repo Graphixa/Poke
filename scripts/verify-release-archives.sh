@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify GoReleaser dist archives contain both poke and pokedex executables.
+# Verify GoReleaser dist archives contain the poke executable (pokedex is an install-time alias).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,12 +33,10 @@ for archive in "${archives[@]}"; do
     *.tar.gz)
       tar -xzf "$archive" -C "$extract"
       poke_names=("poke")
-      alias_names=("pokedex")
       ;;
     *.zip)
       unzip -q "$archive" -d "$extract"
       poke_names=("poke.exe")
-      alias_names=("pokedex.exe")
       ;;
     *)
       continue
@@ -61,17 +59,12 @@ for archive in "${archives[@]}"; do
     fail=1
   fi
 
-  alias_ok=0
-  for n in "${alias_names[@]}"; do
-    if find "$extract" \( -type f -o -type l \) -name "$n" | grep -q .; then
-      echo "  found $n"
-      alias_ok=1
-      break
-    fi
-  done
-  if ((alias_ok == 0)); then
-    echo "  missing ${alias_names[*]}" >&2
+  # Archives must not ship a duplicate pokedex binary anymore.
+  if find "$extract" \( -type f -o -type l \) \( -name 'pokedex' -o -name 'pokedex.exe' \) | grep -q .; then
+    echo "  unexpected pokedex binary in archive (should be install-time alias only)" >&2
     fail=1
+  else
+    echo "  ok: no duplicate pokedex binary"
   fi
 done
 
@@ -81,8 +74,8 @@ if ((checked == 0)); then
 fi
 
 if ((fail != 0)); then
-  echo "error: one or more archives are missing poke/pokedex" >&2
+  echo "error: one or more archives failed poke verification" >&2
   exit 1
 fi
 
-echo "ok: verified $checked archive(s) contain poke and pokedex"
+echo "ok: verified $checked archive(s) contain poke only"

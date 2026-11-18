@@ -6,7 +6,7 @@ project_name: poke
 before:
   hooks:
     - go mod tidy
-    # .syso must land in cmd/poke: that is the package both poke and pokedex compile.
+    # .syso must land in cmd/poke (single binary; pokedex is an install-time alias).
     - go run github.com/tc-hib/go-winres@v0.3.3 make --in build/winres.json --out cmd/poke/rsrc --arch amd64,arm64 --file-version {{.Major}}.{{.Minor}}.{{.Patch}}.0 --product-version {{.Major}}.{{.Minor}}.{{.Patch}}.0
 
 builds:
@@ -34,37 +34,10 @@ builds:
         -X github.com/Graphixa/Poke/pkg/version.Commit={{.Commit}}
         -X github.com/Graphixa/Poke/pkg/version.Date={{.Date}}
 
-  # Second Windows executable and Unix alias binary (same package as poke).
-  # Archives ship both names; Homebrew cask installs poke and pokedex.
-  - id: pokedex
-    main: ./cmd/poke
-    binary: pokedex
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
-    flags:
-      - -trimpath
-    ldflags:
-      - >-
-        -s -w
-        -X github.com/Graphixa/Poke/pkg/version.Version={{.Version}}
-        -X github.com/Graphixa/Poke/pkg/version.Commit={{.Commit}}
-        -X github.com/Graphixa/Poke/pkg/version.Date={{.Date}}
-
 archives:
   - id: default
     ids:
       - poke
-      - pokedex
     formats:
       - tar.gz
     format_overrides:
@@ -125,14 +98,16 @@ homebrew_casks:
       - default
     binaries:
       - poke
-      - pokedex
     hooks:
       post:
+        # Declarative steps (goreleaser v2.19+). Alias pokedex -> poke on PATH.
         install_steps: |
           on_macos do
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/poke"]
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/pokedex"]
           end
+          run "/bin/ln", args: ["-sf", "#{HOMEBREW_PREFIX}/bin/poke", "#{HOMEBREW_PREFIX}/bin/pokedex"]
+        uninstall_steps: |
+          remove "#{HOMEBREW_PREFIX}/bin/pokedex"
 
 # Winget — auto-PR to microsoft/winget-pkgs via Graphixa/winget-pkgs fork
 winget:
@@ -152,11 +127,12 @@ winget:
     license_url: "https://github.com/Graphixa/Poke/blob/main/LICENSE"
     publisher_url: "https://github.com/Graphixa"
     publisher_support_url: "https://github.com/Graphixa/Poke/issues"
-    release_notes: "{{.Changelog}}"
+    # Keep short: winget schema caps ReleaseNotes at 10000 chars; full changelogs fail validate.
+    release_notes: "poke {{ .Version }} — terminal Pokédex. See the GitHub release for details."
     release_notes_url: "https://github.com/Graphixa/Poke/releases/tag/v{{.Version}}"
     copyright: "Copyright (c) Graphixa"
     copyright_url: "https://github.com/Graphixa/Poke/blob/main/LICENSE"
-    installation_notes: "poke and pokedex will be available on PATH. Run 'poke --help' to get started."
+    installation_notes: "poke will be available on PATH. Run 'poke --help' to get started. (pokedex is an optional alias from the install script / Homebrew.)"
     tags:
       - pokemon
       - pokedex

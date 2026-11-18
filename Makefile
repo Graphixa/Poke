@@ -62,7 +62,7 @@ cross-build: winres
 
 check: fmt-check vet staticcheck gosec govulncheck race cross-build
 
-# Validates Goreleaser config, builds snapshot archives (no publish), checks poke+pokedex names.
+# Validates Goreleaser config, builds snapshot archives (no publish), asserts poke-only archives.
 release-check:
 	$(GORELEASER) check
 	$(GORELEASER) release --snapshot --clean --skip=publish

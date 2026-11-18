@@ -56,7 +56,7 @@ func TestMovesSingleMethodTable(t *testing.T) {
 	if strings.Contains(joined, "Machine") {
 		t.Fatalf("single-method table must not list other methods:\n%s", joined)
 	}
-	sticky := moveStickyLines(rows, 80, "level-up", "Pearl")
+	sticky := moveStickyLines(80, "level-up")
 	if len(sticky) != 1 || !strings.Contains(ansi.Strip(sticky[0]), "Lvl") {
 		t.Fatalf("sticky=%v", sticky)
 	}

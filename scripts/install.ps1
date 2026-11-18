@@ -61,7 +61,8 @@ $DisplayVersion = $Version
 # GoReleaser archive: poke_<version>_windows_<arch>.zip (see .goreleaser.yaml)
 if ($Version -eq "latest") {
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
-    $ArchiveName = ($release.assets | Where-Object { $_.name -match "^poke_.+_windows_$Arch\.zip$" } | Select-Object -First 1).name
+    $zipLike = "poke_*_windows_$Arch.zip"
+    $ArchiveName = ($release.assets | Where-Object { $_.name -like $zipLike } | Select-Object -First 1).name
     if (-not $ArchiveName) {
         Write-Error "Could not find release archive for windows/$Arch"
         exit 1
@@ -86,7 +87,7 @@ Write-Host ""
 
 if (Test-Path $InstalledBin) {
     try {
-        $CurrentVersion = & $InstalledBin version 2>$null | Select-Object -First 1
+        $CurrentVersion = & $InstalledBin version 2>&1 | Select-Object -First 1
         if ($env:NO_COLOR -eq '1') {
             Write-Host "poke is already installed at: $InstalledBin"
             Write-Host "Current version: $CurrentVersion"
@@ -145,7 +146,6 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 $TempZip = Join-Path $env:TEMP "poke-install-$Arch.zip"
 $ExtractDir = Join-Path $env:TEMP "poke-install-extract-$Arch"
 $TempFile = Join-Path $ExtractDir "poke.exe"
-$TempAlias = Join-Path $ExtractDir "pokedex.exe"
 
 Write-Host "Downloading poke..." -ForegroundColor Blue
 try {
@@ -176,12 +176,14 @@ try {
 }
 
 $expectedHash = $null
-Get-Content -LiteralPath $ChecksumsTemp -ErrorAction SilentlyContinue | ForEach-Object {
-    $line = $_.TrimEnd("`r")
-    if ($line -match '^\s*([A-Fa-f0-9]{64})\s+[\*]?(.+)$') {
+foreach ($raw in Get-Content -LiteralPath $ChecksumsTemp -ErrorAction SilentlyContinue) {
+    $line = $raw.TrimEnd("`r")
+    # Split fields: "hash  name" (GNU) or "hash *name" (binary mode).
+    if ($line -match '^\s*([A-Fa-f0-9]+)\s+\*?(.+)$' -and $Matches[1].Length -eq 64) {
         $name = $Matches[2].Trim()
         if ($name -eq $ArchiveName) {
             $expectedHash = $Matches[1].ToLowerInvariant()
+            break
         }
     }
 }
@@ -200,7 +202,7 @@ if ($actualHash -ne $expectedHash) {
     exit 1
 }
 
-Write-Host "✓ Checksum verified" -ForegroundColor Green
+Write-Host "OK Checksum verified" -ForegroundColor Green
 
 if (Test-Path $ExtractDir) {
     Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -210,11 +212,6 @@ Remove-Item $TempZip -Force -ErrorAction SilentlyContinue
 
 if (-not (Test-Path $TempFile)) {
     Write-Error "poke.exe not found in $ArchiveName"
-    Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
-    exit 1
-}
-if (-not (Test-Path $TempAlias)) {
-    Write-Error "pokedex.exe not found in $ArchiveName"
     Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
     exit 1
 }
@@ -229,38 +226,56 @@ try {
 
 Write-Host "Installing to $InstallDir..." -ForegroundColor Blue
 Move-Item -Path $TempFile -Destination $InstalledBin -Force
-Move-Item -Path $TempAlias -Destination $InstalledAlias -Force
+# pokedex is a PATH alias (hardlink/symlink), not a second binary in the archive
+if (Test-Path $InstalledAlias) {
+    Remove-Item $InstalledAlias -Force -ErrorAction SilentlyContinue
+}
+try {
+    New-Item -ItemType HardLink -Path $InstalledAlias -Target $InstalledBin -Force | Out-Null
+} catch {
+    try {
+        New-Item -ItemType SymbolicLink -Path $InstalledAlias -Target $InstalledBin -Force | Out-Null
+    } catch {
+        Copy-Item $InstalledBin $InstalledAlias -Force
+    }
+}
 Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
 
+$versionText = "poke"
 try {
-    $InstalledVersion = & $InstalledBin version 2>$null | Select-Object -First 1
+    $versionOut = & $InstalledBin version 2>&1 | Select-Object -First 1
+    if ($versionOut) {
+        $versionText = [string]$versionOut
+    }
 } catch {
-    $InstalledVersion = "poke"
+    $versionText = "poke"
 }
 
 Write-Host ""
-Write-Host "✓ poke installed successfully!" -ForegroundColor Green
+Write-Host "OK poke installed successfully!" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Location: $InstalledBin"
-Write-Host "  Alias:    $InstalledAlias"
-Write-Host "  Version:  $InstalledVersion"
+Write-Host ("  Location: " + $InstalledBin)
+Write-Host ("  Alias:    " + $InstalledAlias)
+Write-Host ("  Version:  " + $versionText)
 Write-Host ""
 
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$PathEntries = if ($UserPath) { $UserPath -split ';' } else { @() }
-
-if ($PathEntries -contains $InstallDir) {
-    Write-Host "✓ $InstallDir is already in your PATH" -ForegroundColor Green
+if (($UserPath -split ';') -contains $InstallDir) {
+    Write-Host "OK $InstallDir is already in your PATH" -ForegroundColor Green
 } else {
-    Write-Host "⚠ $InstallDir is not in your PATH" -ForegroundColor Yellow
+    Write-Host "WARN $InstallDir is not in your PATH" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Adding to PATH..." -ForegroundColor Blue
 
-    $NewPath = if ($UserPath) { "$UserPath;$InstallDir" } else { $InstallDir }
+    if ($UserPath) {
+        $NewPath = $UserPath + ';' + $InstallDir
+    } else {
+        $NewPath = $InstallDir
+    }
     [Environment]::SetEnvironmentVariable("Path", $NewPath, "User")
-    $env:Path = "$env:Path;$InstallDir"
+    $env:Path = $env:Path + ';' + $InstallDir
 
-    Write-Host "✓ Added to PATH" -ForegroundColor Green
+    Write-Host "OK Added to PATH" -ForegroundColor Green
     Write-Host ""
     Write-Host "Note: You may need to restart your terminal for 'poke' to be available." -ForegroundColor Yellow
     Write-Host "Or run poke directly:" -ForegroundColor Yellow
