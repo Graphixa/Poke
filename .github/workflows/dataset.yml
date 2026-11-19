@@ -2,20 +2,31 @@ name: Dataset
 
 on:
   schedule:
-    # 16:00 UTC on the 1st. Compares commits only. Does not build a gzip or tag a release.
+    # 16:00 UTC on the 1st. Builds a new gzip and opens a pull request. Does not tag a release.
     - cron: "0 16 1 * *"
   workflow_dispatch:
+    inputs:
+      build:
+        description: "Build even when the recorded api-data commit matches"
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
-  issues: write
+  contents: write
+  pull-requests: write
 
 jobs:
   upstream:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
       - name: Compare api-data commit
+        id: cmp
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -24,15 +35,52 @@ jobs:
           have="$(tr -d '[:space:]' < internal/bundled/upstream.sha)"
           echo "api-data $live"
           echo "recorded $have"
+          echo "sha=$live" >> "$GITHUB_OUTPUT"
           if [ "$live" = "$have" ]; then
-            echo "snapshot record matches"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout api-data
+        if: steps.cmp.outputs.changed == 'true' || inputs.build == true
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/PokeAPI/api-data.git api-data
+          cd api-data
+          git sparse-checkout set \
+            data/api/v2/pokemon \
+            data/api/v2/pokemon-species \
+            data/api/v2/evolution-chain \
+            data/api/v2/move \
+            data/api/v2/ability \
+            data/api/v2/pokemon-form \
+            data/api/v2/version \
+            data/api/v2/version-group \
+            data/api/v2/type
+      - name: Build snapshot
+        if: steps.cmp.outputs.changed == 'true' || inputs.build == true
+        run: |
+          set -euo pipefail
+          sha="$(git -C api-data rev-parse HEAD)"
+          dir="$(go run ./scripts/snapshot -root api-data -cache "$RUNNER_TEMP/poke-cache")"
+          go run ./scripts/pack_dataset.go -sha "$sha" -o internal/bundled/dataset.tar.gz "$dir"
+          go run ./scripts/pack_dataset.go -release -o internal/bundled/dataset.tar.gz
+          printf '%s\n' "$sha" > internal/bundled/upstream.sha
+      - name: Open pull request
+        if: steps.cmp.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha="$(tr -d '[:space:]' < internal/bundled/upstream.sha)"
+          branch="dataset/$sha"
+          git checkout -b "$branch"
+          git add internal/bundled/dataset.tar.gz internal/bundled/upstream.sha
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "chore: refresh the dataset snapshot from api-data"
+          git push origin "HEAD:$branch"
+          existing="$(gh pr list --head "$branch" --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "pull request already open"
             exit 0
           fi
-          title="Dataset snapshot is behind api-data ${live}"
-          open="$(gh issue list --state open --search "$live in:title" --json number --jq 'length')"
-          if [ "$open" != "0" ]; then
-            echo "issue already open"
-            exit 0
-          fi
-          body="$(printf 'api-data master is %s.\ninternal/bundled/upstream.sha records %s.\n\nThis job does not rebuild the gzip and does not tag a release.\nPack a new internal/bundled/dataset.tar.gz, set upstream.sha to that commit, and open a pull request.\n' "$live" "$have")"
-          gh issue create --title "$title" --body "$body"
+          gh pr create --base main --head "$branch" --title "Refresh dataset snapshot" --body "api-data is \`$sha\`. This replaces the bundled gzip. It does not tag a release. Merging it is what \`poke refresh\` downloads."
